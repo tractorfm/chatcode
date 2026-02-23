@@ -20,7 +20,7 @@ type outputCapturer struct {
 	sessionID string
 	seq       *uint64
 	lastAct   *int64
-	outCh     chan<- OutputChunk
+	outCh     chan OutputChunk
 
 	cancel context.CancelFunc
 	buf    []byte
@@ -30,7 +30,7 @@ type outputCapturer struct {
 func newOutputCapturer(
 	tmuxName, sessionID string,
 	seq *uint64, lastAct *int64,
-	outCh chan<- OutputChunk,
+	outCh chan OutputChunk,
 ) *outputCapturer {
 	return &outputCapturer{
 		tmuxName:  tmuxName,
@@ -100,14 +100,28 @@ func (c *outputCapturer) pollLoop(ctx context.Context) {
 					Data:      []byte(chunk),
 				}
 
-				select {
-				case c.outCh <- payload:
-				default:
-					// Channel full: drop oldest by discarding this frame ("latest wins" behaviour
-					// means the next poll will send fresh content)
-				}
+				enqueueLatest(c.outCh, payload)
 			}
 		}
+	}
+}
+
+func enqueueLatest(outCh chan OutputChunk, payload OutputChunk) {
+	select {
+	case outCh <- payload:
+		return
+	default:
+		// Full queue: drop oldest queued frame so newest output wins.
+	}
+
+	select {
+	case <-outCh:
+	default:
+	}
+
+	select {
+	case outCh <- payload:
+	default:
 	}
 }
 

@@ -26,7 +26,7 @@ type Options struct {
 	Env map[string]string
 	// OutputCh receives batched PTY output frames (payload only, not framed).
 	// The caller is responsible for framing and sending over WebSocket.
-	OutputCh chan<- OutputChunk
+	OutputCh chan OutputChunk
 }
 
 // OutputChunk is a batch of PTY output from a session.
