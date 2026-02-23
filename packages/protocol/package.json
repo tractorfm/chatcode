@@ -1,0 +1,14 @@
+{
+  "name": "@chatcode/protocol",
+  "version": "0.1.0",
+  "description": "Shared protocol types for Chatcode.dev (gateway ↔ control plane)",
+  "main": "ts/src/index.ts",
+  "types": "ts/src/index.ts",
+  "scripts": {
+    "build": "tsc --noEmit",
+    "lint": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3"
+  }
+}

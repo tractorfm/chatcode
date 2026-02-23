@@ -1,0 +1,23 @@
+# Go build artifacts
+packages/gateway/gateway
+packages/gateway/gateway-linux-amd64
+packages/gateway/gateway.new
+packages/gateway/gateway.prev
+
+# Go test cache
+*.test
+
+# Node / pnpm
+node_modules/
+packages/*/node_modules/
+.pnpm-store/
+
+# Build outputs
+dist/
+packages/*/dist/
+
+# Editor
+.DS_Store
+.idea/
+.vscode/
+*.swp

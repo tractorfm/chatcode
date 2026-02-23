@@ -1,0 +1,39 @@
+# chatcode
+
+Implementation monorepo for [Chatcode.dev](https://chatcode.dev) – provision a VPS, open a terminal in the browser, start coding with your AI agent.
+
+## Packages
+
+| Package | Description | Status |
+|---|---|---|
+| `packages/protocol` | Shared protocol definitions (JSON Schema + TS + Go types) | M1 |
+| `packages/gateway` | Go daemon running on user VPS | M1 |
+| `packages/control-plane` | Cloudflare Workers + Durable Objects | M2 |
+| `packages/web` | React + xterm.js web app | M4 |
+
+## Quick start
+
+```bash
+# Install JS dependencies
+pnpm install
+
+# Build everything
+pnpm build
+
+# Develop gateway
+cd packages/gateway
+make mock-cp    # terminal 1: start mock control plane
+make build && ./gateway  # terminal 2: run gateway
+```
+
+## Architecture
+
+```
+Browser ←─ WebSocket ─→ Control Plane (Cloudflare Workers + DO)
+                                ↕ WebSocket
+                        Gateway daemon (Go, on user VPS)
+                                ↕ tmux/PTY
+                          AI Agent process
+```
+
+See `MVP.md` for full architecture details and `IMPLEMENTATION_M1.md` for M1 plan.

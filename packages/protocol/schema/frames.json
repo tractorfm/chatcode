@@ -1,0 +1,63 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://chatcode.dev/protocol/frames",
+  "title": "Binary Frame Format",
+  "description": "Documentation for the binary frame format used for terminal output (gateway → CP → browser). These are WebSocket binary messages, not JSON.",
+
+  "definitions": {
+    "FrameKind": {
+      "description": "First byte of every binary frame – identifies the frame type",
+      "type": "integer",
+      "oneOf": [
+        { "const": 1, "title": "terminal_output", "description": "PTY output bytes for a session" },
+        { "const": 2, "title": "terminal_input", "description": "PTY input bytes (CP → gateway, future use)" }
+      ]
+    },
+
+    "TerminalOutputFrame": {
+      "description": "Binary frame carrying PTY output for one session. Sent from gateway → CP → browser.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": 1,
+          "description": "Byte offset 0: frame kind (0x01)"
+        },
+        "session_id_len": {
+          "type": "integer",
+          "description": "Byte offset 1: length of session_id string (uint8, max 255)"
+        },
+        "session_id": {
+          "type": "string",
+          "description": "Bytes 2..2+session_id_len: session ID as UTF-8"
+        },
+        "seq": {
+          "type": "integer",
+          "description": "Next 8 bytes: sequence number (uint64 big-endian, wraps at 2^64)"
+        },
+        "payload": {
+          "type": "string",
+          "description": "Remaining bytes: raw PTY output (may contain ANSI escape codes)"
+        }
+      },
+
+      "x-layout": {
+        "description": "Byte layout",
+        "fields": [
+          { "offset": 0, "length": 1, "name": "kind", "type": "uint8", "value": "0x01" },
+          { "offset": 1, "length": 1, "name": "session_id_len", "type": "uint8" },
+          { "offset": 2, "length": "session_id_len", "name": "session_id", "type": "utf8" },
+          { "offset": "2+session_id_len", "length": 8, "name": "seq", "type": "uint64be" },
+          { "offset": "2+session_id_len+8", "length": "remaining", "name": "payload", "type": "bytes" }
+        ]
+      }
+    }
+  },
+
+  "x-notes": [
+    "JSON text frames are used for all commands and events (control messages).",
+    "Binary frames are used only for high-frequency PTY output to minimize overhead.",
+    "Maximum payload per binary frame: 16KB (enforced by gateway output batcher).",
+    "The seq counter per session starts at 0 and increments per frame; browser uses it for in-order reassembly.",
+    "On reconnect, gateway sends a session.snapshot JSON event for each active session, then resumes binary output from current seq."
+  ]
+}

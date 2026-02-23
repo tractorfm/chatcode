@@ -1,0 +1,214 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://chatcode.dev/protocol/events",
+  "title": "Gateway Events",
+  "description": "JSON text frames sent from gateway → control plane",
+  "definitions": {
+    "BaseEvent": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": { "type": "string" }
+      }
+    },
+
+    "Ack": {
+      "allOf": [{ "$ref": "#/definitions/BaseEvent" }],
+      "properties": {
+        "type": { "const": "ack" },
+        "request_id": { "type": "string" },
+        "ok": { "type": "boolean" },
+        "error": {
+          "type": "string",
+          "description": "Error message if ok=false"
+        }
+      },
+      "required": ["type", "request_id", "ok"]
+    },
+
+    "GatewayHello": {
+      "allOf": [{ "$ref": "#/definitions/BaseEvent" }],
+      "properties": {
+        "type": { "const": "gateway.hello" },
+        "gateway_id": { "type": "string" },
+        "version": { "type": "string" },
+        "hostname": { "type": "string" },
+        "go_version": { "type": "string" }
+      },
+      "required": ["type", "gateway_id", "version", "hostname"]
+    },
+
+    "GatewayHealth": {
+      "allOf": [{ "$ref": "#/definitions/BaseEvent" }],
+      "properties": {
+        "type": { "const": "gateway.health" },
+        "gateway_id": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "cpu_percent": { "type": "number", "minimum": 0, "maximum": 100 },
+        "ram_used_bytes": { "type": "integer" },
+        "ram_total_bytes": { "type": "integer" },
+        "disk_used_bytes": { "type": "integer" },
+        "disk_total_bytes": { "type": "integer" },
+        "uptime_seconds": { "type": "integer" },
+        "active_sessions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "session_id": { "type": "string" },
+              "last_activity_at": { "type": "string", "format": "date-time" }
+            },
+            "required": ["session_id", "last_activity_at"]
+          }
+        }
+      },
+      "required": ["type", "gateway_id", "timestamp"]
+    },
+
+    "SessionStarted": {
+      "allOf": [{ "$ref": "#/definitions/BaseEvent" }],
+      "properties": {
+        "type": { "const": "session.started" },
+        "request_id": { "type": "string" },
+        "session_id": { "type": "string" },
+        "pid": { "type": "integer" }
+      },
+      "required": ["type", "request_id", "session_id"]
+    },
+
+    "SessionEnded": {
+      "allOf": [{ "$ref": "#/definitions/BaseEvent" }],
+      "properties": {
+        "type": { "const": "session.ended" },
+        "session_id": { "type": "string" },
+        "exit_code": { "type": "integer" }
+      },
+      "required": ["type", "session_id"]
+    },
+
+    "SessionError": {
+      "allOf": [{ "$ref": "#/definitions/BaseEvent" }],
+      "properties": {
+        "type": { "const": "session.error" },
+        "session_id": { "type": "string" },
+        "error": { "type": "string" }
+      },
+      "required": ["type", "session_id", "error"]
+    },
+
+    "SessionSnapshot": {
+      "allOf": [{ "$ref": "#/definitions/BaseEvent" }],
+      "properties": {
+        "type": { "const": "session.snapshot" },
+        "request_id": { "type": "string" },
+        "session_id": { "type": "string" },
+        "content": {
+          "type": "string",
+          "description": "Terminal content from tmux capture-pane -p"
+        },
+        "cols": { "type": "integer" },
+        "rows": { "type": "integer" }
+      },
+      "required": ["type", "session_id", "content"]
+    },
+
+    "SSHKeyList": {
+      "allOf": [{ "$ref": "#/definitions/BaseEvent" }],
+      "properties": {
+        "type": { "const": "ssh.keys" },
+        "request_id": { "type": "string" },
+        "keys": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "fingerprint": { "type": "string" },
+              "label": { "type": "string" },
+              "algorithm": { "type": "string" },
+              "added_at": { "type": "string", "format": "date-time" },
+              "expires_at": {
+                "type": "string",
+                "format": "date-time",
+                "description": "Omitted for permanent keys"
+              }
+            },
+            "required": ["fingerprint", "label", "algorithm"]
+          }
+        }
+      },
+      "required": ["type", "request_id", "keys"]
+    },
+
+    "FileContentBegin": {
+      "allOf": [{ "$ref": "#/definitions/BaseEvent" }],
+      "properties": {
+        "type": { "const": "file.content.begin" },
+        "transfer_id": { "type": "string" },
+        "path": { "type": "string" },
+        "size": { "type": "integer" },
+        "total_chunks": { "type": "integer" }
+      },
+      "required": ["type", "transfer_id", "path", "size", "total_chunks"]
+    },
+
+    "FileContentChunk": {
+      "allOf": [{ "$ref": "#/definitions/BaseEvent" }],
+      "properties": {
+        "type": { "const": "file.content.chunk" },
+        "transfer_id": { "type": "string" },
+        "seq": { "type": "integer" },
+        "data": {
+          "type": "string",
+          "description": "Base64-encoded chunk bytes"
+        }
+      },
+      "required": ["type", "transfer_id", "seq", "data"]
+    },
+
+    "FileContentEnd": {
+      "allOf": [{ "$ref": "#/definitions/BaseEvent" }],
+      "properties": {
+        "type": { "const": "file.content.end" },
+        "transfer_id": { "type": "string" }
+      },
+      "required": ["type", "transfer_id"]
+    },
+
+    "AgentInstalled": {
+      "allOf": [{ "$ref": "#/definitions/BaseEvent" }],
+      "properties": {
+        "type": { "const": "agent.installed" },
+        "request_id": { "type": "string" },
+        "agent": { "type": "string" },
+        "version": { "type": "string" }
+      },
+      "required": ["type", "request_id", "agent"]
+    },
+
+    "GatewayUpdated": {
+      "allOf": [{ "$ref": "#/definitions/BaseEvent" }],
+      "properties": {
+        "type": { "const": "gateway.updated" },
+        "request_id": { "type": "string" },
+        "version": { "type": "string" }
+      },
+      "required": ["type", "request_id", "version"]
+    }
+  },
+
+  "oneOf": [
+    { "$ref": "#/definitions/Ack" },
+    { "$ref": "#/definitions/GatewayHello" },
+    { "$ref": "#/definitions/GatewayHealth" },
+    { "$ref": "#/definitions/SessionStarted" },
+    { "$ref": "#/definitions/SessionEnded" },
+    { "$ref": "#/definitions/SessionError" },
+    { "$ref": "#/definitions/SessionSnapshot" },
+    { "$ref": "#/definitions/SSHKeyList" },
+    { "$ref": "#/definitions/FileContentBegin" },
+    { "$ref": "#/definitions/FileContentChunk" },
+    { "$ref": "#/definitions/FileContentEnd" },
+    { "$ref": "#/definitions/AgentInstalled" },
+    { "$ref": "#/definitions/GatewayUpdated" }
+  ]
+}

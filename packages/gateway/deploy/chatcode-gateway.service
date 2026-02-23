@@ -1,0 +1,31 @@
+[Unit]
+Description=Chatcode.dev Gateway Daemon
+Documentation=https://chatcode.dev/docs/gateway
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=vibe
+Group=vibe
+WorkingDirectory=/home/vibe
+ExecStart=/usr/local/bin/chatcode-gateway
+EnvironmentFile=/etc/chatcode/gateway.env
+Restart=on-failure
+RestartSec=5s
+
+# Harden the service
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/home/vibe /tmp/chatcode
+PrivateTmp=false
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=chatcode-gateway
+
+[Install]
+WantedBy=multi-user.target

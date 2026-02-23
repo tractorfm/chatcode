@@ -1,0 +1,217 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://chatcode.dev/protocol/commands",
+  "title": "Gateway Commands",
+  "description": "JSON text frames sent from control plane → gateway",
+  "definitions": {
+    "BaseCommand": {
+      "type": "object",
+      "required": ["type", "request_id"],
+      "properties": {
+        "type": { "type": "string" },
+        "request_id": {
+          "type": "string",
+          "description": "Unique ID echoed back in the ack/response"
+        }
+      }
+    },
+
+    "SessionCreate": {
+      "allOf": [{ "$ref": "#/definitions/BaseCommand" }],
+      "properties": {
+        "type": { "const": "session.create" },
+        "session_id": { "type": "string" },
+        "name": { "type": "string" },
+        "workdir": { "type": "string" },
+        "agent": {
+          "type": "string",
+          "enum": ["claude-code", "codex", "gemini", "none"],
+          "default": "claude-code"
+        },
+        "agent_config": {
+          "type": "object",
+          "description": "Overrides for default agent instructions",
+          "properties": {
+            "claude_md": { "type": "string" },
+            "agents_md": { "type": "string" }
+          }
+        },
+        "env": {
+          "type": "object",
+          "additionalProperties": { "type": "string" },
+          "description": "Extra environment variables for the session"
+        }
+      },
+      "required": ["type", "request_id", "session_id", "name", "workdir"]
+    },
+
+    "SessionInput": {
+      "allOf": [{ "$ref": "#/definitions/BaseCommand" }],
+      "properties": {
+        "type": { "const": "session.input" },
+        "session_id": { "type": "string" },
+        "data": {
+          "type": "string",
+          "description": "Base64-encoded input bytes"
+        }
+      },
+      "required": ["type", "request_id", "session_id", "data"]
+    },
+
+    "SessionResize": {
+      "allOf": [{ "$ref": "#/definitions/BaseCommand" }],
+      "properties": {
+        "type": { "const": "session.resize" },
+        "session_id": { "type": "string" },
+        "cols": { "type": "integer", "minimum": 1 },
+        "rows": { "type": "integer", "minimum": 1 }
+      },
+      "required": ["type", "request_id", "session_id", "cols", "rows"]
+    },
+
+    "SessionEnd": {
+      "allOf": [{ "$ref": "#/definitions/BaseCommand" }],
+      "properties": {
+        "type": { "const": "session.end" },
+        "session_id": { "type": "string" }
+      },
+      "required": ["type", "request_id", "session_id"]
+    },
+
+    "SessionSnapshot": {
+      "allOf": [{ "$ref": "#/definitions/BaseCommand" }],
+      "properties": {
+        "type": { "const": "session.snapshot" },
+        "session_id": { "type": "string" }
+      },
+      "required": ["type", "request_id", "session_id"]
+    },
+
+    "SSHAuthorize": {
+      "allOf": [{ "$ref": "#/definitions/BaseCommand" }],
+      "properties": {
+        "type": { "const": "ssh.authorize" },
+        "public_key": { "type": "string" },
+        "label": { "type": "string" },
+        "expires_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "RFC 3339 timestamp; omit for permanent"
+        }
+      },
+      "required": ["type", "request_id", "public_key", "label"]
+    },
+
+    "SSHRevoke": {
+      "allOf": [{ "$ref": "#/definitions/BaseCommand" }],
+      "properties": {
+        "type": { "const": "ssh.revoke" },
+        "fingerprint": { "type": "string" }
+      },
+      "required": ["type", "request_id", "fingerprint"]
+    },
+
+    "SSHList": {
+      "allOf": [{ "$ref": "#/definitions/BaseCommand" }],
+      "properties": {
+        "type": { "const": "ssh.list" }
+      },
+      "required": ["type", "request_id"]
+    },
+
+    "FileUploadBegin": {
+      "allOf": [{ "$ref": "#/definitions/BaseCommand" }],
+      "properties": {
+        "type": { "const": "file.upload.begin" },
+        "transfer_id": { "type": "string" },
+        "dest_path": { "type": "string" },
+        "size": { "type": "integer", "description": "Total file size in bytes" },
+        "total_chunks": { "type": "integer" }
+      },
+      "required": ["type", "request_id", "transfer_id", "dest_path", "size", "total_chunks"]
+    },
+
+    "FileUploadChunk": {
+      "allOf": [{ "$ref": "#/definitions/BaseCommand" }],
+      "properties": {
+        "type": { "const": "file.upload.chunk" },
+        "transfer_id": { "type": "string" },
+        "seq": { "type": "integer" },
+        "data": {
+          "type": "string",
+          "description": "Base64-encoded chunk bytes"
+        }
+      },
+      "required": ["type", "request_id", "transfer_id", "seq", "data"]
+    },
+
+    "FileUploadEnd": {
+      "allOf": [{ "$ref": "#/definitions/BaseCommand" }],
+      "properties": {
+        "type": { "const": "file.upload.end" },
+        "transfer_id": { "type": "string" }
+      },
+      "required": ["type", "request_id", "transfer_id"]
+    },
+
+    "FileDownload": {
+      "allOf": [{ "$ref": "#/definitions/BaseCommand" }],
+      "properties": {
+        "type": { "const": "file.download" },
+        "transfer_id": { "type": "string" },
+        "path": { "type": "string" }
+      },
+      "required": ["type", "request_id", "transfer_id", "path"]
+    },
+
+    "FileCancel": {
+      "allOf": [{ "$ref": "#/definitions/BaseCommand" }],
+      "properties": {
+        "type": { "const": "file.cancel" },
+        "transfer_id": { "type": "string" }
+      },
+      "required": ["type", "request_id", "transfer_id"]
+    },
+
+    "AgentsInstall": {
+      "allOf": [{ "$ref": "#/definitions/BaseCommand" }],
+      "properties": {
+        "type": { "const": "agents.install" },
+        "agent": {
+          "type": "string",
+          "enum": ["claude-code", "codex", "gemini"]
+        }
+      },
+      "required": ["type", "request_id", "agent"]
+    },
+
+    "GatewayUpdate": {
+      "allOf": [{ "$ref": "#/definitions/BaseCommand" }],
+      "properties": {
+        "type": { "const": "gateway.update" },
+        "url": { "type": "string", "description": "Download URL for new binary" },
+        "sha256": { "type": "string", "description": "Expected SHA-256 hex digest" },
+        "version": { "type": "string" }
+      },
+      "required": ["type", "request_id", "url", "sha256", "version"]
+    }
+  },
+
+  "oneOf": [
+    { "$ref": "#/definitions/SessionCreate" },
+    { "$ref": "#/definitions/SessionInput" },
+    { "$ref": "#/definitions/SessionResize" },
+    { "$ref": "#/definitions/SessionEnd" },
+    { "$ref": "#/definitions/SessionSnapshot" },
+    { "$ref": "#/definitions/SSHAuthorize" },
+    { "$ref": "#/definitions/SSHRevoke" },
+    { "$ref": "#/definitions/SSHList" },
+    { "$ref": "#/definitions/FileUploadBegin" },
+    { "$ref": "#/definitions/FileUploadChunk" },
+    { "$ref": "#/definitions/FileUploadEnd" },
+    { "$ref": "#/definitions/FileDownload" },
+    { "$ref": "#/definitions/FileCancel" },
+    { "$ref": "#/definitions/AgentsInstall" },
+    { "$ref": "#/definitions/GatewayUpdate" }
+  ]
+}
