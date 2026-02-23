@@ -11,14 +11,15 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 )
 
 const (
-	maxFileSize  = 20 * 1024 * 1024  // 20MB
-	chunkSize    = 128 * 1024         // 128KB
-	transferTTL  = 5 * time.Minute
+	maxFileSize = 20 * 1024 * 1024 // 20MB
+	chunkSize   = 128 * 1024       // 128KB
+	transferTTL = 5 * time.Minute
 )
 
 // UploadState tracks an in-progress file upload.
@@ -33,13 +34,13 @@ type UploadState struct {
 
 // ChunkEvent carries a download chunk to the WebSocket sender.
 type ChunkEvent struct {
-	Type       string `json:"type"`
-	TransferID string `json:"transfer_id"`
-	Seq        int    `json:"seq,omitempty"`
-	Data       string `json:"data,omitempty"` // base64
-	Path       string `json:"path,omitempty"`
-	Size       int64  `json:"size,omitempty"`
-	TotalChunks int   `json:"total_chunks,omitempty"`
+	Type        string `json:"type"`
+	TransferID  string `json:"transfer_id"`
+	Seq         int    `json:"seq,omitempty"`
+	Data        string `json:"data,omitempty"` // base64
+	Path        string `json:"path,omitempty"`
+	Size        int64  `json:"size,omitempty"`
+	TotalChunks int    `json:"total_chunks,omitempty"`
 }
 
 // Sender is a callback to push JSON frames over the WebSocket.
@@ -47,19 +48,28 @@ type Sender func(ctx context.Context, v any) error
 
 // Handler manages file transfers.
 type Handler struct {
-	tempDir string
-	sender  Sender
+	tempDir       string
+	workspaceRoot string
+	sender        Sender
 
 	mu      sync.Mutex
 	uploads map[string]*UploadState
 }
 
-// NewHandler creates a Handler. tempDir must be writable.
-func NewHandler(tempDir string, sender Sender) *Handler {
+// NewHandler creates a Handler.
+// tempDir must be writable; workspaceRoot constrains upload/download paths.
+func NewHandler(tempDir, workspaceRoot string, sender Sender) *Handler {
+	root := filepath.Clean(workspaceRoot)
+	if !filepath.IsAbs(root) {
+		if abs, err := filepath.Abs(root); err == nil {
+			root = abs
+		}
+	}
 	return &Handler{
-		tempDir: tempDir,
-		sender:  sender,
-		uploads: make(map[string]*UploadState),
+		tempDir:       tempDir,
+		workspaceRoot: root,
+		sender:        sender,
+		uploads:       make(map[string]*UploadState),
 	}
 }
 
@@ -67,6 +77,10 @@ func NewHandler(tempDir string, sender Sender) *Handler {
 func (h *Handler) UploadBegin(transferID, destPath string, size int64, totalChunks int) error {
 	if size > maxFileSize {
 		return fmt.Errorf("file too large: %d bytes (max %d)", size, maxFileSize)
+	}
+	safeDestPath, err := h.resolveWorkspacePath(destPath)
+	if err != nil {
+		return err
 	}
 
 	if err := os.MkdirAll(h.tempDir, 0o755); err != nil {
@@ -81,7 +95,7 @@ func (h *Handler) UploadBegin(transferID, destPath string, size int64, totalChun
 	h.mu.Lock()
 	h.uploads[transferID] = &UploadState{
 		TransferID:  transferID,
-		DestPath:    destPath,
+		DestPath:    safeDestPath,
 		TotalChunks: totalChunks,
 		TempFile:    tmp,
 		CreatedAt:   time.Now(),
@@ -162,7 +176,12 @@ func (h *Handler) Cancel(transferID string) {
 
 // Download reads a file and sends it back as file.content.* events.
 func (h *Handler) Download(ctx context.Context, transferID, path string) error {
-	f, err := os.Open(path)
+	safePath, err := h.resolveWorkspacePath(path)
+	if err != nil {
+		return err
+	}
+
+	f, err := os.Open(safePath)
 	if err != nil {
 		return fmt.Errorf("open file: %w", err)
 	}
@@ -181,7 +200,7 @@ func (h *Handler) Download(ctx context.Context, transferID, path string) error {
 	if err := h.sender(ctx, ChunkEvent{
 		Type:        "file.content.begin",
 		TransferID:  transferID,
-		Path:        path,
+		Path:        safePath,
 		Size:        info.Size(),
 		TotalChunks: totalChunks,
 	}); err != nil {
@@ -247,4 +266,29 @@ func copyFile(src, dst string) error {
 
 	_, err = io.Copy(d, s)
 	return err
+}
+
+func (h *Handler) resolveWorkspacePath(path string) (string, error) {
+	if path == "" {
+		return "", fmt.Errorf("path is required")
+	}
+
+	p := filepath.Clean(path)
+	if !filepath.IsAbs(p) {
+		p = filepath.Join(h.workspaceRoot, p)
+	}
+	abs, err := filepath.Abs(p)
+	if err != nil {
+		return "", fmt.Errorf("resolve path %q: %w", path, err)
+	}
+
+	rel, err := filepath.Rel(h.workspaceRoot, abs)
+	if err != nil {
+		return "", fmt.Errorf("check path %q: %w", path, err)
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("path %q escapes workspace root", path)
+	}
+
+	return abs, nil
 }

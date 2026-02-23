@@ -10,7 +10,7 @@ import (
 
 func TestUploadDownloadRoundtrip(t *testing.T) {
 	tmpDir := t.TempDir()
-	destDir := t.TempDir()
+	workspace := t.TempDir()
 
 	var sent []ChunkEvent
 	sender := func(ctx context.Context, v any) error {
@@ -20,13 +20,13 @@ func TestUploadDownloadRoundtrip(t *testing.T) {
 		return nil
 	}
 
-	h := NewHandler(tmpDir, sender)
+	h := NewHandler(tmpDir, workspace, sender)
 	ctx := context.Background()
 
 	// Upload a file
 	content := []byte("hello vibecode file transfer test")
 	encoded := base64.StdEncoding.EncodeToString(content)
-	destPath := filepath.Join(destDir, "test.txt")
+	destPath := filepath.Join(workspace, "test.txt")
 
 	if err := h.UploadBegin("t1", destPath, int64(len(content)), 1); err != nil {
 		t.Fatalf("UploadBegin: %v", err)
@@ -82,9 +82,10 @@ func TestUploadDownloadRoundtrip(t *testing.T) {
 
 func TestUploadCancel(t *testing.T) {
 	tmpDir := t.TempDir()
-	h := NewHandler(tmpDir, func(_ context.Context, _ any) error { return nil })
+	workspace := t.TempDir()
+	h := NewHandler(tmpDir, workspace, func(_ context.Context, _ any) error { return nil })
 
-	h.UploadBegin("cancel-test", "/tmp/nowhere", 100, 1)
+	h.UploadBegin("cancel-test", filepath.Join(workspace, "nowhere"), 100, 1)
 	h.Cancel("cancel-test")
 
 	// Verify temp file was cleaned up (there should be nothing in tmpDir from this transfer)
@@ -98,17 +99,69 @@ func TestUploadCancel(t *testing.T) {
 }
 
 func TestFileTooLarge(t *testing.T) {
-	h := NewHandler(t.TempDir(), func(_ context.Context, _ any) error { return nil })
-	err := h.UploadBegin("big", "/tmp/big", maxFileSize+1, 1)
+	workspace := t.TempDir()
+	h := NewHandler(t.TempDir(), workspace, func(_ context.Context, _ any) error { return nil })
+	err := h.UploadBegin("big", filepath.Join(workspace, "big"), maxFileSize+1, 1)
 	if err == nil {
 		t.Fatal("expected error for oversized file")
 	}
 }
 
 func TestDownloadNonExistentFile(t *testing.T) {
-	h := NewHandler(t.TempDir(), func(_ context.Context, _ any) error { return nil })
-	err := h.Download(context.Background(), "t1", "/nonexistent/path/file.txt")
+	workspace := t.TempDir()
+	h := NewHandler(t.TempDir(), workspace, func(_ context.Context, _ any) error { return nil })
+	err := h.Download(context.Background(), "t1", filepath.Join(workspace, "does-not-exist.txt"))
 	if err == nil {
 		t.Fatal("expected error for nonexistent file")
+	}
+}
+
+func TestUploadBeginRejectsPathOutsideWorkspace(t *testing.T) {
+	workspace := t.TempDir()
+	otherDir := t.TempDir()
+	h := NewHandler(t.TempDir(), workspace, func(_ context.Context, _ any) error { return nil })
+
+	err := h.UploadBegin("escape", filepath.Join(otherDir, "outside.txt"), 1, 1)
+	if err == nil {
+		t.Fatal("expected path escape error")
+	}
+}
+
+func TestDownloadRejectsPathOutsideWorkspace(t *testing.T) {
+	workspace := t.TempDir()
+	otherDir := t.TempDir()
+	otherPath := filepath.Join(otherDir, "outside.txt")
+	if err := os.WriteFile(otherPath, []byte("x"), 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+
+	h := NewHandler(t.TempDir(), workspace, func(_ context.Context, _ any) error { return nil })
+	err := h.Download(context.Background(), "t1", otherPath)
+	if err == nil {
+		t.Fatal("expected path escape error")
+	}
+}
+
+func TestUploadBeginAcceptsRelativePathInsideWorkspace(t *testing.T) {
+	workspace := t.TempDir()
+	h := NewHandler(t.TempDir(), workspace, func(_ context.Context, _ any) error { return nil })
+
+	data := []byte("rel path")
+	if err := h.UploadBegin("rel", "subdir/file.txt", int64(len(data)), 1); err != nil {
+		t.Fatalf("UploadBegin: %v", err)
+	}
+	if err := h.UploadChunk("rel", 0, base64.StdEncoding.EncodeToString(data)); err != nil {
+		t.Fatalf("UploadChunk: %v", err)
+	}
+	if err := h.UploadEnd("rel"); err != nil {
+		t.Fatalf("UploadEnd: %v", err)
+	}
+
+	got, err := os.ReadFile(filepath.Join(workspace, "subdir", "file.txt"))
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if string(got) != string(data) {
+		t.Fatalf("got %q, want %q", string(got), string(data))
 	}
 }

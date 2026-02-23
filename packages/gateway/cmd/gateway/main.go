@@ -20,8 +20,8 @@ import (
 	"github.com/tractorfm/chatcode/packages/gateway/internal/config"
 	"github.com/tractorfm/chatcode/packages/gateway/internal/files"
 	"github.com/tractorfm/chatcode/packages/gateway/internal/health"
-	sshkeys "github.com/tractorfm/chatcode/packages/gateway/internal/ssh"
 	"github.com/tractorfm/chatcode/packages/gateway/internal/session"
+	sshkeys "github.com/tractorfm/chatcode/packages/gateway/internal/ssh"
 	"github.com/tractorfm/chatcode/packages/gateway/internal/update"
 	"github.com/tractorfm/chatcode/packages/gateway/internal/ws"
 )
@@ -65,7 +65,11 @@ func main() {
 
 	// Create file handler (sender will be wired after WS client is set up)
 	// We use a late-binding sender so the WS client can be nil during startup
-	g.files = files.NewHandler(cfg.TempDir, func(ctx context.Context, v any) error {
+	workspaceRoot, err := os.UserHomeDir()
+	if err != nil || workspaceRoot == "" {
+		workspaceRoot = "/home/vibe"
+	}
+	g.files = files.NewHandler(cfg.TempDir, workspaceRoot, func(ctx context.Context, v any) error {
 		return g.wsClient.SendJSON(ctx, v)
 	})
 
@@ -241,11 +245,11 @@ func (g *gateway) sendAck(ctx context.Context, requestID string, ok bool, errMsg
 
 func (g *gateway) handleSessionCreate(ctx context.Context, raw json.RawMessage) error {
 	var cmd struct {
-		RequestID   string            `json:"request_id"`
-		SessionID   string            `json:"session_id"`
-		Name        string            `json:"name"`
-		Workdir     string            `json:"workdir"`
-		Agent       string            `json:"agent"`
+		RequestID   string `json:"request_id"`
+		SessionID   string `json:"session_id"`
+		Name        string `json:"name"`
+		Workdir     string `json:"workdir"`
+		Agent       string `json:"agent"`
 		AgentConfig *struct {
 			ClaudeMD string `json:"claude_md"`
 			AgentsMD string `json:"agents_md"`
