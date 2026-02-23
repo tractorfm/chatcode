@@ -55,6 +55,26 @@ func TestManagerWatchSessionRemovesExitedSession(t *testing.T) {
 	t.Fatal("expected watcher to remove exited session")
 }
 
+func TestBuildEnvIncludesHostAndSessionVars(t *testing.T) {
+	t.Setenv("VIBECODE_TEST_ENV", "from-host")
+
+	s := &Session{
+		opts: Options{
+			Env: map[string]string{
+				"VIBECODE_SESSION_ENV": "from-session",
+			},
+		},
+	}
+
+	env := s.buildEnv()
+	if !containsEnv(env, "VIBECODE_TEST_ENV=from-host") {
+		t.Fatal("expected host env variable to be inherited")
+	}
+	if !containsEnv(env, "VIBECODE_SESSION_ENV=from-session") {
+		t.Fatal("expected session env variable to be set")
+	}
+}
+
 func TestSessionTmux(t *testing.T) {
 	if !hasTmux() {
 		t.Skip("tmux not available")
@@ -145,6 +165,15 @@ func contains(s, sub string) bool {
 func containsStr(s, sub string) bool {
 	for i := 0; i <= len(s)-len(sub); i++ {
 		if s[i:i+len(sub)] == sub {
+			return true
+		}
+	}
+	return false
+}
+
+func containsEnv(env []string, wanted string) bool {
+	for _, e := range env {
+		if e == wanted {
 			return true
 		}
 	}

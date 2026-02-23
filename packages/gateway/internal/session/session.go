@@ -2,6 +2,7 @@ package session
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"sync/atomic"
 	"time"
@@ -193,8 +194,5 @@ func (s *Session) Summary() Summary {
 
 // hostEnv returns the current process environment as a slice of "KEY=VALUE" strings.
 func hostEnv() []string {
-	// We can't import "os" here without it being redundant, so rely on the
-	// caller setting a proper environment or use os.Environ inline.
-	// Importing os is fine in Go — it's used via the exec.Cmd.Env field.
-	return nil // exec.Cmd with nil Env inherits os.Environ(); explicit set below
+	return os.Environ()
 }
