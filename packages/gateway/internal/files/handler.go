@@ -24,12 +24,15 @@ const (
 
 // UploadState tracks an in-progress file upload.
 type UploadState struct {
-	TransferID  string
-	DestPath    string
-	TotalChunks int
-	Received    int
-	TempFile    *os.File
-	CreatedAt   time.Time
+	TransferID    string
+	DestPath      string
+	ExpectedSize  int64
+	TotalChunks   int
+	NextSeq       int
+	Received      int
+	ReceivedBytes int64
+	TempFile      *os.File
+	CreatedAt     time.Time
 }
 
 // ChunkEvent carries a download chunk to the WebSocket sender.
@@ -75,8 +78,17 @@ func NewHandler(tempDir, workspaceRoot string, sender Sender) *Handler {
 
 // UploadBegin initialises a new upload transfer.
 func (h *Handler) UploadBegin(transferID, destPath string, size int64, totalChunks int) error {
+	if size < 0 {
+		return fmt.Errorf("invalid file size: %d", size)
+	}
 	if size > maxFileSize {
 		return fmt.Errorf("file too large: %d bytes (max %d)", size, maxFileSize)
+	}
+	if size == 0 && totalChunks != 0 {
+		return fmt.Errorf("invalid total_chunks for empty file: %d", totalChunks)
+	}
+	if size > 0 && totalChunks <= 0 {
+		return fmt.Errorf("invalid total_chunks for non-empty file: %d", totalChunks)
 	}
 	safeDestPath, err := h.resolveWorkspacePath(destPath)
 	if err != nil {
@@ -93,12 +105,18 @@ func (h *Handler) UploadBegin(transferID, destPath string, size int64, totalChun
 	}
 
 	h.mu.Lock()
+	if prev, exists := h.uploads[transferID]; exists {
+		_ = prev.TempFile.Close()
+		_ = os.Remove(prev.TempFile.Name())
+	}
 	h.uploads[transferID] = &UploadState{
-		TransferID:  transferID,
-		DestPath:    safeDestPath,
-		TotalChunks: totalChunks,
-		TempFile:    tmp,
-		CreatedAt:   time.Now(),
+		TransferID:   transferID,
+		DestPath:     safeDestPath,
+		ExpectedSize: size,
+		TotalChunks:  totalChunks,
+		NextSeq:      0,
+		TempFile:     tmp,
+		CreatedAt:    time.Now(),
 	}
 	h.mu.Unlock()
 	return nil
@@ -106,25 +124,39 @@ func (h *Handler) UploadBegin(transferID, destPath string, size int64, totalChun
 
 // UploadChunk writes a base64-encoded chunk to the temp file.
 func (h *Handler) UploadChunk(transferID string, seq int, data string) error {
-	h.mu.Lock()
-	state, ok := h.uploads[transferID]
-	h.mu.Unlock()
-	if !ok {
-		return fmt.Errorf("unknown transfer %q", transferID)
-	}
-
 	raw, err := base64.StdEncoding.DecodeString(data)
 	if err != nil {
 		return fmt.Errorf("decode chunk: %w", err)
+	}
+
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	state, ok := h.uploads[transferID]
+	if !ok {
+		return fmt.Errorf("unknown transfer %q", transferID)
+	}
+	if time.Since(state.CreatedAt) > transferTTL {
+		delete(h.uploads, transferID)
+		_ = state.TempFile.Close()
+		_ = os.Remove(state.TempFile.Name())
+		return fmt.Errorf("transfer %q timed out", transferID)
+	}
+	if seq != state.NextSeq {
+		return fmt.Errorf("out-of-order chunk: got seq=%d, expected=%d", seq, state.NextSeq)
+	}
+	if state.ReceivedBytes+int64(len(raw)) > state.ExpectedSize {
+		return fmt.Errorf("upload exceeds declared size: got at least %d bytes, declared %d",
+			state.ReceivedBytes+int64(len(raw)), state.ExpectedSize)
 	}
 
 	if _, err := state.TempFile.Write(raw); err != nil {
 		return fmt.Errorf("write chunk: %w", err)
 	}
 
-	h.mu.Lock()
+	state.NextSeq++
 	state.Received++
-	h.mu.Unlock()
+	state.ReceivedBytes += int64(len(raw))
 	return nil
 }
 
@@ -139,9 +171,24 @@ func (h *Handler) UploadEnd(transferID string) error {
 	if !ok {
 		return fmt.Errorf("unknown transfer %q", transferID)
 	}
+	if time.Since(state.CreatedAt) > transferTTL {
+		_ = state.TempFile.Close()
+		_ = os.Remove(state.TempFile.Name())
+		return fmt.Errorf("transfer %q timed out", transferID)
+	}
+	if state.Received != state.TotalChunks {
+		_ = state.TempFile.Close()
+		_ = os.Remove(state.TempFile.Name())
+		return fmt.Errorf("incomplete upload: got %d chunks, expected %d", state.Received, state.TotalChunks)
+	}
+	if state.ReceivedBytes != state.ExpectedSize {
+		_ = state.TempFile.Close()
+		_ = os.Remove(state.TempFile.Name())
+		return fmt.Errorf("size mismatch: got %d bytes, expected %d", state.ReceivedBytes, state.ExpectedSize)
+	}
 
 	tmpPath := state.TempFile.Name()
-	state.TempFile.Close()
+	_ = state.TempFile.Close()
 
 	// Ensure destination directory exists
 	if err := os.MkdirAll(filepath.Dir(state.DestPath), 0o755); err != nil {

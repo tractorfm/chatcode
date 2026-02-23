@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestUploadDownloadRoundtrip(t *testing.T) {
@@ -163,5 +164,94 @@ func TestUploadBeginAcceptsRelativePathInsideWorkspace(t *testing.T) {
 	}
 	if string(got) != string(data) {
 		t.Fatalf("got %q, want %q", string(got), string(data))
+	}
+}
+
+func TestUploadChunkRejectsOutOfOrderSeq(t *testing.T) {
+	workspace := t.TempDir()
+	h := NewHandler(t.TempDir(), workspace, func(_ context.Context, _ any) error { return nil })
+
+	if err := h.UploadBegin("order", filepath.Join(workspace, "a.txt"), 4, 2); err != nil {
+		t.Fatalf("UploadBegin: %v", err)
+	}
+	err := h.UploadChunk("order", 1, base64.StdEncoding.EncodeToString([]byte("ab")))
+	if err == nil {
+		t.Fatal("expected out-of-order error")
+	}
+}
+
+func TestUploadEndRejectsChunkCountMismatch(t *testing.T) {
+	workspace := t.TempDir()
+	h := NewHandler(t.TempDir(), workspace, func(_ context.Context, _ any) error { return nil })
+
+	if err := h.UploadBegin("chunks", filepath.Join(workspace, "a.txt"), 2, 2); err != nil {
+		t.Fatalf("UploadBegin: %v", err)
+	}
+	if err := h.UploadChunk("chunks", 0, base64.StdEncoding.EncodeToString([]byte("ab"))); err != nil {
+		t.Fatalf("UploadChunk: %v", err)
+	}
+	err := h.UploadEnd("chunks")
+	if err == nil {
+		t.Fatal("expected chunk count mismatch error")
+	}
+}
+
+func TestUploadEndRejectsSizeMismatch(t *testing.T) {
+	workspace := t.TempDir()
+	h := NewHandler(t.TempDir(), workspace, func(_ context.Context, _ any) error { return nil })
+
+	if err := h.UploadBegin("size", filepath.Join(workspace, "a.txt"), 5, 1); err != nil {
+		t.Fatalf("UploadBegin: %v", err)
+	}
+	if err := h.UploadChunk("size", 0, base64.StdEncoding.EncodeToString([]byte("abcd"))); err != nil {
+		t.Fatalf("UploadChunk: %v", err)
+	}
+	err := h.UploadEnd("size")
+	if err == nil {
+		t.Fatal("expected size mismatch error")
+	}
+}
+
+func TestUploadChunkRejectsTimedOutTransfer(t *testing.T) {
+	workspace := t.TempDir()
+	h := NewHandler(t.TempDir(), workspace, func(_ context.Context, _ any) error { return nil })
+
+	if err := h.UploadBegin("ttl", filepath.Join(workspace, "a.txt"), 1, 1); err != nil {
+		t.Fatalf("UploadBegin: %v", err)
+	}
+	h.mu.Lock()
+	h.uploads["ttl"].CreatedAt = time.Now().Add(-transferTTL - time.Second)
+	h.mu.Unlock()
+
+	err := h.UploadChunk("ttl", 0, base64.StdEncoding.EncodeToString([]byte("a")))
+	if err == nil {
+		t.Fatal("expected timeout error")
+	}
+	h.mu.Lock()
+	_, ok := h.uploads["ttl"]
+	h.mu.Unlock()
+	if ok {
+		t.Fatal("expected timed out transfer to be removed")
+	}
+}
+
+func TestPruneStaleRemovesExpiredTransfers(t *testing.T) {
+	workspace := t.TempDir()
+	h := NewHandler(t.TempDir(), workspace, func(_ context.Context, _ any) error { return nil })
+
+	if err := h.UploadBegin("stale", filepath.Join(workspace, "a.txt"), 1, 1); err != nil {
+		t.Fatalf("UploadBegin: %v", err)
+	}
+	h.mu.Lock()
+	h.uploads["stale"].CreatedAt = time.Now().Add(-transferTTL - time.Second)
+	h.mu.Unlock()
+
+	h.PruneStale()
+
+	h.mu.Lock()
+	_, ok := h.uploads["stale"]
+	h.mu.Unlock()
+	if ok {
+		t.Fatal("expected stale transfer to be pruned")
 	}
 }

@@ -87,6 +87,7 @@ func main() {
 
 	// Start health ticker
 	go g.runHealthTicker(ctx)
+	go g.runFileTransferPruner(ctx)
 
 	// Run WS client (blocks, reconnects on disconnect, calls onConnect each time)
 	// We wrap the standard client to hook into connect events for hello + snapshots
@@ -609,6 +610,19 @@ func (g *gateway) runHealthTicker(ctx context.Context) {
 			return
 		case <-ticker.C:
 			g.sendHealth(ctx)
+		}
+	}
+}
+
+func (g *gateway) runFileTransferPruner(ctx context.Context) {
+	ticker := time.NewTicker(1 * time.Minute)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			g.files.PruneStale()
 		}
 	}
 }
