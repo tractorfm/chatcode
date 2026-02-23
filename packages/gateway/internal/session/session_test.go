@@ -36,6 +36,25 @@ func TestManagerDuplicateID(t *testing.T) {
 	}
 }
 
+func TestManagerWatchSessionRemovesExitedSession(t *testing.T) {
+	m := NewManager(5)
+	m.checkInterval = 10 * time.Millisecond
+	m.isAlive = func(_ *Session) bool { return false }
+
+	s := &Session{}
+	m.sessions["gone"] = s
+	go m.watchSession("gone", s)
+
+	deadline := time.Now().Add(500 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		if m.Get("gone") == nil {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("expected watcher to remove exited session")
+}
+
 func TestSessionTmux(t *testing.T) {
 	if !hasTmux() {
 		t.Skip("tmux not available")

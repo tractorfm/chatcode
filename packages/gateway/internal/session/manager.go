@@ -4,6 +4,7 @@ package session
 import (
 	"fmt"
 	"sync"
+	"time"
 )
 
 // Manager tracks active sessions and enforces the per-VPS limit.
@@ -11,13 +12,20 @@ type Manager struct {
 	mu       sync.RWMutex
 	sessions map[string]*Session
 	maxCount int
+
+	checkInterval time.Duration
+	isAlive       func(*Session) bool
 }
 
 // NewManager creates a Manager with the given session limit.
 func NewManager(maxSessions int) *Manager {
 	return &Manager{
-		sessions: make(map[string]*Session),
-		maxCount: maxSessions,
+		sessions:      make(map[string]*Session),
+		maxCount:      maxSessions,
+		checkInterval: 1 * time.Second,
+		isAlive: func(s *Session) bool {
+			return s.isAlive()
+		},
 	}
 }
 
@@ -39,6 +47,7 @@ func (m *Manager) Create(opts Options) (*Session, error) {
 		return nil, fmt.Errorf("start session %q: %w", opts.SessionID, err)
 	}
 	m.sessions[opts.SessionID] = s
+	go m.watchSession(opts.SessionID, s)
 	return s, nil
 }
 
@@ -80,4 +89,28 @@ func (m *Manager) remove(sessionID string) {
 	m.mu.Lock()
 	delete(m.sessions, sessionID)
 	m.mu.Unlock()
+}
+
+func (m *Manager) watchSession(sessionID string, s *Session) {
+	ticker := time.NewTicker(m.checkInterval)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		m.mu.RLock()
+		current, ok := m.sessions[sessionID]
+		m.mu.RUnlock()
+		if !ok || current != s {
+			return
+		}
+		if m.isAlive != nil && !m.isAlive(s) {
+			m.mu.Lock()
+			current, ok := m.sessions[sessionID]
+			if ok && current == s {
+				delete(m.sessions, sessionID)
+			}
+			m.mu.Unlock()
+			s.stopCapture()
+			return
+		}
+	}
 }

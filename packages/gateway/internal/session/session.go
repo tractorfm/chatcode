@@ -85,9 +85,9 @@ func (s *Session) buildTmuxNewSessionCmd() *exec.Cmd {
 
 	args := []string{
 		"new-session",
-		"-d",                  // detached
-		"-s", s.tmuxName,      // session name
-		"-c", s.opts.Workdir,  // start dir
+		"-d",             // detached
+		"-s", s.tmuxName, // session name
+		"-c", s.opts.Workdir, // start dir
 		"--",
 		"sh", "-c", shellCmd,
 	}
@@ -163,14 +163,22 @@ func (s *Session) Snapshot() (string, int, int, error) {
 
 // kill terminates the tmux session.
 func (s *Session) kill() error {
-	if s.capturer != nil {
-		s.capturer.stop()
-	}
+	s.stopCapture()
 	cmd := exec.Command("tmux", "kill-session", "-t", s.tmuxName)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("tmux kill-session: %w: %s", err, out)
 	}
 	return nil
+}
+
+func (s *Session) stopCapture() {
+	if s.capturer != nil {
+		s.capturer.stop()
+	}
+}
+
+func (s *Session) isAlive() bool {
+	return exec.Command("tmux", "has-session", "-t", s.tmuxName).Run() == nil
 }
 
 // Summary returns lightweight session metadata.
