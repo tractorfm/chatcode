@@ -6,7 +6,8 @@ Build the self-serve Chatcode.dev core: provision user-owned VPS, connect gatewa
 ## Current Priority
 - ✅ M1 complete: protocol schemas + gateway reliability.
 - ✅ M2 core implemented: control plane scaffold, D1 schema/helpers, routes, GatewayHub DO, scheduled reconciliation worker.
-- Current focus is M2 hardening: behavior validation, edge-case fixes, and broader route/DO test coverage.
+- ✅ M2 hardening pass completed: gateway-id validation, snapshot path fix, and broader route/DO test coverage.
+- Current focus is M2 staging validation: remote D1/KV/DO setup, deploy smoke tests, and reconciliation verification against real cloud resources.
 - Keep scope intentionally narrow: make "provision VPS -> connect gateway -> open terminal reliably" solid before adding broader UX surface area.
 
 ## Architecture Constraints
@@ -32,9 +33,9 @@ Build the self-serve Chatcode.dev core: provision user-owned VPS, connect gatewa
 - `packages/web`: browser UX and terminal client (later milestone).
 
 ## Development Priorities
-1. Control plane hardening: gateway auth/routing correctness and DO safety on reconnect/disconnect.
-2. Durable Object route/event behavior coverage (snapshot, file events, pending map, fan-out).
-3. D1 state transition correctness for provisioning/deleting reconciliation.
+1. Staging deploy readiness: wrangler bindings/secrets, remote migrations, and safe rollout checks.
+2. End-to-end staging verification: OAuth, provisioning, gateway connect, session lifecycle, terminal stream, destroy flow.
+3. D1 state transition correctness for provisioning/deleting reconciliation under real scheduler conditions.
 4. Provisioning robustness (DO create flow, timeout/retry/error states).
 5. Keep gateway and protocol compatibility stable while M2 matures.
 

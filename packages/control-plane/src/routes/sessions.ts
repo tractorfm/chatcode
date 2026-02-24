@@ -174,6 +174,11 @@ export async function handleSessionSnapshot(
     return jsonResponse({ error: "not found" }, 404);
   }
 
+  const session = await getSession(env.DB, sessionId);
+  if (!session || session.vps_id !== vpsId) {
+    return jsonResponse({ error: "session not found" }, 404);
+  }
+
   const gateway = await getGatewayByVPS(env.DB, vpsId);
   if (!gateway?.connected) {
     return jsonResponse({ error: "gateway not connected" }, 503);

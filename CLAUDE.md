@@ -5,7 +5,7 @@ The implementation repo for Chatcode.dev: a free VPS provisioning + browser term
 
 ## Milestone status
 - ✅ **M1**: Protocol schemas + Go gateway daemon
-- **M2** (current): Control plane implemented; now in hardening/test-coverage phase
+- **M2** (current): Control plane + hardening implemented; now in staging validation phase
 - **M3**: Static landing + magic link auth
 - **M4**: Full web app (React + xterm.js)
 
@@ -51,6 +51,7 @@ packages/
 - Auth: HttpOnly HMAC session cookie in prod; `X-Dev-User` header accepted only when `AUTH_MODE=dev` – no global bypass
 - DO OAuth tokens: AES-256-GCM encrypted in D1; key (`DO_TOKEN_KEK`) stored as Wrangler secret, never in D1
 - Standard DO WebSocket API for M2 (hibernation mode deferred post-M2)
+- Control-plane toolchain pinned to Wrangler v4
 
 ## Go module path
 `github.com/tractorfm/chatcode/packages/gateway`
