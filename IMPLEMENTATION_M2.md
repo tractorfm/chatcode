@@ -295,7 +295,7 @@ lastActivity: Map<WebSocket, number>
 Validated upstream by Worker (auth check). On open: store socket, update `Gateway.connected = 1` and `last_seen_at` in D1.
 
 On message (text):
-- `gateway.hello` → update D1 `Gateway.version`
+- `gateway.hello` → update D1 `Gateway.version`; set `vps.status = 'active'` for this gateway's `vps_id` (idempotent: only transition when current status is `provisioning`)
 - `gateway.health` → update D1 `Gateway.last_seen_at`
 - `ack` → resolve or reject `pending[request_id]`; forward ack to `sourceSocket` if set
 - `session.started` / `session.ended` / `session.error` → update D1 Session status; fan-out to `subscribers[session_id]`
@@ -448,9 +448,10 @@ GET /auth/do/callback?code=...&state=...
 Token refresh: called by VPS route handlers when DO API returns 401. Decrypts current refresh_token, exchanges for new tokens, re-encrypts and updates D1.
 
 Race handling for concurrent refreshes (M2):
-- Use a per-user in-memory `refreshInFlight` lock/map in the Worker isolate.
+- Use a per-user in-memory `refreshInFlight` lock/map in the Worker isolate (best-effort; not cross-isolate/distributed).
 - If a second request hits 401 while refresh is in progress, await the same promise instead of issuing another refresh request.
 - If lock state is stale (isolate restart), retry once by reloading latest encrypted tokens from D1.
+- Concurrent 401s handled by different Worker isolates may still race; fallback behavior is recoverable for MVP and intentionally accepted.
 
 ---
 
@@ -482,6 +483,7 @@ Race handling for concurrent refreshes (M2):
 - **Pending map keyed by `request_id` for ack-tracked commands only** – deterministic ack routing; all pending entries rejected on gateway disconnect; 10s per-entry timeout.
 - **Gateway token verification is timing-safe** – no direct string equality for HMAC comparison.
 - **Provisioning timeout via Scheduled Worker + `provisioning_deadline_at`** – durable, survives Worker restarts, requires no in-memory state.
+- **VPS becomes active on first successful gateway hello** – GatewayHub sets `vps.status = 'active'` (from `provisioning`) when `gateway.hello` arrives.
 - **No DO persistent storage** – gateway resends snapshots on reconnect; all durable state lives in D1.
 - **Auth: HttpOnly HMAC cookie in prod, `X-Dev-User` only when `AUTH_MODE=dev`** – no global auth bypass in any non-dev environment.
 - **VPS delete is cloud-first, DB-second** – metadata is retained while droplet deletion is in-flight; DB rows are removed only after confirmed cloud deletion.
