@@ -23,7 +23,7 @@ packages/control-plane/
 │   ├── durables/
 │   │   └── GatewayHub.ts         # Durable Object: one per gateway
 │   ├── routes/
-│   │   ├── auth.ts               # DO OAuth connect + callback + refresh
+│   │   ├── auth.ts               # DO OAuth connect + callback + token refresh
 │   │   ├── vps.ts                # VPS CRUD + power off/on
 │   │   └── sessions.ts           # Session CRUD + WS terminal upgrade
 │   ├── db/
@@ -32,8 +32,9 @@ packages/control-plane/
 │   │       └── 0001_initial.sql  # Full initial schema
 │   └── lib/
 │       ├── do-api.ts             # DigitalOcean API client (typed)
+│       ├── do-tokens.ts          # AES-GCM encrypt/decrypt for DO OAuth tokens
 │       ├── ids.ts                # Nano ID generation
-│       └── auth.ts               # Request auth (JWT cookie validation)
+│       └── auth.ts               # Request auth (session cookie validation)
 └── test/
     ├── gateway-hub.test.ts       # DO unit tests (miniflare)
     ├── vps.test.ts
@@ -45,84 +46,90 @@ packages/control-plane/
 ## D1 Schema
 
 ```sql
--- Users (email added in M3; exists here so DO OAuth can create a user row)
+-- Users
 CREATE TABLE users (
-  id        TEXT PRIMARY KEY,
+  id         TEXT    PRIMARY KEY,
   created_at INTEGER NOT NULL
 );
 
 CREATE TABLE email_identities (
-  user_id    TEXT NOT NULL REFERENCES users(id),
-  email      TEXT NOT NULL UNIQUE,
+  user_id     TEXT    NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  email       TEXT    NOT NULL UNIQUE,
   verified_at INTEGER,
   PRIMARY KEY (user_id, email)
 );
 
--- DigitalOcean OAuth tokens (one row per user)
+-- DigitalOcean OAuth tokens (one row per user).
+-- access_token and refresh_token are AES-GCM encrypted at application layer
+-- using DO_TOKEN_KEK wrangler secret. See lib/do-tokens.ts.
 CREATE TABLE do_connections (
-  user_id       TEXT PRIMARY KEY REFERENCES users(id),
-  access_token  TEXT NOT NULL,
-  refresh_token TEXT NOT NULL,
-  team_uuid     TEXT,
-  expires_at    INTEGER NOT NULL,
-  created_at    INTEGER NOT NULL,
-  updated_at    INTEGER NOT NULL
+  user_id           TEXT    PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  access_token_enc  TEXT    NOT NULL,   -- base64(iv || ciphertext)
+  refresh_token_enc TEXT    NOT NULL,   -- base64(iv || ciphertext)
+  token_key_version INTEGER NOT NULL DEFAULT 1,  -- for KEK rotation
+  team_uuid         TEXT,
+  expires_at        INTEGER NOT NULL,
+  created_at        INTEGER NOT NULL,
+  updated_at        INTEGER NOT NULL
 );
 
 -- VPS / Droplet records
 CREATE TABLE vps (
-  id         TEXT PRIMARY KEY,
-  user_id    TEXT NOT NULL REFERENCES users(id),
-  droplet_id INTEGER NOT NULL,
-  region     TEXT NOT NULL,
-  size       TEXT NOT NULL,
-  ipv4       TEXT,
-  status     TEXT NOT NULL DEFAULT 'provisioning',
-  created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL
+  id                     TEXT    PRIMARY KEY,
+  user_id                TEXT    NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  droplet_id             INTEGER NOT NULL,
+  region                 TEXT    NOT NULL,
+  size                   TEXT    NOT NULL,
+  ipv4                   TEXT,
+  status                 TEXT    NOT NULL DEFAULT 'provisioning',
+  provisioning_deadline_at INTEGER,     -- unix seconds; used by Scheduled Worker
+  created_at             INTEGER NOT NULL,
+  updated_at             INTEGER NOT NULL
 );
 
 -- Gateway daemon records (one per VPS)
 CREATE TABLE gateways (
-  id           TEXT PRIMARY KEY,
-  vps_id       TEXT NOT NULL REFERENCES vps(id),
-  auth_token   TEXT NOT NULL,       -- hashed; gateway uses plaintext in env
-  version      TEXT,
-  last_seen_at INTEGER,
-  connected    INTEGER NOT NULL DEFAULT 0,
-  created_at   INTEGER NOT NULL
+  id              TEXT    PRIMARY KEY,
+  vps_id          TEXT    NOT NULL REFERENCES vps(id) ON DELETE CASCADE,
+  auth_token_hash TEXT    NOT NULL,   -- HMAC-SHA256(token, GATEWAY_TOKEN_SALT)
+  version         TEXT,
+  last_seen_at    INTEGER,
+  connected       INTEGER NOT NULL DEFAULT 0,
+  created_at      INTEGER NOT NULL
 );
 
 -- Sessions (tmux sessions)
 CREATE TABLE sessions (
-  id              TEXT PRIMARY KEY,
-  user_id         TEXT NOT NULL REFERENCES users(id),
-  vps_id          TEXT NOT NULL REFERENCES vps(id),
-  title           TEXT NOT NULL,
-  agent_type      TEXT NOT NULL DEFAULT 'claude-code',
-  workdir         TEXT NOT NULL,
-  status          TEXT NOT NULL DEFAULT 'starting',
-  created_at      INTEGER NOT NULL,
+  id               TEXT    PRIMARY KEY,
+  user_id          TEXT    NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  vps_id           TEXT    NOT NULL REFERENCES vps(id) ON DELETE CASCADE,
+  title            TEXT    NOT NULL,
+  agent_type       TEXT    NOT NULL DEFAULT 'claude-code',
+  workdir          TEXT    NOT NULL,
+  status           TEXT    NOT NULL DEFAULT 'starting',
+  created_at       INTEGER NOT NULL,
   last_activity_at INTEGER
 );
 
 -- Authorized SSH keys (no private keys stored)
 CREATE TABLE authorized_keys (
-  id          TEXT PRIMARY KEY,
-  vps_id      TEXT NOT NULL REFERENCES vps(id),
-  fingerprint TEXT NOT NULL,
-  public_key  TEXT NOT NULL,
-  label       TEXT NOT NULL,
-  key_type    TEXT NOT NULL DEFAULT 'user',  -- user | support
+  id          TEXT    PRIMARY KEY,
+  vps_id      TEXT    NOT NULL REFERENCES vps(id) ON DELETE CASCADE,
+  fingerprint TEXT    NOT NULL,
+  public_key  TEXT    NOT NULL,
+  label       TEXT    NOT NULL,
+  key_type    TEXT    NOT NULL DEFAULT 'user',  -- user | support
   expires_at  INTEGER,
-  created_at  INTEGER NOT NULL
+  created_at  INTEGER NOT NULL,
+  UNIQUE (vps_id, fingerprint)
 );
 
-CREATE UNIQUE INDEX idx_authorized_keys_vps_fp ON authorized_keys(vps_id, fingerprint);
-CREATE INDEX idx_sessions_vps ON sessions(vps_id);
+CREATE INDEX idx_sessions_vps  ON sessions(vps_id);
 CREATE INDEX idx_sessions_user ON sessions(user_id);
-CREATE INDEX idx_vps_user ON vps(user_id);
+CREATE INDEX idx_vps_user      ON vps(user_id);
 ```
+
+**Delete safety**: all child tables carry `ON DELETE CASCADE` from `vps`. The VPS destroy handler still runs an explicit ordered delete transaction (sessions → authorized_keys → gateways → vps) before calling the DO API, so the DO has a chance to close the gateway WS cleanly before the row disappears.
 
 ---
 
@@ -151,25 +158,66 @@ class_name = "GatewayHub"
 tag = "v1"
 new_classes = ["GatewayHub"]
 
+[triggers]
+crons = ["* * * * *"]   # Scheduled Worker: provisioning timeout check
+
 [vars]
-DO_CLIENT_ID = ""         # DigitalOcean OAuth app client ID (non-secret)
+DO_CLIENT_ID = ""       # DigitalOcean OAuth app client ID (non-secret)
 
 # Secrets (set via `wrangler secret put`):
-# DO_CLIENT_SECRET
-# JWT_SECRET              # for signing session cookies
-# GATEWAY_TOKEN_SALT      # for hashing gateway auth tokens
+# DO_CLIENT_SECRET      – DigitalOcean OAuth app secret
+# JWT_SECRET            – signs session cookies
+# GATEWAY_TOKEN_SALT    – HMAC salt for gateway auth token hashing
+# DO_TOKEN_KEK          – AES-256 key for encrypting DO OAuth tokens (base64)
 ```
 
 ---
 
-## HTTP API (Workers routing)
+## Auth model
+
+**Production / staging**: signed HttpOnly session cookie. On DO OAuth callback, the Worker:
+1. Creates or looks up the user row in D1
+2. Issues an HMAC-SHA256 session token (`HMAC(userId + expires, JWT_SECRET)`)
+3. Sets `Set-Cookie: session=<token>; HttpOnly; Secure; SameSite=Strict; Max-Age=604800`
+
+Every subsequent request validates the cookie before routing. No unauthenticated request reaches VPS/session routes.
+
+**Local dev only**: set `AUTH_MODE=dev` in `wrangler.toml` vars. Worker accepts `X-Dev-User: <user_id>` header as identity, skipping cookie validation. This header is ignored unless `AUTH_MODE=dev`. There is no global "always pass" path in any environment.
+
+---
+
+## DO OAuth token security
+
+DO `access_token` and `refresh_token` are encrypted at application layer using **AES-256-GCM** before being stored in D1:
+
+```typescript
+// lib/do-tokens.ts
+async function encryptToken(plaintext: string, kek: CryptoKey): Promise<string> {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const enc = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, kek, encode(plaintext));
+  return b64(concat(iv, enc));  // store: base64(iv || ciphertext)
+}
+
+async function decryptToken(stored: string, kek: CryptoKey): Promise<string> {
+  const buf = decode(stored);
+  const iv = buf.slice(0, 12);
+  const ct = buf.slice(12);
+  return decode(await crypto.subtle.decrypt({ name: "AES-GCM", iv }, kek, ct));
+}
+```
+
+`DO_TOKEN_KEK` is a 256-bit key stored as a Wrangler secret (never in D1). `token_key_version` in `do_connections` enables future KEK rotation without forcing all users to reconnect.
+
+---
+
+## HTTP API
 
 ### DO OAuth
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/auth/do` | Redirect to DigitalOcean OAuth authorize URL |
-| `GET` | `/auth/do/callback` | Exchange code → store token → set session cookie |
-| `POST` | `/auth/do/disconnect` | Delete DO token from D1 |
+| `GET` | `/auth/do/callback` | Exchange code → encrypt + store tokens → set session cookie |
+| `POST` | `/auth/do/disconnect` | Delete DO tokens from D1 |
 
 ### VPS
 | Method | Path | Description |
@@ -177,7 +225,7 @@ DO_CLIENT_ID = ""         # DigitalOcean OAuth app client ID (non-secret)
 | `GET` | `/vps` | List user's VPS instances |
 | `POST` | `/vps` | Create droplet + generate gateway credentials |
 | `GET` | `/vps/:id` | VPS detail + health from D1 |
-| `DELETE` | `/vps/:id` | Destroy droplet + delete D1 records |
+| `DELETE` | `/vps/:id` | Ordered delete + destroy droplet |
 | `POST` | `/vps/:id/power-off` | Power off droplet |
 | `POST` | `/vps/:id/power-on` | Power on droplet |
 
@@ -185,95 +233,112 @@ DO_CLIENT_ID = ""         # DigitalOcean OAuth app client ID (non-secret)
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/vps/:id/sessions` | List sessions |
-| `POST` | `/vps/:id/sessions` | Create session (relays `session.create` to gateway) |
+| `POST` | `/vps/:id/sessions` | Create session (relays `session.create` to gateway via DO) |
 | `DELETE` | `/vps/:id/sessions/:sid` | End session |
 | `GET` | `/vps/:id/sessions/:sid/snapshot` | Request and return terminal snapshot |
-| `GET` | `/vps/:id/terminal` | WS upgrade → attach to GatewayHub as subscriber |
+| `GET` | `/vps/:id/terminal?session_id=:sid` | WS upgrade → attach to GatewayHub |
 
-### Internal (gateway-facing)
+### Gateway-facing
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/gw/connect` | WS upgrade for gateway → routed to GatewayHub |
+| `GET` | `/gw/connect/:gateway_id` | WS upgrade for gateway → routed to GatewayHub |
+
+---
+
+## Gateway connect auth
+
+Gateway URL format: `<CPURL>/<gateway_id>` (e.g. `wss://cp.chatcode.dev/gw/connect/gw-abc123`).
+
+The gateway already sends `Authorization: Bearer <auth_token>`. The Worker:
+1. Extracts `gateway_id` from the URL path
+2. Looks up the `gateways` row by `gateway_id` in D1
+3. Verifies `HMAC-SHA256(auth_token, GATEWAY_TOKEN_SALT) == auth_token_hash`
+4. On match: upgrades to WebSocket, routes to `GATEWAY_HUB.get(env.GATEWAY_HUB.idFromName(gateway_id))`
+
+No separate `X-Gateway-ID` header is needed. The gateway binary constructs its WS URL as `strings.TrimRight(GATEWAY_CP_URL, "/") + "/" + GATEWAY_ID` at startup.
 
 ---
 
 ## GatewayHub Durable Object
 
-One DO instance per gateway, keyed by `gateway_id`. This is the core of M2.
+One DO instance per gateway, keyed by `gateway_id` via `idFromName`. This is the core of M2.
 
 ### State
 
 ```typescript
-// In-memory (reset on DO restart)
-gatewaySocket: WebSocket | null           // the gateway's WS
-subscribers: Map<string, Set<WebSocket>>  // sessionId → browser WS clients
-lastActivity: Map<string, number>         // clientWS → last heartbeat (ms)
+// In-memory (reset on DO cold start; gateway reconnect restores live state)
+gatewaySocket: WebSocket | null
 
-// Durable storage (DO storage API)
-// Not needed for MVP – gateway reconnects and resends snapshots
+// sessionId → set of subscribed browser WebSockets
+subscribers: Map<string, Set<WebSocket>>
+
+// Pending commands awaiting gateway ack: request_id → resolver
+pending: Map<string, {
+  resolve: (ack: AckEvent) => void,
+  reject:  (err: Error) => void,
+  startedAt: number,      // Date.now()
+  sourceSocket: WebSocket | null,  // browser WS to reply to, null for HTTP callers
+}>
+
+// Last heartbeat per browser WS (ms timestamp), for idle cleanup
+lastActivity: Map<WebSocket, number>
 ```
 
-### Connections accepted
+### Gateway WS (`/gw/connect/:gateway_id`)
 
-**Gateway WS** (`/gw/connect`, routed here by Worker):
-- Validated upstream by Worker (auth token check against hashed token in D1)
-- On open: store socket, update `Gateway.connected = 1`, `last_seen_at` in D1
-- On text message: parse event type:
-  - `gateway.hello` → update D1 `Gateway.version`
-  - `gateway.health` → update D1 `Gateway.last_seen_at`, fan-out to any health subscriber
-  - `session.started` / `session.ended` / `session.error` → update D1 Session status, notify subscriber
-  - `session.snapshot` → send to matching session subscribers
-  - `ack` → forward to originating subscriber (if tracked)
-  - `ssh.keys` / `file.content.*` / `agent.installed` / `gateway.updated` → forward to subscriber
-- On binary message: decode `session_id` from frame header, fan-out to `subscribers[session_id]`
-- On close: `Gateway.connected = 0`; start 30s reconnect grace period before marking offline
+Validated upstream by Worker (auth check). On open: store socket, update `Gateway.connected = 1` and `last_seen_at` in D1.
 
-**Web client WS** (`/vps/:id/terminal?session_id=...`, routed here by Worker):
-- Validated upstream (session auth cookie)
-- On open: add to `subscribers[session_id]`; request snapshot from gateway
-- On text message from client (`session.input`, `session.resize`, `session.ack`) → forward to gateway WS
-- On ping / any message: update `lastActivity[ws]`
-- On close: remove from subscribers
-- **Idle cleanup goroutine**: every 60s, close subscriber WS connections silent for > 10 minutes
+On message (text):
+- `gateway.hello` → update D1 `Gateway.version`
+- `gateway.health` → update D1 `Gateway.last_seen_at`
+- `ack` → resolve or reject `pending[request_id]`; forward ack to `sourceSocket` if set
+- `session.started` / `session.ended` / `session.error` → update D1 Session status; fan-out to `subscribers[session_id]`
+- `session.snapshot` → fan-out to `subscribers[session_id]`
+- `ssh.keys` / `file.content.*` / `agent.installed` / `gateway.updated` → forward via `pending[request_id].sourceSocket`
 
-### Command relay (CP → gateway)
+On message (binary): decode `session_id` from frame header; fan-out raw bytes to every socket in `subscribers[session_id]`.
 
-All HTTP-triggered gateway commands (session.create, session.end, ssh.*, file.*) go through the DO:
+On close: set `Gateway.connected = 0` in D1. Reject all entries in `pending` with `Error("gateway disconnected")`. Start 30s grace period; if not reconnected, mark gateway offline in D1.
 
-```
-Worker handler
-  → DO stub.fetch("/cmd", { body: command JSON })
-  → DO writes to gatewaySocket
-  → returns ack or timeout error
-```
+### Browser WS (`/vps/:id/terminal?session_id=:sid`)
 
-Timeout: 10s. If no ack received, return 504 to caller.
+Validated upstream (session cookie). On open: add to `subscribers[session_id]`, record `lastActivity[ws] = Date.now()`, request snapshot from gateway via `sendCommand`.
 
-### Provisioning timeout
+On message from browser (`session.input`, `session.resize`, `session.ack`): update `lastActivity[ws]`; call `sendCommand` to relay to gateway.
 
-When a VPS is created, Worker schedules a `waitUntil` that:
-1. Waits 10 minutes for `gateway.hello` (polls D1 `Gateway.connected`)
-2. If not received: sets `VPS.status = 'provisioning_timeout'`
+On close: remove from `subscribers[session_id]` and `lastActivity`.
 
----
+**Idle cleanup** (scheduled interval via `setInterval` at DO startup, every 60s): close browser WebSockets where `Date.now() - lastActivity[ws] > 600_000` (10 minutes), then remove from maps.
 
-## DO OAuth flow
+### Command relay (`sendCommand`)
 
-```
-User clicks "Connect DigitalOcean"
-  → GET /auth/do
-  → Worker generates state nonce, stores in KV (TTL 10 min)
-  → Redirect to https://cloud.digitalocean.com/v1/oauth/authorize?
-      client_id=...&redirect_uri=...&scope=read+write&state=...
+All HTTP-triggered gateway commands and browser WS commands go through:
 
-DigitalOcean redirects to /auth/do/callback?code=...&state=...
-  → Worker validates state from KV (delete after use)
-  → POST https://cloud.digitalocean.com/v1/oauth/token (code exchange)
-  → Store access_token + refresh_token in D1 do_connections
-  → Redirect to /dashboard
+```typescript
+async function sendCommand(
+  cmd: Command,
+  sourceSocket: WebSocket | null = null,
+  timeoutMs = 10_000,
+): Promise<AckEvent> {
+  if (!gatewaySocket) throw new Error("gateway not connected");
+
+  return new Promise((resolve, reject) => {
+    pending.set(cmd.request_id, { resolve, reject, startedAt: Date.now(), sourceSocket });
+
+    // Timeout cleanup
+    setTimeout(() => {
+      if (pending.has(cmd.request_id)) {
+        pending.delete(cmd.request_id);
+        reject(new Error(`command ${cmd.request_id} timed out after ${timeoutMs}ms`));
+      }
+    }, timeoutMs);
+
+    gatewaySocket.send(JSON.stringify(cmd));
+  });
+}
 ```
 
-Token refresh: called by VPS API handlers when DO API returns 401. Exchanges refresh_token for new access_token, updates D1.
+HTTP callers (VPS route handlers) call the DO via `stub.fetch("/cmd", { body })` which internally calls `sendCommand` and awaits the ack before returning a response.
 
 ---
 
@@ -282,57 +347,102 @@ Token refresh: called by VPS API handlers when DO API returns 401. Exchanges ref
 ```
 POST /vps { region, size }
   1. Verify user has DO connection (D1)
-  2. Generate: vps_id, gateway_id, auth_token (random 32 bytes, store hash in D1)
+  2. Generate: vps_id (nanoid), gateway_id (nanoid), auth_token (32 random bytes hex)
+     Store auth_token_hash = HMAC-SHA256(auth_token, GATEWAY_TOKEN_SALT) in D1
   3. Build cloud-init userdata:
        GATEWAY_ID=<gateway_id>
-       GATEWAY_AUTH_TOKEN=<auth_token_plaintext>  # written to /etc/chatcode/gateway.env
+       GATEWAY_AUTH_TOKEN=<auth_token_plaintext>
        GATEWAY_CP_URL=wss://cp.chatcode.dev/gw/connect
        GATEWAY_VERSION=<current_release_tag>
-  4. POST /v2/droplets to DO API
-  5. Write VPS + Gateway rows to D1 (status='provisioning')
-  6. Return { vps_id, status: 'provisioning' }
-  7. Background (waitUntil): poll for gateway.hello → timeout after 10 min
+  4. Decrypt DO access_token from D1
+  5. POST /v2/droplets to DO API
+  6. Write VPS row (status='provisioning', provisioning_deadline_at=now+600) + Gateway row to D1
+  7. Return { vps_id, status: 'provisioning' }
 ```
+
+**Provisioning timeout** is handled by a Scheduled Worker (cron `* * * * *`), not by `waitUntil`. Every minute:
+
+```sql
+SELECT id FROM vps
+WHERE status = 'provisioning'
+  AND provisioning_deadline_at < unixepoch()
+```
+
+For each match, check `gateways.connected`. If still `0`, set `vps.status = 'provisioning_timeout'`. This is durable across Worker restarts and requires no in-memory state.
 
 ---
 
-## Gateway auth
+## VPS destroy flow
 
-Gateways authenticate the WS upgrade with `Authorization: Bearer <auth_token>`.
+Ordered to avoid FK failures and to close the gateway WS cleanly before rows are gone:
 
-The Worker:
-1. Extracts gateway_id from a header (`X-Gateway-ID`) set by the gateway
-2. Looks up `Gateway` in D1 by `gateway_id`
-3. Compares `HMAC-SHA256(auth_token, GATEWAY_TOKEN_SALT)` against stored hash
-4. On match: upgrades WS, routes to `GATEWAY_HUB.get(env.GATEWAY_HUB.idFromName(gateway_id))`
+```
+DELETE /vps/:id
+  1. Auth check: vps.user_id == authenticated user
+  2. Signal GatewayHub DO to close gateway WS (stub.fetch("/shutdown"))
+  3. D1 transaction:
+       DELETE FROM authorized_keys WHERE vps_id = :id
+       DELETE FROM sessions       WHERE vps_id = :id
+       DELETE FROM gateways       WHERE vps_id = :id
+       DELETE FROM vps            WHERE id = :id
+  4. Decrypt DO access_token from D1
+  5. DELETE /v2/droplets/:droplet_id via DO API
+  6. Return 204
+```
+
+ON DELETE CASCADE is present as a safety net but the explicit ordered delete is canonical.
+
+---
+
+## DO OAuth flow
+
+```
+GET /auth/do
+  → generate state nonce (16 random bytes hex), store in KV (TTL 10 min)
+  → redirect to https://cloud.digitalocean.com/v1/oauth/authorize?
+      client_id=...&redirect_uri=...&scope=read+write&state=<nonce>
+
+GET /auth/do/callback?code=...&state=...
+  → validate state from KV (delete after use; reject if missing)
+  → POST /v1/oauth/token to exchange code for tokens
+  → encrypt access_token + refresh_token with DO_TOKEN_KEK (AES-GCM)
+  → upsert do_connections row in D1
+  → issue session cookie
+  → redirect to /dashboard
+```
+
+Token refresh: called by VPS route handlers when DO API returns 401. Decrypts current refresh_token, exchanges for new tokens, re-encrypts and updates D1.
 
 ---
 
 ## Implementation order
 
 1. **Scaffold** – `package.json`, `tsconfig.json`, `wrangler.toml`, `src/index.ts` (stub router)
-2. **D1 migrations** – `0001_initial.sql` + migration runner
+2. **D1 migrations** – `0001_initial.sql` + `npm run migrate` scripts
 3. **`db/schema.ts`** – typed D1 query helpers for every table
-4. **`lib/do-api.ts`** – DigitalOcean API client (droplet CRUD, power actions, token refresh)
-5. **`lib/auth.ts`** – JWT session cookie sign/verify; gateway token hash check
-6. **`routes/auth.ts`** – DO OAuth connect + callback + disconnect
-7. **`routes/vps.ts`** – VPS create/list/get/destroy/power + provisioning flow
-8. **`GatewayHub`** – gateway WS + subscriber fan-out + command relay + idle cleanup
-9. **`routes/sessions.ts`** – session CRUD + WS terminal upgrade → GatewayHub subscriber
-10. **Provisioning timeout** – `waitUntil` background check
-11. **Tests** – miniflare-based unit tests for DO, vps, sessions routes
+4. **`lib/do-tokens.ts`** – AES-GCM encrypt/decrypt for DO OAuth tokens
+5. **`lib/auth.ts`** – session cookie sign/verify; gateway HMAC token check; `AUTH_MODE=dev` passthrough
+6. **`lib/do-api.ts`** – DigitalOcean API client (droplet CRUD, power actions, token refresh)
+7. **`routes/auth.ts`** – DO OAuth connect + callback + disconnect
+8. **`routes/vps.ts`** – VPS create/list/get/destroy/power + provisioning flow
+9. **`GatewayHub`** – gateway WS + pending map + subscriber fan-out + sendCommand + idle cleanup + shutdown
+10. **`routes/sessions.ts`** – session CRUD + WS terminal upgrade → GatewayHub subscriber
+11. **Scheduled Worker** – provisioning timeout check (cron every 1 min)
+12. **Tests** – miniflare-based unit tests for DO, vps, sessions routes
 
 ---
 
 ## Key decisions
 
-- **DO keyed by `gateway_id`** (not vps_id) – gateway_id is stable, vps could be reprovisioned
-- **Auth token as plaintext in gateway env, stored hashed in D1** – compromise of D1 doesn't yield usable tokens
-- **No DO persistent storage** – gateway resends snapshots on reconnect; DO state is pure in-memory
-- **Command relay via DO `fetch()`** – Workers call the DO as an HTTP stub; DO writes to gateway WS synchronously; ack is awaited with 10s timeout
-- **Web terminal WS lives on the DO** – browser connects directly to the DO (via Worker upgrade), not to a separate WS server
-- **Session auth via HttpOnly JWT cookie** – set at login (M3); validated in Worker before routing to DO; M2 stubs this with a placeholder that always passes for dev
-- **Single region** – AMS3 for droplets; Workers/DO are global but accessed from AMS3 gateway
+- **Gateway ID in URL path** – `GET /gw/connect/:gateway_id`; Worker extracts ID from path, no extra header needed. Gateway binary constructs URL as `GATEWAY_CP_URL + "/" + GATEWAY_ID`.
+- **DO keyed by `gateway_id`** via `idFromName` – stable across VPS reprovisioning.
+- **Auth token: plaintext in gateway env, HMAC hash in D1** – compromising D1 yields hashes only.
+- **DO OAuth tokens: AES-GCM encrypted in D1 with Wrangler-secret KEK** – compromising D1 yields ciphertext only. `token_key_version` enables zero-downtime KEK rotation.
+- **Pending map keyed by `request_id`** – deterministic ack routing; all pending entries rejected on gateway disconnect; 10s per-entry timeout.
+- **Provisioning timeout via Scheduled Worker + `provisioning_deadline_at`** – durable, survives Worker restarts, requires no in-memory state.
+- **No DO persistent storage** – gateway resends snapshots on reconnect; all durable state lives in D1.
+- **Auth: HttpOnly HMAC cookie in prod, `X-Dev-User` only when `AUTH_MODE=dev`** – no global auth bypass in any non-dev environment.
+- **Ordered explicit deletes on VPS destroy** – even though `ON DELETE CASCADE` is defined, explicit ordering ensures DO WS is shut down before rows disappear.
 
 ---
 
@@ -343,34 +453,36 @@ cd packages/control-plane
 
 # First time
 npx wrangler d1 create chatcode --local
-npx wrangler d1 migrations apply chatcode --local
+npm run migrate          # applies migrations against local D1
 
-# Dev server (emulates D1 + KV + DO locally)
-npm run dev     # wrangler dev --local
+# Dev server (emulates D1 + KV + DO locally via miniflare)
+npm run dev              # wrangler dev --local
 
-# Run gateway against local CP
+# Test against local CP with real gateway
 cd ../gateway
 GATEWAY_CP_URL=ws://localhost:8787/gw/connect \
   GATEWAY_ID=gw-dev \
   GATEWAY_AUTH_TOKEN=devtoken \
   ./gateway
-```
 
-For testing the gateway connection in dev, the auth middleware can be bypassed by checking `ENVIRONMENT=development` in `wrangler.toml` vars.
+# Auth in dev
+# Set [vars] AUTH_MODE = "dev" in wrangler.toml (local only, not committed to prod config)
+# Then pass X-Dev-User: <user_id> header in requests
+```
 
 ---
 
 ## Testing strategy
 
-- **Unit (vitest + miniflare)**: GatewayHub state transitions, D1 query helpers, DO API client (mock fetch), auth token hashing
-- **Integration (wrangler dev)**: full flow with real gateway binary connecting to local CP
-- **E2E**: deploy to a Cloudflare staging environment, provision a real DO droplet, verify full session lifecycle
+- **Unit (vitest + miniflare)**: GatewayHub state transitions (pending map, fan-out, disconnect cleanup), D1 query helpers, DO API client (mock fetch), auth token/cookie sign/verify, AES-GCM encrypt/decrypt round-trip
+- **Integration (wrangler dev)**: full flow with real gateway binary connecting to local CP over WS; provision a VPS record manually, send session.create, verify output fan-out
+- **E2E**: deploy to Cloudflare staging environment, provision a real DO droplet via cloud-init, verify full session lifecycle from browser → CP → gateway → tmux
 
 ---
 
 ## What M2 does NOT include
 
-- Magic link auth (M3) – M2 stubs auth with a dev passthrough
+- Magic link auth (M3) – DO OAuth callback sets the session cookie; users reach it only after connecting DigitalOcean
 - React web UI (M4)
 - SSH key UI (M4)
 - File transfer UI (M4)

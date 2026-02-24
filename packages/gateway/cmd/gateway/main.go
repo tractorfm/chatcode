@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
+	"strings"
 	"syscall"
 	"time"
 
@@ -75,9 +76,12 @@ func main() {
 		return g.wsClient.SendJSON(ctx, v)
 	})
 
-	// Create WS client
+	// Create WS client.
+	// URL format: <CPURL>/<gateway_id> so the Worker can extract the ID from the path
+	// and route to the correct GatewayHub DO without a separate header.
+	wsURL := strings.TrimRight(cfg.CPURL, "/") + "/" + cfg.GatewayID
 	g.wsClient = ws.NewClient(
-		cfg.CPURL,
+		wsURL,
 		cfg.AuthToken,
 		g.onTextFrame,
 		nil, // gateway doesn't receive binary frames
