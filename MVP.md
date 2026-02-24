@@ -154,51 +154,59 @@ Evolution note (expected, not emergency):
 
 #### Binary output frame (MVP)
 - `kind` (1 byte): `0x01` terminal output
-- `session_id` (4 bytes uint32 BE)
-- `seq` (4 bytes uint32 BE)
+- `session_id_len` (1 byte uint8)
+- `session_id` (`session_id_len` bytes, UTF-8)
+- `seq` (8 bytes uint64 BE)
 - `payload` (remaining): raw PTY bytes
 
 ### Reliability
-- Client sends periodic `ack {session_id, seq}` (text frame) for last received seq.
-- Reconnect: **gateway** generates the snapshot (via tmux `capture-pane` / screen dump — it is the source of truth closest to PTY). The snapshot is sent as a text frame `session.snapshot {rows, cols, text}` and proxied through the DO to the web client before resuming live binary bytes.
+- Client sends periodic `session.ack {schema_version, request_id, session_id, seq}` text frames for last received seq.
+- Reconnect: **gateway** generates the snapshot (via tmux `capture-pane` / screen dump — it is the source of truth closest to PTY). The snapshot is sent as a text frame `session.snapshot {schema_version, request_id?, session_id, cols, rows, content}` before live binary bytes resume.
 
 ### Backpressure & batching
 - Gateway batches output (20–100ms).
 - Bounded buffer + “latest wins” drop policy under load.
 
 ### Commands (cloud → gateway) – JSON
-- `session.create {schema_version, session_id, tmux_name, agent_type, workdir, agent_config?}`
-- `session.input {schema_version, session_id, data}`
-- `session.resize {schema_version, session_id, cols, rows}`
-- `session.end {schema_version, session_id}`
-- `session.ack {schema_version, session_id, seq}` (web client → CP → gateway; CP/DO proxies transparently, gateway is source of truth for seq state)
+- `session.create {schema_version, request_id, session_id, name, workdir, agent?, agent_config?, env?}`
+- `session.input {schema_version, request_id, session_id, data}`
+- `session.resize {schema_version, request_id, session_id, cols, rows}`
+- `session.end {schema_version, request_id, session_id}`
+- `session.ack {schema_version, request_id, session_id, seq}`
+- `session.snapshot {schema_version, request_id, session_id}`
 
-- `ssh.authorize {schema_version, public_key, label, expires_at?}`
-- `ssh.revoke {schema_version, fingerprint}`
-- `ssh.list {schema_version}`
+- `ssh.authorize {schema_version, request_id, public_key, label, expires_at?}`
+- `ssh.revoke {schema_version, request_id, fingerprint}`
+- `ssh.list {schema_version, request_id}`
 
-- `file.upload.begin {schema_version, session_id, filename, dest_path, size}`
-- `file.upload.chunk {schema_version, upload_id, seq, data_b64}`
-- `file.upload.end {schema_version, upload_id}`
+- `file.upload.begin {schema_version, request_id, transfer_id, dest_path, size, total_chunks}`
+- `file.upload.chunk {schema_version, request_id, transfer_id, seq, data}`
+- `file.upload.end {schema_version, request_id, transfer_id}`
 
-- `file.download {schema_version, session_id, path}`
+- `file.download {schema_version, request_id, transfer_id, path}`
+- `file.cancel {schema_version, request_id, transfer_id}`
+- `agents.install {schema_version, request_id, agent}`
+- `gateway.update {schema_version, request_id, url, sha256, version}`
 
 ### Events (gateway → cloud) – JSON
-- `gateway.hello {schema_version, gateway_id, version}`
-- `gateway.health {schema_version, gateway_id, cpu, mem, disk, uptime, last_activity_at}`
+- `ack {schema_version, request_id, ok, error?}`
+- `gateway.hello {schema_version, gateway_id, version, hostname, go_version?}`
+- `gateway.health {schema_version, gateway_id, timestamp, cpu_percent?, ram_used_bytes?, ram_total_bytes?, disk_used_bytes?, disk_total_bytes?, uptime_seconds?, active_sessions[]}`
 - `gateway.offline {schema_version, gateway_id, since}` (emitted by CP when WS lost)
 
-- `session.started {schema_version, session_id}`
-- `session.ended {schema_version, session_id, reason}`
+- `session.started {schema_version, request_id, session_id, pid?}`
+- `session.ended {schema_version, session_id, exit_code?}`
 - `session.error {schema_version, session_id, error}`
-- `session.snapshot {schema_version, session_id, cols, rows, text}`
+- `session.snapshot {schema_version, request_id?, session_id, cols?, rows?, content}`
 
-- `ssh.keys {schema_version, keys:[{fingerprint,label,type,added_at,expires_at?}]}`
+- `ssh.keys {schema_version, request_id, keys:[{fingerprint,label,algorithm,added_at?,expires_at?}]}`
 
-- `file.content.begin {schema_version, download_id, filename, size}`
-- `file.content.chunk {schema_version, download_id, seq, data_b64}`
-- `file.content.end {schema_version, download_id}`
+- `file.content.begin {schema_version, transfer_id, path, size, total_chunks}`
+- `file.content.chunk {schema_version, transfer_id, seq, data}`
+- `file.content.end {schema_version, transfer_id}`
 - `file.error {schema_version, session_id, error}`
+- `agent.installed {schema_version, request_id, agent, version?}`
+- `gateway.updated {schema_version, request_id, version}`
 
 Note: file transfer is chunked to avoid large frame limits.
 
@@ -378,4 +386,3 @@ UI copy: "Compute billing stops. Storage and reserved IP continue to be billed. 
 - Multi-droplet UI.
 - Advanced prompt parsing → Telegram buttons.
 - Harden sudo policy (replace unrestricted sudo with safer admin helper).
-
