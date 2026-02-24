@@ -6,9 +6,13 @@
   "definitions": {
     "BaseCommand": {
       "type": "object",
-      "required": ["type", "request_id"],
+      "required": ["type", "schema_version", "request_id"],
       "properties": {
         "type": { "type": "string" },
+        "schema_version": {
+          "type": "string",
+          "description": "Protocol schema version, e.g. \"1\""
+        },
         "request_id": {
           "type": "string",
           "description": "Unique ID echoed back in the ack/response"
@@ -76,6 +80,16 @@
         "session_id": { "type": "string" }
       },
       "required": ["type", "request_id", "session_id"]
+    },
+
+    "SessionAck": {
+      "allOf": [{ "$ref": "#/definitions/BaseCommand" }],
+      "properties": {
+        "type": { "const": "session.ack" },
+        "session_id": { "type": "string" },
+        "seq": { "type": "integer", "minimum": 0 }
+      },
+      "required": ["type", "request_id", "session_id", "seq"]
     },
 
     "SessionSnapshot": {
@@ -202,6 +216,7 @@
     { "$ref": "#/definitions/SessionInput" },
     { "$ref": "#/definitions/SessionResize" },
     { "$ref": "#/definitions/SessionEnd" },
+    { "$ref": "#/definitions/SessionAck" },
     { "$ref": "#/definitions/SessionSnapshot" },
     { "$ref": "#/definitions/SSHAuthorize" },
     { "$ref": "#/definitions/SSHRevoke" },

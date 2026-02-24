@@ -11,14 +11,21 @@
 
 export interface BaseCommand {
   type: string;
+  schema_version: string;
   request_id: string;
 }
 
 export interface Ack {
   type: "ack";
+  schema_version: string;
   request_id: string;
   ok: boolean;
   error?: string;
+}
+
+export interface BaseEvent {
+  type: string;
+  schema_version: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -55,6 +62,12 @@ export interface SessionResize extends BaseCommand {
 export interface SessionEnd extends BaseCommand {
   type: "session.end";
   session_id: string;
+}
+
+export interface SessionAck extends BaseCommand {
+  type: "session.ack";
+  session_id: string;
+  seq: number;
 }
 
 export interface SessionSnapshot extends BaseCommand {
@@ -128,6 +141,7 @@ export type Command =
   | SessionInput
   | SessionResize
   | SessionEnd
+  | SessionAck
   | SessionSnapshot
   | SSHAuthorize
   | SSHRevoke
@@ -144,7 +158,7 @@ export type Command =
 // Events: gateway → control plane (JSON text frames)
 // ---------------------------------------------------------------------------
 
-export interface GatewayHello {
+export interface GatewayHello extends BaseEvent {
   type: "gateway.hello";
   gateway_id: string;
   version: string;
@@ -157,7 +171,7 @@ export interface ActiveSession {
   last_activity_at: string;
 }
 
-export interface GatewayHealth {
+export interface GatewayHealth extends BaseEvent {
   type: "gateway.health";
   gateway_id: string;
   timestamp: string;
@@ -170,26 +184,26 @@ export interface GatewayHealth {
   active_sessions: ActiveSession[];
 }
 
-export interface SessionStarted {
+export interface SessionStarted extends BaseEvent {
   type: "session.started";
   request_id: string;
   session_id: string;
   pid?: number;
 }
 
-export interface SessionEnded {
+export interface SessionEnded extends BaseEvent {
   type: "session.ended";
   session_id: string;
   exit_code?: number;
 }
 
-export interface SessionError {
+export interface SessionError extends BaseEvent {
   type: "session.error";
   session_id: string;
   error: string;
 }
 
-export interface SessionSnapshotEvent {
+export interface SessionSnapshotEvent extends BaseEvent {
   type: "session.snapshot";
   request_id?: string;
   session_id: string;
@@ -206,13 +220,13 @@ export interface SSHKey {
   expires_at?: string;
 }
 
-export interface SSHKeyList {
+export interface SSHKeyList extends BaseEvent {
   type: "ssh.keys";
   request_id: string;
   keys: SSHKey[];
 }
 
-export interface FileContentBegin {
+export interface FileContentBegin extends BaseEvent {
   type: "file.content.begin";
   transfer_id: string;
   path: string;
@@ -220,7 +234,7 @@ export interface FileContentBegin {
   total_chunks: number;
 }
 
-export interface FileContentChunk {
+export interface FileContentChunk extends BaseEvent {
   type: "file.content.chunk";
   transfer_id: string;
   seq: number;
@@ -228,19 +242,19 @@ export interface FileContentChunk {
   data: string;
 }
 
-export interface FileContentEnd {
+export interface FileContentEnd extends BaseEvent {
   type: "file.content.end";
   transfer_id: string;
 }
 
-export interface AgentInstalled {
+export interface AgentInstalled extends BaseEvent {
   type: "agent.installed";
   request_id: string;
   agent: string;
   version?: string;
 }
 
-export interface GatewayUpdated {
+export interface GatewayUpdated extends BaseEvent {
   type: "gateway.updated";
   request_id: string;
   version: string;

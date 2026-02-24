@@ -6,9 +6,13 @@
   "definitions": {
     "BaseEvent": {
       "type": "object",
-      "required": ["type"],
+      "required": ["type", "schema_version"],
       "properties": {
-        "type": { "type": "string" }
+        "type": { "type": "string" },
+        "schema_version": {
+          "type": "string",
+          "description": "Protocol schema version, e.g. \"1\""
+        }
       }
     },
 

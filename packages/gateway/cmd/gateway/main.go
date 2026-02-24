@@ -32,6 +32,8 @@ var (
 	BuildTime = "unknown"
 )
 
+const schemaVersion = "1"
+
 func main() {
 	configFile := flag.String("config", "", "Path to JSON config file (optional; env vars take precedence)")
 	flag.Parse()
@@ -142,11 +144,12 @@ func (g *gateway) runWSWithHello(ctx context.Context) {
 func (g *gateway) sendHello(ctx context.Context) {
 	hostname, _ := os.Hostname()
 	hello := map[string]any{
-		"type":       "gateway.hello",
-		"gateway_id": g.cfg.GatewayID,
-		"version":    Version,
-		"hostname":   hostname,
-		"go_version": runtime.Version(),
+		"type":           "gateway.hello",
+		"schema_version": schemaVersion,
+		"gateway_id":     g.cfg.GatewayID,
+		"version":        Version,
+		"hostname":       hostname,
+		"go_version":     runtime.Version(),
 	}
 	if err := g.wsClient.SendJSON(ctx, hello); err != nil {
 		g.log.Warn("send hello failed", "err", err)
@@ -165,7 +168,7 @@ func (g *gateway) sendSnapshots(ctx context.Context) {
 		if err != nil {
 			continue
 		}
-		g.wsClient.SendJSON(ctx, map[string]any{
+		g.sendEvent(ctx, map[string]any{
 			"type":       "session.snapshot",
 			"session_id": s.SessionID,
 			"content":    content,
@@ -196,6 +199,8 @@ func (g *gateway) onTextFrame(ctx context.Context, raw json.RawMessage) {
 		err = g.handleSessionResize(ctx, raw)
 	case "session.end":
 		err = g.handleSessionEnd(ctx, raw)
+	case "session.ack":
+		err = g.handleSessionAck(ctx, raw)
 	case "session.snapshot":
 		err = g.handleSessionSnapshot(ctx, raw)
 	case "ssh.authorize":
@@ -232,9 +237,10 @@ func (g *gateway) onTextFrame(ctx context.Context, raw json.RawMessage) {
 
 func (g *gateway) sendAck(ctx context.Context, requestID string, ok bool, errMsg string) {
 	ack := map[string]any{
-		"type":       "ack",
-		"request_id": requestID,
-		"ok":         ok,
+		"type":           "ack",
+		"schema_version": schemaVersion,
+		"request_id":     requestID,
+		"ok":             ok,
 	}
 	if errMsg != "" {
 		ack["error"] = errMsg
@@ -280,7 +286,7 @@ func (g *gateway) handleSessionCreate(ctx context.Context, raw json.RawMessage) 
 	}
 	_ = s
 
-	g.wsClient.SendJSON(ctx, map[string]any{
+	g.sendEvent(ctx, map[string]any{
 		"type":       "session.started",
 		"request_id": cmd.RequestID,
 		"session_id": cmd.SessionID,
@@ -344,10 +350,27 @@ func (g *gateway) handleSessionEnd(ctx context.Context, raw json.RawMessage) err
 	if err := g.sessions.End(cmd.SessionID); err != nil {
 		return err
 	}
-	g.wsClient.SendJSON(ctx, map[string]any{
+	g.sendEvent(ctx, map[string]any{
 		"type":       "session.ended",
 		"session_id": cmd.SessionID,
 	})
+	return nil
+}
+
+func (g *gateway) handleSessionAck(ctx context.Context, raw json.RawMessage) error {
+	var cmd struct {
+		RequestID string `json:"request_id"`
+		SessionID string `json:"session_id"`
+		Seq       uint64 `json:"seq"`
+	}
+	if err := json.Unmarshal(raw, &cmd); err != nil {
+		return err
+	}
+	if cmd.SessionID == "" {
+		return fmt.Errorf("session_id is required")
+	}
+	// Accepted for protocol compatibility; M1 replay behavior is snapshot-based.
+	g.sendAck(ctx, cmd.RequestID, true, "")
 	return nil
 }
 
@@ -367,7 +390,7 @@ func (g *gateway) handleSessionSnapshot(ctx context.Context, raw json.RawMessage
 	if err != nil {
 		return err
 	}
-	g.wsClient.SendJSON(ctx, map[string]any{
+	g.sendEvent(ctx, map[string]any{
 		"type":       "session.snapshot",
 		"request_id": cmd.RequestID,
 		"session_id": cmd.SessionID,
@@ -435,7 +458,7 @@ func (g *gateway) handleSSHList(ctx context.Context, raw json.RawMessage) error 
 		}
 		keys = append(keys, k)
 	}
-	g.wsClient.SendJSON(ctx, map[string]any{
+	g.sendEvent(ctx, map[string]any{
 		"type":       "ssh.keys",
 		"request_id": cmd.RequestID,
 		"keys":       keys,
@@ -540,7 +563,7 @@ func (g *gateway) handleAgentsInstall(ctx context.Context, raw json.RawMessage) 
 			g.sendAck(ctx, cmd.RequestID, false, err.Error())
 			return
 		}
-		g.wsClient.SendJSON(ctx, map[string]any{
+		g.sendEvent(ctx, map[string]any{
 			"type":       "agent.installed",
 			"request_id": cmd.RequestID,
 			"agent":      cmd.Agent,
@@ -567,7 +590,7 @@ func (g *gateway) handleGatewayUpdate(ctx context.Context, raw json.RawMessage) 
 		}
 		// If we get here the process is about to be replaced by systemd.
 		// Send updated event as a best-effort.
-		g.wsClient.SendJSON(ctx, map[string]any{
+		g.sendEvent(ctx, map[string]any{
 			"type":       "gateway.updated",
 			"request_id": cmd.RequestID,
 			"version":    cmd.Version,
@@ -637,7 +660,7 @@ func (g *gateway) sendHealth(ctx context.Context) {
 			"last_activity_at": s.LastActivityAt.Format(time.RFC3339),
 		})
 	}
-	g.wsClient.SendJSON(ctx, map[string]any{
+	g.sendEvent(ctx, map[string]any{
 		"type":             "gateway.health",
 		"gateway_id":       g.cfg.GatewayID,
 		"timestamp":        m.Timestamp.Format(time.RFC3339),
@@ -649,6 +672,13 @@ func (g *gateway) sendHealth(ctx context.Context) {
 		"uptime_seconds":   m.UptimeSeconds,
 		"active_sessions":  sessions,
 	})
+}
+
+func (g *gateway) sendEvent(ctx context.Context, event map[string]any) {
+	if _, ok := event["schema_version"]; !ok {
+		event["schema_version"] = schemaVersion
+	}
+	_ = g.wsClient.SendJSON(ctx, event)
 }
 
 // ----- Helpers -----

@@ -17,9 +17,10 @@ import (
 )
 
 const (
-	maxFileSize = 20 * 1024 * 1024 // 20MB
-	chunkSize   = 128 * 1024       // 128KB
-	transferTTL = 5 * time.Minute
+	maxFileSize   = 20 * 1024 * 1024 // 20MB
+	chunkSize     = 128 * 1024       // 128KB
+	transferTTL   = 5 * time.Minute
+	schemaVersion = "1"
 )
 
 // UploadState tracks an in-progress file upload.
@@ -37,13 +38,14 @@ type UploadState struct {
 
 // ChunkEvent carries a download chunk to the WebSocket sender.
 type ChunkEvent struct {
-	Type        string `json:"type"`
-	TransferID  string `json:"transfer_id"`
-	Seq         int    `json:"seq,omitempty"`
-	Data        string `json:"data,omitempty"` // base64
-	Path        string `json:"path,omitempty"`
-	Size        int64  `json:"size,omitempty"`
-	TotalChunks int    `json:"total_chunks,omitempty"`
+	SchemaVersion string `json:"schema_version"`
+	Type          string `json:"type"`
+	TransferID    string `json:"transfer_id"`
+	Seq           int    `json:"seq,omitempty"`
+	Data          string `json:"data,omitempty"` // base64
+	Path          string `json:"path,omitempty"`
+	Size          int64  `json:"size,omitempty"`
+	TotalChunks   int    `json:"total_chunks,omitempty"`
 }
 
 // Sender is a callback to push JSON frames over the WebSocket.
@@ -245,11 +247,12 @@ func (h *Handler) Download(ctx context.Context, transferID, path string) error {
 	totalChunks := int((info.Size() + int64(chunkSize) - 1) / int64(chunkSize))
 
 	if err := h.sender(ctx, ChunkEvent{
-		Type:        "file.content.begin",
-		TransferID:  transferID,
-		Path:        safePath,
-		Size:        info.Size(),
-		TotalChunks: totalChunks,
+		SchemaVersion: schemaVersion,
+		Type:          "file.content.begin",
+		TransferID:    transferID,
+		Path:          safePath,
+		Size:          info.Size(),
+		TotalChunks:   totalChunks,
 	}); err != nil {
 		return err
 	}
@@ -260,10 +263,11 @@ func (h *Handler) Download(ctx context.Context, transferID, path string) error {
 		n, err := f.Read(buf)
 		if n > 0 {
 			chunk := ChunkEvent{
-				Type:       "file.content.chunk",
-				TransferID: transferID,
-				Seq:        seq,
-				Data:       base64.StdEncoding.EncodeToString(buf[:n]),
+				SchemaVersion: schemaVersion,
+				Type:          "file.content.chunk",
+				TransferID:    transferID,
+				Seq:           seq,
+				Data:          base64.StdEncoding.EncodeToString(buf[:n]),
 			}
 			if sendErr := h.sender(ctx, chunk); sendErr != nil {
 				return sendErr
@@ -279,8 +283,9 @@ func (h *Handler) Download(ctx context.Context, transferID, path string) error {
 	}
 
 	return h.sender(ctx, ChunkEvent{
-		Type:       "file.content.end",
-		TransferID: transferID,
+		SchemaVersion: schemaVersion,
+		Type:          "file.content.end",
+		TransferID:    transferID,
 	})
 }
 
