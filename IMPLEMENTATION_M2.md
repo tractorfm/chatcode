@@ -301,8 +301,9 @@ On message (text):
 - `session.started` / `session.ended` / `session.error` → update D1 Session status; fan-out to `subscribers[session_id]`
 - `session.snapshot` → fan-out to `subscribers[session_id]`
 - `ssh.keys` / `file.content.*` / `agent.installed` / `gateway.updated` → forward via `pending[request_id].sourceSocket`
+- malformed/invalid JSON text messages: log and ignore (gateway is trusted peer in M2)
 
-On message (binary): decode `session_id` from frame header; fan-out raw bytes to every socket in `subscribers[session_id]`.
+On message (binary): enforce max payload size, decode `session_id` from frame header, fan-out raw bytes to every socket in `subscribers[session_id]` via `safeSend`.
 
 On close: set `Gateway.connected = 0` in D1. Reject all entries in `pending` with `Error("gateway disconnected")`. Start 30s grace period; if not reconnected, mark gateway offline in D1.
 
@@ -313,14 +314,27 @@ Validated upstream (session cookie). On open: add to `subscribers[session_id]`, 
 On message from browser:
 - `session.input`, `session.resize`, `session.ack`: update `lastActivity[ws]`; relay via `sendRealtime` (fire-and-forget, no pending map entry).
 - Any stateful/browser-initiated command that requires command outcome (if introduced later) goes through `sendCommand`.
+- malformed browser message policy: respond with structured error frame (`{type:"error", code:"invalid_payload", message:"..."}`) and keep socket open. Oversize payloads are rejected and socket is closed with policy violation code.
 
 On close: remove from `subscribers[session_id]` and `lastActivity`.
 
 **Idle cleanup** (scheduled interval via `setInterval` at DO startup, every 60s): close browser WebSockets where `Date.now() - lastActivity[ws] > 600_000` (10 minutes), then remove from maps.
 
-### Command relay (`sendRealtime` + `sendCommand`)
+### Command relay (`safeSend` + `sendRealtime` + `sendCommand`)
 
 Two relay paths are used:
+
+```typescript
+function safeSend(ws: WebSocket, data: string | ArrayBufferLike | ArrayBufferView): void {
+  if (ws.readyState !== WebSocket.OPEN) return;
+  try {
+    ws.send(data);
+  } catch (err) {
+    // best-effort fan-out; failures are isolated to this subscriber
+    console.warn("ws send failed", err);
+  }
+}
+```
 
 1. **Realtime path (fire-and-forget, no ack tracking)**  
 Used for high-frequency terminal traffic:
@@ -331,7 +345,7 @@ Used for high-frequency terminal traffic:
 ```typescript
 function sendRealtime(cmd: SessionInput | SessionResize | SessionAck): void {
   if (!gatewaySocket) throw new Error("gateway not connected");
-  gatewaySocket.send(JSON.stringify(cmd));
+  safeSend(gatewaySocket, JSON.stringify(cmd));
 }
 ```
 
@@ -364,12 +378,18 @@ async function sendCommand(
       }
     }, timeoutMs);
 
-    gatewaySocket.send(JSON.stringify(cmd));
+    safeSend(gatewaySocket, JSON.stringify(cmd));
   });
 }
 ```
 
 HTTP callers (VPS/session route handlers) call the DO via `stub.fetch("/cmd", { body })`, which internally calls `sendCommand` and awaits ack before returning a response.
+
+### Keepalive
+
+- Browser clients send periodic ping (~20s); GatewayHub replies pong.
+- GatewayHub closes idle/missed-heartbeat browser sockets early in addition to 10-minute activity cleanup.
+- Gateway socket liveness is still tracked via `gateway.health` and WS close events.
 
 ---
 
@@ -465,7 +485,7 @@ Race handling for concurrent refreshes (M2):
 6. **`lib/do-api.ts`** – DigitalOcean API client (droplet CRUD, power actions, token refresh)
 7. **`routes/auth.ts`** – DO OAuth connect + callback + disconnect
 8. **`routes/vps.ts`** – VPS create/list/get/destroy/power + provisioning flow
-9. **`GatewayHub`** – gateway WS + subscriber fan-out + `sendRealtime` + `sendCommand` (pending map + timeout) + idle cleanup + shutdown
+9. **`GatewayHub`** – gateway WS + safe fan-out + payload guards + malformed-frame policy + keepalive + `sendRealtime` + `sendCommand` (pending map + timeout) + idle cleanup + shutdown
 10. **`routes/sessions.ts`** – session CRUD + WS terminal upgrade → GatewayHub subscriber
 11. **Scheduled Worker** – provisioning timeout check + deleting-VPS reconciliation (cron every 1 min)
 12. **Tests** – miniflare-based unit tests for DO, vps, sessions routes
@@ -482,6 +502,10 @@ Race handling for concurrent refreshes (M2):
 - **Realtime relay is fire-and-forget** – `session.input` / `session.resize` / `session.ack` bypass pending map and timeout logic.
 - **Pending map keyed by `request_id` for ack-tracked commands only** – deterministic ack routing; all pending entries rejected on gateway disconnect; 10s per-entry timeout.
 - **Gateway token verification is timing-safe** – no direct string equality for HMAC comparison.
+- **GatewayHub fan-out uses safe send semantics** – dead subscribers are isolated; one socket failure cannot break broadcast loops.
+- **Payload guards are enforced on both WS directions** – oversized gateway/browser frames are rejected deterministically.
+- **Malformed browser frames return structured errors** – no silent drops for browser-originated invalid payloads.
+- **Keepalive (ping/pong) is explicit for browser sockets** – faster dead-connection detection than idle-timeout-only cleanup.
 - **Provisioning timeout via Scheduled Worker + `provisioning_deadline_at`** – durable, survives Worker restarts, requires no in-memory state.
 - **VPS becomes active on first successful gateway hello** – GatewayHub sets `vps.status = 'active'` (from `provisioning`) when `gateway.hello` arrives.
 - **No DO persistent storage** – gateway resends snapshots on reconnect; all durable state lives in D1.
@@ -519,7 +543,7 @@ GATEWAY_CP_URL=ws://localhost:8787/gw/connect \
 
 ## Testing strategy
 
-- **Unit (vitest + miniflare)**: GatewayHub state transitions (`sendRealtime` vs `sendCommand`, pending map, fan-out, disconnect cleanup), D1 query helpers, DO API client (mock fetch), auth token/cookie sign/verify, AES-GCM encrypt/decrypt round-trip, refresh-lock race behavior
+- **Unit (vitest + miniflare)**: GatewayHub state transitions (`sendRealtime` vs `sendCommand`, pending map, safe fan-out, disconnect cleanup), payload-size guards, malformed-browser-frame errors, keepalive ping/pong behavior, D1 query helpers, DO API client (mock fetch), auth token/cookie sign/verify, AES-GCM encrypt/decrypt round-trip, refresh-lock race behavior
 - **Integration (wrangler dev)**: full flow with real gateway binary connecting to local CP over WS; provision a VPS record manually, send session.create, verify output fan-out
 - **E2E**: deploy to Cloudflare staging environment, provision a real DO droplet via cloud-init, verify full session lifecycle from browser → CP → gateway → tmux
 

@@ -93,11 +93,16 @@ Gateway is the core — everything else depends on it. Build and test it against
 - WebSocket client with:
   - connect to CP URL
   - auto-reconnect with exponential backoff
+  - serialized write path for WS sends (single writer lock/outbox)
+  - inbound message size limits (read limit + command frame cap)
   - send `gateway.hello` on connect (include `system_info: {os, arch, cpus, ram_total, disk_total}`)
   - send `gateway.health` on interval (30s)
   - receive and dispatch JSON text frames by command type
   - receive and dispatch binary frames
-- **Test**: mock WS server in Go tests; verify hello/health/reconnect
+- malformed command handling policy:
+  - if `request_id` is present and payload is invalid, return `ack(ok=false,error=...)`
+  - if payload is malformed and request_id cannot be extracted, log + drop
+- **Test**: mock WS server in Go tests; verify hello/health/reconnect, oversize frame rejection, and concurrent send safety
 
 ### Step 2: Session manager (tmux/PTY)
 - `session.create` → start tmux session with given name + workdir
@@ -105,7 +110,10 @@ Gateway is the core — everything else depends on it. Build and test it against
   - launch agent CLI inside tmux
 - `session.input` → inject keystrokes into tmux pane (`tmux send-keys`)
 - `session.resize` → resize tmux window (`tmux resize-window`)
-- `session.end` → kill tmux session
+- `session.end` → graceful-then-force termination (do not assume one `tmux kill-session` always succeeds):
+  - attempt graceful stop first
+  - poll for exit (500ms interval, up to 3s)
+  - escalate to force kill if still alive
 - PTY output capture:
   - read from tmux pipe-pane or PTY directly
   - batch into binary frames (kind=0x01, session_id, seq, payload)
@@ -114,7 +122,7 @@ Gateway is the core — everything else depends on it. Build and test it against
 - `session.snapshot` generation:
   - `tmux capture-pane -p` → text content
   - send as JSON text frame on reconnect or on demand
-- **Test**: spin up tmux sessions, inject input, verify output capture; test snapshot
+- **Test**: spin up tmux sessions, inject input, verify output capture; test snapshot; test `session.end` escalation behavior
 
 ### Step 3: SSH key management
 - `ssh.authorize` → append public key to `~vibe/.ssh/authorized_keys` with comment label
