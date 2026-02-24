@@ -1,0 +1,27 @@
+{
+  "name": "@chatcode/control-plane",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Chatcode control plane – Cloudflare Workers + Durable Objects + D1",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "migrate": "wrangler d1 execute chatcode --local --file=src/db/migrations/0001_initial.sql",
+    "migrate:remote": "wrangler d1 execute chatcode --remote --file=src/db/migrations/0001_initial.sql",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "build": "tsc --noEmit",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@chatcode/protocol": "workspace:*",
+    "nanoid": "^5.0.9"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20241218.0",
+    "@cloudflare/vitest-pool-workers": "^0.5.36",
+    "typescript": "^5.7.3",
+    "vitest": "^2.1.8",
+    "wrangler": "^3.99.0"
+  }
+}

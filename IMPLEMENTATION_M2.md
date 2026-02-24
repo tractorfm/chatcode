@@ -8,6 +8,29 @@ M2 delivers the **control plane**: the Cloudflare Workers + Durable Objects laye
 
 ---
 
+## Implementation status (2026-02-24)
+
+### Landed
+- ✅ Control-plane package scaffold (`package.json`, `tsconfig`, `wrangler`, worker entry)
+- ✅ D1 initial migration + typed query helpers
+- ✅ Core libs (`auth`, `do-api`, `do-tokens`, `ids`)
+- ✅ Route handlers (`auth`, `vps`, `sessions`)
+- ✅ `GatewayHub` Durable Object with realtime relay + ack-tracked commands + fan-out + idle cleanup
+- ✅ Scheduled Worker reconciliation wiring in `index.ts`
+- ✅ Utility/unit tests for auth/token crypto/ids
+- ✅ Control-plane typecheck + tests pass
+
+### Hardening updates applied during review
+- ✅ GatewayHub now validates `gateway.hello.gateway_id` against the authenticated gateway id from worker routing
+- ✅ Snapshot command path resolves with snapshot payload (instead of ack-only response)
+- ✅ Event forwarding typing fixed for strict TypeScript build
+
+### Remaining M2 test work
+- Route-level tests (`auth`, `vps`, `sessions`)
+- GatewayHub behavior tests (pending map, reconnect, snapshot/file event forwarding)
+
+---
+
 ## What gets created
 
 ### `packages/control-plane/`
@@ -36,9 +59,10 @@ packages/control-plane/
 │       ├── ids.ts                # Nano ID generation
 │       └── auth.ts               # Request auth (session cookie validation)
 └── test/
-    ├── gateway-hub.test.ts       # DO unit tests (miniflare)
-    ├── vps.test.ts
-    └── sessions.test.ts
+    ├── auth.test.ts              # auth/session cookie + gateway token verification
+    ├── do-tokens.test.ts         # AES-GCM token crypto helpers
+    ├── ids.test.ts               # ID/token generation helpers
+    └── tsconfig.json
 ```
 
 ---
@@ -488,7 +512,7 @@ Race handling for concurrent refreshes (M2):
 9. **`GatewayHub`** – gateway WS + safe fan-out + payload guards + malformed-frame policy + keepalive + `sendRealtime` + `sendCommand` (pending map + timeout) + idle cleanup + shutdown
 10. **`routes/sessions.ts`** – session CRUD + WS terminal upgrade → GatewayHub subscriber
 11. **Scheduled Worker** – provisioning timeout check + deleting-VPS reconciliation (cron every 1 min)
-12. **Tests** – miniflare-based unit tests for DO, vps, sessions routes
+12. **Tests** – utility/unit tests landed (`auth`, `do-tokens`, `ids`); add miniflare route/DO tests next (`GatewayHub`, `vps`, `sessions`)
 
 ---
 
@@ -543,6 +567,7 @@ GATEWAY_CP_URL=ws://localhost:8787/gw/connect \
 
 ## Testing strategy
 
+- **Current automated coverage**: auth token/cookie sign/verify, AES-GCM encrypt/decrypt round-trip, ID/random generation utilities, control-plane typecheck/build, local D1 migration/foreign-key checks.
 - **Unit (vitest + miniflare)**: GatewayHub state transitions (`sendRealtime` vs `sendCommand`, pending map, safe fan-out, disconnect cleanup), payload-size guards, malformed-browser-frame errors, keepalive ping/pong behavior, D1 query helpers, DO API client (mock fetch), auth token/cookie sign/verify, AES-GCM encrypt/decrypt round-trip, refresh-lock race behavior
 - **Integration (wrangler dev)**: full flow with real gateway binary connecting to local CP over WS; provision a VPS record manually, send session.create, verify output fan-out
 - **E2E**: deploy to Cloudflare staging environment, provision a real DO droplet via cloud-init, verify full session lifecycle from browser → CP → gateway → tmux

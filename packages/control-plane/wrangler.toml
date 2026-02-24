@@ -1,0 +1,28 @@
+name = "chatcode-cp"
+main = "src/index.ts"
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "chatcode"
+database_id = "placeholder"
+
+[[kv_namespaces]]
+binding = "KV"
+id = "placeholder"
+
+[[durable_objects.bindings]]
+name = "GATEWAY_HUB"
+class_name = "GatewayHub"
+
+[[migrations]]
+tag = "v1"
+new_classes = ["GatewayHub"]
+
+[triggers]
+crons = ["* * * * *"]
+
+[vars]
+DO_CLIENT_ID = ""
+AUTH_MODE = "dev"

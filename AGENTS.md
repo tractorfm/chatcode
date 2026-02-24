@@ -5,7 +5,8 @@ Build the self-serve Chatcode.dev core: provision user-owned VPS, connect gatewa
 
 ## Current Priority
 - ✅ M1 complete: protocol schemas + gateway reliability.
-- Current milestone is M2: control plane (Cloudflare Workers + Durable Objects + D1).
+- ✅ M2 core implemented: control plane scaffold, D1 schema/helpers, routes, GatewayHub DO, scheduled reconciliation worker.
+- Current focus is M2 hardening: behavior validation, edge-case fixes, and broader route/DO test coverage.
 - Keep scope intentionally narrow: make "provision VPS -> connect gateway -> open terminal reliably" solid before adding broader UX surface area.
 
 ## Architecture Constraints
@@ -31,11 +32,11 @@ Build the self-serve Chatcode.dev core: provision user-owned VPS, connect gatewa
 - `packages/web`: browser UX and terminal client (later milestone).
 
 ## Development Priorities
-1. Control plane gateway registration and routing reliability.
-2. Durable Object session hub behavior and reconnect safety.
-3. D1 data model and state transitions for VPS/Gateway/session records.
+1. Control plane hardening: gateway auth/routing correctness and DO safety on reconnect/disconnect.
+2. Durable Object route/event behavior coverage (snapshot, file events, pending map, fan-out).
+3. D1 state transition correctness for provisioning/deleting reconciliation.
 4. Provisioning robustness (DO create flow, timeout/retry/error states).
-5. Keep gateway and protocol compatibility stable while M2 lands.
+5. Keep gateway and protocol compatibility stable while M2 matures.
 
 ## Workflow Rules
 - Prefer minimal dependencies, especially in `packages/gateway` (stdlib-first unless justified).
@@ -43,6 +44,7 @@ Build the self-serve Chatcode.dev core: provision user-owned VPS, connect gatewa
 - Add or update tests when behavior changes.
 - Never commit secrets or rely on `.env` values being present.
 - Keep `MVP.md` as architecture source of truth and milestone docs (`IMPLEMENTATION_M1.md`, `IMPLEMENTATION_M2.md`) as execution plans.
+- For control-plane changes, run `pnpm --filter @chatcode/control-plane test` and `pnpm --filter @chatcode/control-plane build` before merge.
 
 ## Useful Commands
 ```bash

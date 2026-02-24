@@ -5,7 +5,7 @@ The implementation repo for Chatcode.dev: a free VPS provisioning + browser term
 
 ## Milestone status
 - ✅ **M1**: Protocol schemas + Go gateway daemon
-- **M2** (current): Control plane (Cloudflare Workers + Durable Objects + D1)
+- **M2** (current): Control plane implemented; now in hardening/test-coverage phase
 - **M3**: Static landing + magic link auth
 - **M4**: Full web app (React + xterm.js)
 
@@ -41,7 +41,9 @@ packages/
 ### Control plane (M2)
 - One **GatewayHub** Durable Object per gateway, keyed by `idFromName(gateway_id)` – WS terminus + fan-out hub
 - Gateway auth: `Authorization: Bearer <token>` header; Worker verifies via timing-safe HMAC-SHA256 against hash stored in D1
+- Worker forwards authenticated `gateway_id` into GatewayHub and GatewayHub rejects mismatched `gateway.hello` payload IDs
 - `session.input` / `session.resize` / `session.ack` are **fire-and-forget** (`sendRealtime`); all other commands use ack-tracked `sendCommand` with 10s timeout and pending map
+- `session.snapshot` now resolves command path with snapshot payload (not just ack) for HTTP snapshot route behavior
 - All pending map entries rejected on gateway disconnect
 - Provisioning timeout: Scheduled Worker (cron `* * * * *`) + `provisioning_deadline_at` column in D1 – durable, no in-memory state
 - VPS status transitions: `provisioning` → `active` on first `gateway.hello`; `active` → `deleting` when destroy is initiated
