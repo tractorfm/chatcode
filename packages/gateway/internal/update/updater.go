@@ -28,6 +28,8 @@ const downloadTimeout = 5 * time.Minute
 type Updater struct {
 	binaryPath string
 	log        *slog.Logger
+	httpClient *http.Client
+	restartFn  func() error
 }
 
 // NewUpdater creates an Updater. binaryPath is the path to the running binary
@@ -36,6 +38,10 @@ func NewUpdater(binaryPath string, log *slog.Logger) *Updater {
 	return &Updater{
 		binaryPath: binaryPath,
 		log:        log,
+		httpClient: &http.Client{Timeout: downloadTimeout},
+		restartFn: func() error {
+			return exec.Command("systemctl", "restart", "chatcode-gateway").Run()
+		},
 	}
 }
 
@@ -76,17 +82,17 @@ func (u *Updater) Update(url, expectedSHA256 string) error {
 	if err := os.Rename(newPath, u.binaryPath); err != nil {
 		// Rollback
 		u.log.Error("rename failed, rolling back", "err", err)
-		if rbErr := os.Rename(prevPath, u.binaryPath); rbErr != nil {
-			u.log.Error("rollback also failed", "err", rbErr)
-		}
+		u.rollback(prevPath)
 		return fmt.Errorf("promote new binary: %w", err)
 	}
 
 	u.log.Info("binary replaced, triggering systemd restart")
 
-	// 6. Restart via systemd (non-blocking – this process will be killed)
-	if err := exec.Command("systemctl", "restart", "chatcode-gateway").Start(); err != nil {
-		u.log.Warn("systemctl restart failed (may not be running under systemd)", "err", err)
+	// 6. Restart via systemd and rollback if restart fails.
+	if err := u.restartFn(); err != nil {
+		u.log.Error("systemd restart failed, rolling back", "err", err)
+		u.rollback(prevPath)
+		return fmt.Errorf("restart service: %w", err)
 	}
 
 	return nil
@@ -94,8 +100,7 @@ func (u *Updater) Update(url, expectedSHA256 string) error {
 
 // download fetches url and saves it to dest.
 func (u *Updater) download(url, dest string) error {
-	client := &http.Client{Timeout: downloadTimeout}
-	resp, err := client.Get(url)
+	resp, err := u.httpClient.Get(url)
 	if err != nil {
 		return err
 	}
@@ -113,6 +118,12 @@ func (u *Updater) download(url, dest string) error {
 
 	_, err = io.Copy(f, resp.Body)
 	return err
+}
+
+func (u *Updater) rollback(prevPath string) {
+	if rbErr := os.Rename(prevPath, u.binaryPath); rbErr != nil {
+		u.log.Error("rollback failed", "err", rbErr)
+	}
 }
 
 // verifySHA256 checks that the file at path has the expected SHA-256 hex digest.
