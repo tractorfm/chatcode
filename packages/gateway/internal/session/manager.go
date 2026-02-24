@@ -15,6 +15,7 @@ type Manager struct {
 
 	checkInterval time.Duration
 	isAlive       func(*Session) bool
+	endSession    func(*Session) error
 }
 
 // NewManager creates a Manager with the given session limit.
@@ -25,6 +26,9 @@ func NewManager(maxSessions int) *Manager {
 		checkInterval: 1 * time.Second,
 		isAlive: func(s *Session) bool {
 			return s.isAlive()
+		},
+		endSession: func(s *Session) error {
+			return s.kill()
 		},
 	}
 }
@@ -60,17 +64,24 @@ func (m *Manager) Get(sessionID string) *Session {
 
 // End kills a session and removes it from the manager.
 func (m *Manager) End(sessionID string) error {
-	m.mu.Lock()
+	m.mu.RLock()
 	s, ok := m.sessions[sessionID]
-	if ok {
-		delete(m.sessions, sessionID)
-	}
-	m.mu.Unlock()
+	m.mu.RUnlock()
 
 	if !ok {
 		return fmt.Errorf("session %q not found", sessionID)
 	}
-	return s.kill()
+	if err := m.endSession(s); err != nil {
+		return err
+	}
+
+	m.mu.Lock()
+	current, exists := m.sessions[sessionID]
+	if exists && current == s {
+		delete(m.sessions, sessionID)
+	}
+	m.mu.Unlock()
+	return nil
 }
 
 // List returns summaries of all active sessions.

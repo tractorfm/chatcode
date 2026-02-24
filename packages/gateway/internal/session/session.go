@@ -4,8 +4,17 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strconv"
+	"strings"
 	"sync/atomic"
+	"syscall"
 	"time"
+)
+
+const (
+	terminationPollInterval = 500 * time.Millisecond
+	terminationTimeout      = 3 * time.Second
+	forceKillWait           = 500 * time.Millisecond
 )
 
 // Options configures a new session.
@@ -165,11 +174,83 @@ func (s *Session) Snapshot() (string, int, int, error) {
 // kill terminates the tmux session.
 func (s *Session) kill() error {
 	s.stopCapture()
+	panePIDs := s.listPanePIDs()
+
+	// Graceful attempt via tmux session kill.
+	if err := s.killTmuxSession(); err != nil && s.isAlive() {
+		return err
+	}
+	if s.waitForExit(terminationTimeout, terminationPollInterval) {
+		return nil
+	}
+
+	// Force underlying pane processes if tmux session is still alive.
+	s.signalPIDs(panePIDs, syscall.SIGTERM)
+	if s.waitForExit(forceKillWait, 100*time.Millisecond) {
+		return nil
+	}
+	s.signalPIDs(panePIDs, syscall.SIGKILL)
+
+	// Final best-effort tmux kill and exit check.
+	_ = s.killTmuxSession()
+	if s.waitForExit(forceKillWait, 100*time.Millisecond) {
+		return nil
+	}
+
+	return fmt.Errorf("session %q did not terminate within %s", s.opts.SessionID, terminationTimeout+2*forceKillWait)
+}
+
+func (s *Session) killTmuxSession() error {
 	cmd := exec.Command("tmux", "kill-session", "-t", s.tmuxName)
 	if out, err := cmd.CombinedOutput(); err != nil {
+		if !s.isAlive() {
+			return nil
+		}
 		return fmt.Errorf("tmux kill-session: %w: %s", err, out)
 	}
 	return nil
+}
+
+func (s *Session) waitForExit(timeout, interval time.Duration) bool {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if !s.isAlive() {
+			return true
+		}
+		time.Sleep(interval)
+	}
+	return !s.isAlive()
+}
+
+func (s *Session) listPanePIDs() []int {
+	out, err := exec.Command("tmux", "list-panes", "-t", s.tmuxName, "-F", "#{pane_pid}").Output()
+	if err != nil {
+		return nil
+	}
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	pids := make([]int, 0, len(lines))
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		pid, err := strconv.Atoi(line)
+		if err != nil || pid <= 0 {
+			continue
+		}
+		pids = append(pids, pid)
+	}
+	return pids
+}
+
+func (s *Session) signalPIDs(pids []int, sig syscall.Signal) {
+	for _, pid := range pids {
+		proc, err := os.FindProcess(pid)
+		if err != nil {
+			continue
+		}
+		_ = proc.Signal(sig)
+	}
 }
 
 func (s *Session) stopCapture() {

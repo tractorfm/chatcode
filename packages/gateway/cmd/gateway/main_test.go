@@ -53,3 +53,36 @@ func TestBuildHelloEventOmitsBootstrapTokenWhenEmpty(t *testing.T) {
 		t.Fatalf("bootstrap_token should be omitted when empty")
 	}
 }
+
+func TestExtractRequestID(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  []byte
+		want string
+	}{
+		{
+			name: "valid payload",
+			raw:  []byte(`{"type":"session.input","request_id":"req-1"}`),
+			want: "req-1",
+		},
+		{
+			name: "partially malformed payload still contains request_id",
+			raw:  []byte(`{"type":"session.input","request_id":"req-2",`),
+			want: "req-2",
+		},
+		{
+			name: "missing request_id",
+			raw:  []byte(`{"type":"session.input"}`),
+			want: "",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := extractRequestID(tc.raw)
+			if got != tc.want {
+				t.Fatalf("extractRequestID() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}

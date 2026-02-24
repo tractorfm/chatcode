@@ -1,6 +1,7 @@
 package session
 
 import (
+	"errors"
 	"os/exec"
 	"testing"
 	"time"
@@ -53,6 +54,34 @@ func TestManagerWatchSessionRemovesExitedSession(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatal("expected watcher to remove exited session")
+}
+
+func TestManagerEndKeepsSessionOnKillFailure(t *testing.T) {
+	m := NewManager(5)
+	s := &Session{}
+	m.sessions["s1"] = s
+	m.endSession = func(_ *Session) error { return errors.New("kill failed") }
+
+	if err := m.End("s1"); err == nil {
+		t.Fatal("expected end error")
+	}
+	if got := m.Get("s1"); got == nil {
+		t.Fatal("session should remain tracked when end fails")
+	}
+}
+
+func TestManagerEndRemovesSessionOnSuccess(t *testing.T) {
+	m := NewManager(5)
+	s := &Session{}
+	m.sessions["s1"] = s
+	m.endSession = func(_ *Session) error { return nil }
+
+	if err := m.End("s1"); err != nil {
+		t.Fatalf("End returned error: %v", err)
+	}
+	if got := m.Get("s1"); got != nil {
+		t.Fatal("session should be removed after successful end")
+	}
 }
 
 func TestBuildEnvIncludesHostAndSessionVars(t *testing.T) {

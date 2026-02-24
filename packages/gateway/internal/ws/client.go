@@ -18,9 +18,10 @@ import (
 )
 
 const (
-	minBackoff = 1 * time.Second
-	maxBackoff = 5 * time.Minute
-	backoffMul = 2.0
+	minBackoff           = 1 * time.Second
+	maxBackoff           = 5 * time.Minute
+	backoffMul           = 2.0
+	defaultReadLimitByte = 2 << 20 // 2 MiB
 )
 
 // TextHandler is called for every incoming JSON text frame.
@@ -39,6 +40,8 @@ type Client struct {
 
 	mu   sync.Mutex
 	conn *websocket.Conn
+
+	writeMu sync.Mutex
 
 	log *slog.Logger
 }
@@ -86,6 +89,7 @@ func (c *Client) connect(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("dial: %w", err)
 	}
+	conn.SetReadLimit(defaultReadLimitByte)
 	c.setConn(conn)
 	defer func() {
 		c.setConn(nil)
@@ -117,6 +121,9 @@ func (c *Client) readLoop(ctx context.Context, conn *websocket.Conn) error {
 
 // SendJSON sends a JSON text frame. Safe to call concurrently.
 func (c *Client) SendJSON(ctx context.Context, v any) error {
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
+
 	conn := c.getConn()
 	if conn == nil {
 		return fmt.Errorf("not connected")
@@ -126,6 +133,9 @@ func (c *Client) SendJSON(ctx context.Context, v any) error {
 
 // SendBinary sends a binary frame. Safe to call concurrently.
 func (c *Client) SendBinary(ctx context.Context, data []byte) error {
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
+
 	conn := c.getConn()
 	if conn == nil {
 		return fmt.Errorf("not connected")

@@ -59,7 +59,7 @@ func (ms *mockServer) close() {
 	ms.srv.Close()
 }
 
-func (ms *mockServer) received_ () []json.RawMessage {
+func (ms *mockServer) received_() []json.RawMessage {
 	ms.mu.Lock()
 	defer ms.mu.Unlock()
 	out := make([]json.RawMessage, len(ms.received))
@@ -207,4 +207,69 @@ func TestExponentialBackoff(t *testing.T) {
 			t.Errorf("attempt %d: got %v, want %v", tc.attempt, got, tc.want)
 		}
 	}
+}
+
+func TestClientConcurrentSendsAreSerialized(t *testing.T) {
+	ms := newMockServer(t)
+	defer ms.close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	client := NewClient(ms.wsURL(), "token", nil, nil, slog.Default())
+	runDone := make(chan struct{})
+	go func() {
+		defer close(runDone)
+		client.Run(ctx)
+	}()
+
+	select {
+	case <-ms.accept:
+	case <-ctx.Done():
+		t.Fatal("timeout waiting for connection")
+	}
+	deadline := time.Now().Add(1 * time.Second)
+	for time.Now().Before(deadline) {
+		if client.Connected() {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if !client.Connected() {
+		t.Fatal("client did not report connected state")
+	}
+
+	const sends = 40
+	var wg sync.WaitGroup
+	wg.Add(sends)
+	for i := 0; i < sends; i++ {
+		i := i
+		go func() {
+			defer wg.Done()
+			var err error
+			for attempt := 0; attempt < 5; attempt++ {
+				err = client.SendJSON(ctx, map[string]any{"type": "t", "i": i})
+				if err == nil {
+					return
+				}
+				if !strings.Contains(err.Error(), "not connected") {
+					t.Errorf("SendJSON(%d): %v", i, err)
+					return
+				}
+				time.Sleep(20 * time.Millisecond)
+			}
+			if err != nil {
+				t.Errorf("SendJSON(%d): %v", i, err)
+			}
+		}()
+	}
+	wg.Wait()
+	time.Sleep(200 * time.Millisecond)
+
+	if got := len(ms.received_()); got < sends {
+		t.Fatalf("received %d messages, want at least %d", got, sends)
+	}
+
+	cancel()
+	<-runDone
 }

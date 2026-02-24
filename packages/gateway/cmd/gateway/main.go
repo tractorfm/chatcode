@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"regexp"
 	"runtime"
 	"strings"
 	"syscall"
@@ -34,6 +35,10 @@ var (
 )
 
 const schemaVersion = "1"
+
+const maxCommandFrameBytes = 1 << 20 // 1 MiB
+
+var requestIDRegexp = regexp.MustCompile(`"request_id"\s*:\s*"([^"]+)"`)
 
 func main() {
 	configFile := flag.String("config", "", "Path to JSON config file (optional; env vars take precedence)")
@@ -200,12 +205,23 @@ func (g *gateway) sendSnapshots(ctx context.Context) {
 
 // onTextFrame dispatches incoming JSON commands from the control plane.
 func (g *gateway) onTextFrame(ctx context.Context, raw json.RawMessage) {
+	if len(raw) > maxCommandFrameBytes {
+		g.log.Warn("command payload too large", "bytes", len(raw), "max_bytes", maxCommandFrameBytes)
+		if requestID := extractRequestID(raw); requestID != "" {
+			g.sendAck(ctx, requestID, false, fmt.Sprintf("payload exceeds max size (%d bytes)", maxCommandFrameBytes))
+		}
+		return
+	}
+
 	var base struct {
 		Type      string `json:"type"`
 		RequestID string `json:"request_id"`
 	}
 	if err := json.Unmarshal(raw, &base); err != nil {
 		g.log.Warn("unparseable text frame", "err", err)
+		if requestID := extractRequestID(raw); requestID != "" {
+			g.sendAck(ctx, requestID, false, "invalid command payload")
+		}
 		return
 	}
 
@@ -707,6 +723,14 @@ func (g *gateway) sendEvent(ctx context.Context, event map[string]any) {
 		event["schema_version"] = schemaVersion
 	}
 	_ = g.wsClient.SendJSON(ctx, event)
+}
+
+func extractRequestID(raw []byte) string {
+	matches := requestIDRegexp.FindSubmatch(raw)
+	if len(matches) != 2 {
+		return ""
+	}
+	return string(matches[1])
 }
 
 // ----- Helpers -----
