@@ -252,7 +252,9 @@ Gateway URL format: `<CPURL>/<gateway_id>` (e.g. `wss://cp.chatcode.dev/gw/conne
 The gateway already sends `Authorization: Bearer <auth_token>`. The Worker:
 1. Extracts `gateway_id` from the URL path
 2. Looks up the `gateways` row by `gateway_id` in D1
-3. Verifies `HMAC-SHA256(auth_token, GATEWAY_TOKEN_SALT) == auth_token_hash`
+3. Verifies bearer token with a **timing-safe** HMAC check:
+   - compute `candidate = HMAC-SHA256(auth_token, GATEWAY_TOKEN_SALT)`
+   - compare `candidate` to `auth_token_hash` using constant-time verification (no string `==`)
 4. On match: upgrades to WebSocket, routes to `GATEWAY_HUB.get(env.GATEWAY_HUB.idFromName(gateway_id))`
 
 No separate `X-Gateway-ID` header is needed. The gateway binary constructs its WS URL as `strings.TrimRight(GATEWAY_CP_URL, "/") + "/" + GATEWAY_ID` at startup.
@@ -262,6 +264,10 @@ No separate `X-Gateway-ID` header is needed. The gateway binary constructs its W
 ## GatewayHub Durable Object
 
 One DO instance per gateway, keyed by `gateway_id` via `idFromName`. This is the core of M2.
+
+### WebSocket API mode
+
+M2 uses the **standard Durable Object WebSocket API** (event listeners) for simpler pending-map and subscriber lifecycle logic. Hibernation mode is deferred until post-M2 optimization, after control-plane behavior is stable and benchmarked.
 
 ### State
 
@@ -304,19 +310,44 @@ On close: set `Gateway.connected = 0` in D1. Reject all entries in `pending` wit
 
 Validated upstream (session cookie). On open: add to `subscribers[session_id]`, record `lastActivity[ws] = Date.now()`, request snapshot from gateway via `sendCommand`.
 
-On message from browser (`session.input`, `session.resize`, `session.ack`): update `lastActivity[ws]`; call `sendCommand` to relay to gateway.
+On message from browser:
+- `session.input`, `session.resize`, `session.ack`: update `lastActivity[ws]`; relay via `sendRealtime` (fire-and-forget, no pending map entry).
+- Any stateful/browser-initiated command that requires command outcome (if introduced later) goes through `sendCommand`.
 
 On close: remove from `subscribers[session_id]` and `lastActivity`.
 
 **Idle cleanup** (scheduled interval via `setInterval` at DO startup, every 60s): close browser WebSockets where `Date.now() - lastActivity[ws] > 600_000` (10 minutes), then remove from maps.
 
-### Command relay (`sendCommand`)
+### Command relay (`sendRealtime` + `sendCommand`)
 
-All HTTP-triggered gateway commands and browser WS commands go through:
+Two relay paths are used:
+
+1. **Realtime path (fire-and-forget, no ack tracking)**  
+Used for high-frequency terminal traffic:
+- `session.input`
+- `session.resize`
+- `session.ack`
+
+```typescript
+function sendRealtime(cmd: SessionInput | SessionResize | SessionAck): void {
+  if (!gatewaySocket) throw new Error("gateway not connected");
+  gatewaySocket.send(JSON.stringify(cmd));
+}
+```
+
+2. **Ack-tracked path (`pending` + timeout)**  
+Used for stateful/observable commands:
+- `session.create`
+- `session.end`
+- `session.snapshot`
+- `ssh.authorize` / `ssh.revoke` / `ssh.list`
+- `file.upload.begin` / `file.upload.chunk` / `file.upload.end` / `file.download` / `file.cancel`
+- `agents.install`
+- `gateway.update`
 
 ```typescript
 async function sendCommand(
-  cmd: Command,
+  cmd: AckTrackedCommand,
   sourceSocket: WebSocket | null = null,
   timeoutMs = 10_000,
 ): Promise<AckEvent> {
@@ -338,7 +369,7 @@ async function sendCommand(
 }
 ```
 
-HTTP callers (VPS route handlers) call the DO via `stub.fetch("/cmd", { body })` which internally calls `sendCommand` and awaits the ack before returning a response.
+HTTP callers (VPS/session route handlers) call the DO via `stub.fetch("/cmd", { body })`, which internally calls `sendCommand` and awaits ack before returning a response.
 
 ---
 
@@ -374,23 +405,26 @@ For each match, check `gateways.connected`. If still `0`, set `vps.status = 'pro
 
 ## VPS destroy flow
 
-Ordered to avoid FK failures and to close the gateway WS cleanly before rows are gone:
+Ordered to avoid FK failures, prevent cloud-resource leaks, and close gateway WS cleanly before rows are removed:
 
 ```
 DELETE /vps/:id
   1. Auth check: vps.user_id == authenticated user
-  2. Signal GatewayHub DO to close gateway WS (stub.fetch("/shutdown"))
-  3. D1 transaction:
+  2. Mark vps.status = 'deleting' (keep metadata while cloud delete is in-flight)
+  3. Signal GatewayHub DO to close gateway WS (stub.fetch("/shutdown"))
+  4. Decrypt DO access_token from D1
+  5. DELETE /v2/droplets/:droplet_id via DO API
+  6. If droplet delete succeeded, D1 transaction:
        DELETE FROM authorized_keys WHERE vps_id = :id
        DELETE FROM sessions       WHERE vps_id = :id
        DELETE FROM gateways       WHERE vps_id = :id
        DELETE FROM vps            WHERE id = :id
-  4. Decrypt DO access_token from D1
-  5. DELETE /v2/droplets/:droplet_id via DO API
-  6. Return 204
+  7. Return 204
 ```
 
-ON DELETE CASCADE is present as a safety net but the explicit ordered delete is canonical.
+If DO delete fails, rows are retained (status remains `deleting`) so cleanup can be retried safely by a Scheduled Worker reconciliation pass.
+
+ON DELETE CASCADE is present as a safety net but the explicit ordered delete after successful cloud deletion is canonical.
 
 ---
 
@@ -413,6 +447,11 @@ GET /auth/do/callback?code=...&state=...
 
 Token refresh: called by VPS route handlers when DO API returns 401. Decrypts current refresh_token, exchanges for new tokens, re-encrypts and updates D1.
 
+Race handling for concurrent refreshes (M2):
+- Use a per-user in-memory `refreshInFlight` lock/map in the Worker isolate.
+- If a second request hits 401 while refresh is in progress, await the same promise instead of issuing another refresh request.
+- If lock state is stale (isolate restart), retry once by reloading latest encrypted tokens from D1.
+
 ---
 
 ## Implementation order
@@ -425,9 +464,9 @@ Token refresh: called by VPS route handlers when DO API returns 401. Decrypts cu
 6. **`lib/do-api.ts`** – DigitalOcean API client (droplet CRUD, power actions, token refresh)
 7. **`routes/auth.ts`** – DO OAuth connect + callback + disconnect
 8. **`routes/vps.ts`** – VPS create/list/get/destroy/power + provisioning flow
-9. **`GatewayHub`** – gateway WS + pending map + subscriber fan-out + sendCommand + idle cleanup + shutdown
+9. **`GatewayHub`** – gateway WS + subscriber fan-out + `sendRealtime` + `sendCommand` (pending map + timeout) + idle cleanup + shutdown
 10. **`routes/sessions.ts`** – session CRUD + WS terminal upgrade → GatewayHub subscriber
-11. **Scheduled Worker** – provisioning timeout check (cron every 1 min)
+11. **Scheduled Worker** – provisioning timeout check + deleting-VPS reconciliation (cron every 1 min)
 12. **Tests** – miniflare-based unit tests for DO, vps, sessions routes
 
 ---
@@ -438,11 +477,15 @@ Token refresh: called by VPS route handlers when DO API returns 401. Decrypts cu
 - **DO keyed by `gateway_id`** via `idFromName` – stable across VPS reprovisioning.
 - **Auth token: plaintext in gateway env, HMAC hash in D1** – compromising D1 yields hashes only.
 - **DO OAuth tokens: AES-GCM encrypted in D1 with Wrangler-secret KEK** – compromising D1 yields ciphertext only. `token_key_version` enables zero-downtime KEK rotation.
-- **Pending map keyed by `request_id`** – deterministic ack routing; all pending entries rejected on gateway disconnect; 10s per-entry timeout.
+- **Standard DO WebSocket API for M2** – simpler lifecycle semantics for pending map and subscriber fan-out; hibernation optimization deferred.
+- **Realtime relay is fire-and-forget** – `session.input` / `session.resize` / `session.ack` bypass pending map and timeout logic.
+- **Pending map keyed by `request_id` for ack-tracked commands only** – deterministic ack routing; all pending entries rejected on gateway disconnect; 10s per-entry timeout.
+- **Gateway token verification is timing-safe** – no direct string equality for HMAC comparison.
 - **Provisioning timeout via Scheduled Worker + `provisioning_deadline_at`** – durable, survives Worker restarts, requires no in-memory state.
 - **No DO persistent storage** – gateway resends snapshots on reconnect; all durable state lives in D1.
 - **Auth: HttpOnly HMAC cookie in prod, `X-Dev-User` only when `AUTH_MODE=dev`** – no global auth bypass in any non-dev environment.
-- **Ordered explicit deletes on VPS destroy** – even though `ON DELETE CASCADE` is defined, explicit ordering ensures DO WS is shut down before rows disappear.
+- **VPS delete is cloud-first, DB-second** – metadata is retained while droplet deletion is in-flight; DB rows are removed only after confirmed cloud deletion.
+- **GatewayHub instance lifecycle is unmanaged by design** – DO instances may accumulate after VPS destroy (Cloudflare limitation), but with no DO storage this is accepted for MVP.
 
 ---
 
@@ -474,7 +517,7 @@ GATEWAY_CP_URL=ws://localhost:8787/gw/connect \
 
 ## Testing strategy
 
-- **Unit (vitest + miniflare)**: GatewayHub state transitions (pending map, fan-out, disconnect cleanup), D1 query helpers, DO API client (mock fetch), auth token/cookie sign/verify, AES-GCM encrypt/decrypt round-trip
+- **Unit (vitest + miniflare)**: GatewayHub state transitions (`sendRealtime` vs `sendCommand`, pending map, fan-out, disconnect cleanup), D1 query helpers, DO API client (mock fetch), auth token/cookie sign/verify, AES-GCM encrypt/decrypt round-trip, refresh-lock race behavior
 - **Integration (wrangler dev)**: full flow with real gateway binary connecting to local CP over WS; provision a VPS record manually, send session.create, verify output fan-out
 - **E2E**: deploy to Cloudflare staging environment, provision a real DO droplet via cloud-init, verify full session lifecycle from browser → CP → gateway → tmux
 
