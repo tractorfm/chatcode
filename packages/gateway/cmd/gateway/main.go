@@ -291,6 +291,7 @@ func (g *gateway) handleSessionCreate(ctx context.Context, raw json.RawMessage) 
 		"request_id": cmd.RequestID,
 		"session_id": cmd.SessionID,
 	})
+	g.sendAck(ctx, cmd.RequestID, true, "")
 	return nil
 }
 
@@ -354,6 +355,7 @@ func (g *gateway) handleSessionEnd(ctx context.Context, raw json.RawMessage) err
 		"type":       "session.ended",
 		"session_id": cmd.SessionID,
 	})
+	g.sendAck(ctx, cmd.RequestID, true, "")
 	return nil
 }
 
@@ -398,6 +400,7 @@ func (g *gateway) handleSessionSnapshot(ctx context.Context, raw json.RawMessage
 		"cols":       cols,
 		"rows":       rows,
 	})
+	g.sendAck(ctx, cmd.RequestID, true, "")
 	return nil
 }
 
@@ -463,6 +466,7 @@ func (g *gateway) handleSSHList(ctx context.Context, raw json.RawMessage) error 
 		"request_id": cmd.RequestID,
 		"keys":       keys,
 	})
+	g.sendAck(ctx, cmd.RequestID, true, "")
 	return nil
 }
 
@@ -531,7 +535,9 @@ func (g *gateway) handleFileDownload(ctx context.Context, raw json.RawMessage) e
 		if err := g.files.Download(ctx, cmd.TransferID, cmd.Path); err != nil {
 			g.log.Error("file download failed", "err", err, "transfer_id", cmd.TransferID)
 			g.sendAck(ctx, cmd.RequestID, false, err.Error())
+			return
 		}
+		g.sendAck(ctx, cmd.RequestID, true, "")
 	}()
 	return nil
 }
@@ -569,6 +575,7 @@ func (g *gateway) handleAgentsInstall(ctx context.Context, raw json.RawMessage) 
 			"agent":      cmd.Agent,
 			"version":    version,
 		})
+		g.sendAck(ctx, cmd.RequestID, true, "")
 	}()
 	return nil
 }
@@ -595,6 +602,7 @@ func (g *gateway) handleGatewayUpdate(ctx context.Context, raw json.RawMessage) 
 			"request_id": cmd.RequestID,
 			"version":    cmd.Version,
 		})
+		g.sendAck(ctx, cmd.RequestID, true, "")
 	}()
 	return nil
 }
