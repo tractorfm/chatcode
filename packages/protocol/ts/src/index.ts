@@ -164,6 +164,16 @@ export interface GatewayHello extends BaseEvent {
   version: string;
   hostname: string;
   go_version?: string;
+  bootstrap_token?: string;
+  system_info: SystemInfo;
+}
+
+export interface SystemInfo {
+  os: string;
+  arch: string;
+  cpus: number;
+  ram_total_bytes: number;
+  disk_total_bytes: number;
 }
 
 export interface ActiveSession {

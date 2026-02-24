@@ -147,19 +147,35 @@ func (g *gateway) runWSWithHello(ctx context.Context) {
 
 func (g *gateway) sendHello(ctx context.Context) {
 	hostname, _ := os.Hostname()
-	hello := map[string]any{
-		"type":           "gateway.hello",
-		"schema_version": schemaVersion,
-		"gateway_id":     g.cfg.GatewayID,
-		"version":        Version,
-		"hostname":       hostname,
-		"go_version":     runtime.Version(),
-	}
+	info := g.health.SystemInfo()
+	hello := buildHelloEvent(g.cfg, hostname, info)
 	if err := g.wsClient.SendJSON(ctx, hello); err != nil {
 		g.log.Warn("send hello failed", "err", err)
 	} else {
 		g.log.Info("sent gateway.hello")
 	}
+}
+
+func buildHelloEvent(cfg *config.Config, hostname string, info health.SystemInfo) map[string]any {
+	hello := map[string]any{
+		"type":           "gateway.hello",
+		"schema_version": schemaVersion,
+		"gateway_id":     cfg.GatewayID,
+		"version":        Version,
+		"hostname":       hostname,
+		"go_version":     runtime.Version(),
+		"system_info": map[string]any{
+			"os":               info.OS,
+			"arch":             info.Arch,
+			"cpus":             info.CPUs,
+			"ram_total_bytes":  info.RAMTotalBytes,
+			"disk_total_bytes": info.DiskTotalBytes,
+		},
+	}
+	if cfg.BootstrapToken != "" {
+		hello["bootstrap_token"] = cfg.BootstrapToken
+	}
+	return hello
 }
 
 func (g *gateway) sendSnapshots(ctx context.Context) {

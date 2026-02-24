@@ -49,3 +49,23 @@ func TestCollectDisk(t *testing.T) {
 		t.Errorf("used (%d) > total (%d)", m.DiskUsedBytes, m.DiskTotalBytes)
 	}
 }
+
+func TestSystemInfo(t *testing.T) {
+	c := NewCollector("/")
+	info := c.SystemInfo()
+	if info.OS == "" {
+		t.Fatal("OS should not be empty")
+	}
+	if info.Arch == "" {
+		t.Fatal("Arch should not be empty")
+	}
+	if info.CPUs < 1 {
+		t.Fatalf("CPUs should be >= 1, got %d", info.CPUs)
+	}
+	if runtime.GOOS == "linux" && info.RAMTotalBytes == 0 {
+		t.Error("RAMTotalBytes should be non-zero on Linux")
+	}
+	if info.DiskTotalBytes == 0 {
+		t.Skip("disk metrics not available (may be in container)")
+	}
+}

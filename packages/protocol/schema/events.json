@@ -37,9 +37,21 @@
         "gateway_id": { "type": "string" },
         "version": { "type": "string" },
         "hostname": { "type": "string" },
-        "go_version": { "type": "string" }
+        "go_version": { "type": "string" },
+        "bootstrap_token": { "type": "string" },
+        "system_info": {
+          "type": "object",
+          "properties": {
+            "os": { "type": "string" },
+            "arch": { "type": "string" },
+            "cpus": { "type": "integer", "minimum": 1 },
+            "ram_total_bytes": { "type": "integer", "minimum": 0 },
+            "disk_total_bytes": { "type": "integer", "minimum": 0 }
+          },
+          "required": ["os", "arch", "cpus", "ram_total_bytes", "disk_total_bytes"]
+        }
       },
-      "required": ["type", "gateway_id", "version", "hostname"]
+      "required": ["type", "gateway_id", "version", "hostname", "system_info"]
     },
 
     "GatewayHealth": {

@@ -19,6 +19,10 @@ type Config struct {
 	// AuthToken is the bearer token used to authenticate with the control plane.
 	AuthToken string `json:"auth_token"`
 
+	// BootstrapToken is an optional one-time token used to register a new
+	// manually installed gateway (BYO flow).
+	BootstrapToken string `json:"bootstrap_token,omitempty"`
+
 	// CPURL is the WebSocket URL of the control plane Gateway Durable Object.
 	// e.g. "wss://cp.chatcode.dev/gw/connect"
 	CPURL string `json:"cp_url"`
@@ -47,8 +51,8 @@ type Config struct {
 //
 // Required env vars: GATEWAY_ID, GATEWAY_AUTH_TOKEN, GATEWAY_CP_URL.
 // Optional: GATEWAY_HEALTH_INTERVAL, GATEWAY_MAX_SESSIONS, GATEWAY_SSH_KEYS_FILE,
-//
-//	GATEWAY_TEMP_DIR, GATEWAY_BINARY_PATH, GATEWAY_LOG_LEVEL.
+// GATEWAY_TEMP_DIR, GATEWAY_BINARY_PATH, GATEWAY_LOG_LEVEL,
+// GATEWAY_BOOTSTRAP_TOKEN.
 func Load(configFile string) (*Config, error) {
 	cfg := defaults()
 
@@ -94,6 +98,9 @@ func applyEnv(cfg *Config) {
 	}
 	if v := os.Getenv("GATEWAY_AUTH_TOKEN"); v != "" {
 		cfg.AuthToken = v
+	}
+	if v := os.Getenv("GATEWAY_BOOTSTRAP_TOKEN"); v != "" {
+		cfg.BootstrapToken = v
 	}
 	if v := os.Getenv("GATEWAY_CP_URL"); v != "" {
 		cfg.CPURL = v

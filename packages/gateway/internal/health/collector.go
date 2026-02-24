@@ -7,6 +7,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -22,6 +23,15 @@ type Metrics struct {
 	DiskUsedBytes  uint64
 	DiskTotalBytes uint64
 	UptimeSeconds  int64
+}
+
+// SystemInfo is stable machine metadata sent during gateway registration.
+type SystemInfo struct {
+	OS             string
+	Arch           string
+	CPUs           int
+	RAMTotalBytes  uint64
+	DiskTotalBytes uint64
 }
 
 // Collector gathers system metrics.
@@ -46,6 +56,23 @@ func (c *Collector) Collect() Metrics {
 	m.DiskUsedBytes, m.DiskTotalBytes = diskUsage(c.diskPath)
 	m.UptimeSeconds = readUptime()
 	return m
+}
+
+// SystemInfo returns machine metadata used in gateway.hello.
+func (c *Collector) SystemInfo() SystemInfo {
+	_, ramTotal := readMemInfo()
+	_, diskTotal := diskUsage(c.diskPath)
+	cpus := runtime.NumCPU()
+	if cpus < 1 {
+		cpus = 1
+	}
+	return SystemInfo{
+		OS:             runtime.GOOS,
+		Arch:           runtime.GOARCH,
+		CPUs:           cpus,
+		RAMTotalBytes:  ramTotal,
+		DiskTotalBytes: diskTotal,
+	}
 }
 
 // cpuPercent returns CPU usage since the last call (0–100).

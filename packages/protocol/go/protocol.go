@@ -247,12 +247,23 @@ type GatewayUpdateCmd struct {
 
 // GatewayHello is sent immediately after WebSocket connect.
 type GatewayHello struct {
-	Type          EventType `json:"type"`
-	SchemaVersion string    `json:"schema_version,omitempty"`
-	GatewayID     string    `json:"gateway_id"`
-	Version       string    `json:"version"`
-	Hostname      string    `json:"hostname"`
-	GoVersion     string    `json:"go_version,omitempty"`
+	Type           EventType  `json:"type"`
+	SchemaVersion  string     `json:"schema_version,omitempty"`
+	GatewayID      string     `json:"gateway_id"`
+	Version        string     `json:"version"`
+	Hostname       string     `json:"hostname"`
+	GoVersion      string     `json:"go_version,omitempty"`
+	BootstrapToken string     `json:"bootstrap_token,omitempty"`
+	SystemInfo     SystemInfo `json:"system_info"`
+}
+
+// SystemInfo contains basic machine metadata useful during registration.
+type SystemInfo struct {
+	OS             string `json:"os"`
+	Arch           string `json:"arch"`
+	CPUs           int    `json:"cpus"`
+	RAMTotalBytes  uint64 `json:"ram_total_bytes"`
+	DiskTotalBytes uint64 `json:"disk_total_bytes"`
 }
 
 // ActiveSession summarises an active session for health reports.
