@@ -27,6 +27,7 @@ VibeCode is a user-owned VPS agent platform: chatcode.dev provisions a user’s 
 - Git subsystem (repo creation, deploy keys, UI wrapper)
 - R2 file storage + signed URLs
 - Multiple workspace instances per repo / advanced repo workflows
+- Bring Your Own Server (BYO) -- connect non-DO machines (architecture prepared, see 10b)
 
 Rationale: keep the first release focused on “create VPS → open terminal → do work reliably”.
 
@@ -190,7 +191,7 @@ Evolution note (expected, not emergency):
 
 ### Events (gateway → cloud) – JSON
 - `ack {schema_version, request_id, ok, error?}`
-- `gateway.hello {schema_version, gateway_id, version, hostname, go_version?}`
+- `gateway.hello {schema_version, gateway_id, version, hostname, go_version?, bootstrap_token?, system_info: {os, arch, cpus, ram_total_bytes, disk_total_bytes}}`
 - `gateway.health {schema_version, gateway_id, timestamp, cpu_percent?, ram_used_bytes?, ram_total_bytes?, disk_used_bytes?, disk_total_bytes?, uptime_seconds?, active_sessions[]}`
 - `gateway.offline {schema_version, gateway_id, since}` (emitted by CP when WS lost)
 
@@ -228,8 +229,10 @@ TODO (optimization): file chunks currently use base64 in JSON text frames (~33% 
 - `DOConnection(user_id, access_token, refresh_token, team_uuid, expires_at)`
 
 ### VPS / Gateway
-- `VPS(id, user_id, droplet_id, region, size, ipv4, status, created_at)`
-- `Gateway(id, vps_id, gateway_id, version, last_seen_at, connected)`
+- `VPS(id, user_id, provider[digitalocean|manual], label, droplet_id?, region?, size?, ipv4?, status, created_at)`
+  - `provider=digitalocean`: droplet_id, region, size populated from DO API.
+  - `provider=manual`: droplet_id null; ipv4/label populated from gateway hello or user input.
+- `Gateway(id, vps_id, gateway_id, version, last_seen_at, connected, os?, arch?)`
 
 ### Sessions
 - `Session(id, user_id, vps_id, title, agent_type, tmux_name, workdir, status, created_at, last_activity_at)`
@@ -290,7 +293,9 @@ UI copy: "Compute billing stops. Storage and reserved IP continue to be billed. 
 
 ---
 
-## 10) Provisioning (DigitalOcean)
+## 10) Provisioning
+
+### 10a) DigitalOcean (MVP)
 
 - DO OAuth (Workers).
 - Create droplet (AMS3 + size picker).
@@ -300,13 +305,58 @@ UI copy: "Compute billing stops. Storage and reserved IP continue to be billed. 
   - install gateway binary + systemd unit
   - register gateway to CP via one-time bootstrap token
 
-### Provisioning timeout handling
+### DigitalOcean provisioning timeout
 - After droplet creation, CP waits for `gateway.hello` within **10 minutes**.
 - If not received: mark VPS status as `provisioning_timeout`.
 - UI shows: "VPS provisioning timed out" with options:
   - **Retry** (destroy + recreate droplet)
   - **Check DO Console** (link to DigitalOcean dashboard)
 - Avoids user stuck on "Provisioning…" screen indefinitely.
+
+### 10b) Bring Your Own Server (roadmap, not MVP)
+
+Planned flow for connecting any user-owned machine (Linux or macOS):
+
+1. **UI: "Add your server"**
+   - CP generates a one-time bootstrap token (TTL 15 minutes).
+   - UI shows a one-liner install command:
+     `curl -fsSL https://chatcode.dev/install | sh -s -- --token <TOKEN>`
+
+2. **Install script**
+   - Detects OS (Linux / macOS) and arch.
+   - Checks prerequisites: tmux, systemd (Linux) or launchd (macOS).
+   - Downloads gateway binary for the correct platform.
+   - Installs service: systemd unit (Linux) or launchd plist (macOS).
+   - Starts gateway with the bootstrap token.
+   - Script is idempotent: re-running updates the binary without breaking existing config.
+
+3. **Registration**
+   - Gateway sends `gateway.hello` with `bootstrap_token` + `system_info`.
+   - CP validates token, creates VPS record (`provider=manual`) and Gateway record.
+   - VPS enters `pending_confirmation` status.
+
+4. **Confirmation flow**
+   - UI shows: "New server connected: [label] [os/arch/ram]. Confirm?"
+   - User confirms -> status = `active`.
+   - If not confirmed within 10 minutes -> CP revokes token, gateway disconnects.
+
+5. **Remove server**
+   - UI: "Remove server" button (instead of Destroy for manual servers).
+   - CP deletes VPS/Gateway/Session records, revokes gateway credential.
+   - UI shows uninstall instructions: `sudo vibecode-gateway uninstall`
+   - Gateway, on losing CP connection with revoked credential, logs: "Registration revoked. Run 'vibecode-gateway uninstall' to clean up."
+
+6. **UI differences for manual vs DO servers**
+   - Power Off / On, Destroy -> only shown for `provider=digitalocean`.
+   - Remove server, uninstall instructions -> only shown for `provider=manual`.
+   - Health dashboard, sessions, SSH keys, file transfer -> identical for both.
+
+#### macOS support notes
+- Gateway Go binary cross-compiles to `darwin/amd64` and `darwin/arm64`.
+- tmux works identically on macOS (`brew install tmux`).
+- Service manager: launchd plist instead of systemd unit.
+- Health metrics: use `gopsutil` library (cross-platform) instead of `/proc`.
+- ~90% of gateway code is platform-independent; OS-specific code limited to service install and metrics collection.
 
 ---
 
@@ -380,9 +430,11 @@ UI copy: "Compute billing stops. Storage and reserved IP continue to be billed. 
 
 ---
 
-## 14) Deferred
+## 14) Deferred / Roadmap
+- **Bring Your Own Server (BYO)**: connect any Linux/macOS machine via install script (10b). Architecture and data model prepared.
+- **macOS gateway support**: cross-compile + launchd + gopsutil. ~90% code shared with Linux.
 - Git subsystem UI (repo creation, deploy keys, templates).
 - R2-backed file storage (expected evolution for larger files/high load).
-- Multi-droplet UI.
+- Multi-server UI (multiple VPS/machines per user).
 - Advanced prompt parsing → Telegram buttons.
 - Harden sudo policy (replace unrestricted sudo with safer admin helper).

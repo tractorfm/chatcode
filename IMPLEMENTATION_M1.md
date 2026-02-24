@@ -61,7 +61,8 @@ vibecode/
 │       │   ├── ssh/           # authorized_keys manager
 │       │   ├── agents/        # agent installer scripts
 │       │   ├── health/        # system metrics collector
-│       │   └── config/        # configuration + agent templates
+│       │   ├── config/        # configuration + agent templates
+│       │   └── service/       # service manager abstraction (systemd / launchd)
 │       ├── scripts/
 │       │   ├── install-claude-code.sh
 │       │   ├── install-codex.sh
@@ -92,7 +93,7 @@ Gateway is the core — everything else depends on it. Build and test it against
 - WebSocket client with:
   - connect to CP URL
   - auto-reconnect with exponential backoff
-  - send `gateway.hello` on connect
+  - send `gateway.hello` on connect (include `system_info: {os, arch, cpus, ram_total, disk_total}`)
   - send `gateway.health` on interval (30s)
   - receive and dispatch JSON text frames by command type
   - receive and dispatch binary frames
@@ -131,7 +132,7 @@ Gateway is the core — everything else depends on it. Build and test it against
 - **Test**: upload/download roundtrip with mock WS
 
 ### Step 5: Health + idle tracking
-- Collect CPU/RAM/disk metrics (from /proc or `runtime` package)
+- Collect CPU/RAM/disk metrics via `gopsutil` (cross-platform: Linux + macOS ready)
 - Track `last_activity_at` per session (updated on input/output)
 - Report in `gateway.health` events
 - **Test**: verify metrics collection
@@ -151,7 +152,7 @@ Gateway is the core — everything else depends on it. Build and test it against
   - if new version fails health check → rollback to `gateway.prev`
 - **Test**: simulate update + rollback
 
-### Step 8: systemd integration
+### Step 8: Service integration (systemd + launchd abstraction)
 - Unit file: `vibecode-gateway.service`
   - `Type=simple`
   - `Restart=on-failure`
@@ -159,7 +160,10 @@ Gateway is the core — everything else depends on it. Build and test it against
   - `User=vibe`
   - `WorkingDirectory=/home/vibe`
   - `EnvironmentFile=/etc/vibecode/gateway.env`
-- Install script for cloud-init integration
+- **macOS (roadmap)**: launchd plist `com.vibecode.gateway.plist` (same config, different format).
+- Abstract service install/uninstall behind an interface so both backends share the same gateway code.
+- Install script for cloud-init integration (Linux MVP); BYO install script later (Linux + macOS).
+- `vibecode-gateway uninstall` command: stops service, removes unit/plist, optionally removes binary.
 - **Test**: deploy to a real DO droplet, verify service lifecycle
 
 ---
