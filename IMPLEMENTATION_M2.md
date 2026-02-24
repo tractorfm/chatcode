@@ -129,7 +129,7 @@ CREATE INDEX idx_sessions_user ON sessions(user_id);
 CREATE INDEX idx_vps_user      ON vps(user_id);
 ```
 
-**Delete safety**: all child tables carry `ON DELETE CASCADE` from `vps`. The VPS destroy handler still runs an explicit ordered delete transaction (sessions → authorized_keys → gateways → vps) before calling the DO API, so the DO has a chance to close the gateway WS cleanly before the row disappears.
+**Delete safety**: all child tables carry `ON DELETE CASCADE` from `vps`. The VPS destroy handler marks the VPS as `deleting`, signals GatewayHub shutdown, deletes the cloud droplet first, then runs the explicit ordered delete transaction (authorized_keys → sessions → gateways → vps) only after cloud deletion succeeds.
 
 ---
 
