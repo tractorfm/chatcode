@@ -5,8 +5,16 @@
 Installs gateway on an existing Linux host (systemd):
 
 ```bash
+# Option A: from local binary
 sudo ./manual-install.sh \
   --binary-source /path/to/chatcode-gateway \
+  --gateway-id gw_xxx \
+  --gateway-auth-token tok_xxx \
+  --cp-url wss://cp.staging.chatcode.dev/gw/connect
+
+# Option B: download from release host
+sudo ./manual-install.sh \
+  --version v0.1.0 \
   --gateway-id gw_xxx \
   --gateway-auth-token tok_xxx \
   --cp-url wss://cp.staging.chatcode.dev/gw/connect
@@ -18,6 +26,10 @@ What it does:
 - installs binary to `/usr/local/bin/chatcode-gateway`
 - writes `/etc/chatcode/gateway.env`
 - installs `chatcode-gateway.service` and starts it
+
+Release-download defaults:
+- `--version latest`
+- `--release-base-url https://releases.chatcode.dev/gateway`
 
 ## `gateway-cleanup.sh`
 
@@ -38,3 +50,25 @@ By default it removes:
 Optional safety flags:
 - `--keep-user` keep `vibe` user/home
 - `--keep-workspace` keep `~/workspace` (requires `--keep-user`)
+
+## Release build/publish
+
+```bash
+# Build local release bundle
+cd packages/gateway
+./scripts/build-release.sh v0.1.1
+
+# Publish to R2 (requires wrangler auth and bucket)
+./scripts/publish-release-r2.sh v0.1.1 chatcode-releases
+```
+
+Recommended release URLs:
+- versioned: `https://releases.chatcode.dev/gateway/v0.1.1/...`
+- mutable latest pointer: `https://releases.chatcode.dev/gateway/latest/...`
+- main-domain installer redirect: `https://chatcode.dev/install.sh` -> `https://releases.chatcode.dev/gateway/latest/install.sh`
+
+Cloudflare setup suggestion:
+1. Serve release files from an R2 bucket bound to `releases.chatcode.dev`.
+2. Create a redirect rule on `chatcode.dev`:
+  - if `http.request.uri.path == "/install.sh"`
+  - redirect (302/307) to `https://releases.chatcode.dev/gateway/latest/install.sh`

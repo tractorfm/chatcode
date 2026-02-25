@@ -25,7 +25,7 @@ import { hashGatewayToken } from "../lib/auth.js";
 import { newVPSId, newGatewayId, randomHex } from "../lib/ids.js";
 
 const PROVISIONING_TIMEOUT_SEC = 600; // 10 minutes
-const GATEWAY_VERSION = "0.1.0"; // current release tag
+const GATEWAY_VERSION = "v0.1.0"; // current release tag
 const DROPLET_IMAGE = "ubuntu-24-04-x64";
 
 /**
@@ -272,8 +272,28 @@ echo "vibe ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/vibe
 mkdir -p /opt/chatcode
 cd /opt/chatcode
 
-GATEWAY_URL="https://github.com/tractorfm/chatcode/releases/download/v${version}/gateway-linux-amd64"
+GATEWAY_RELEASE_BASE_URL="https://releases.chatcode.dev/gateway"
+ARCH="$(uname -m)"
+case "$ARCH" in
+  x86_64|amd64) GATEWAY_ARCH="amd64" ;;
+  aarch64|arm64) GATEWAY_ARCH="arm64" ;;
+  *)
+    echo "unsupported architecture: $ARCH" >&2
+    exit 1
+    ;;
+esac
+
+GATEWAY_URL="$GATEWAY_RELEASE_BASE_URL/${version}/chatcode-gateway-linux-\${GATEWAY_ARCH}"
 curl -fsSL -o gateway "$GATEWAY_URL"
+curl -fsSL -o gateway.sha256 "$GATEWAY_URL.sha256"
+EXPECTED_SHA256="$(awk '{print $1}' gateway.sha256)"
+ACTUAL_SHA256="$(sha256sum gateway | awk '{print $1}')"
+if [ "$EXPECTED_SHA256" != "$ACTUAL_SHA256" ]; then
+  echo "gateway checksum mismatch" >&2
+  rm -f gateway gateway.sha256
+  exit 1
+fi
+rm -f gateway.sha256
 chmod +x gateway
 
 # Write config

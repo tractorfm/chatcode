@@ -11,10 +11,10 @@
 #   GATEWAY_VERSION    – release tag to install, e.g. "v0.1.0"
 #
 # Optional:
-#   GATEWAY_RELEASE_BASE_URL – defaults to https://releases.chatcode.dev
+#   GATEWAY_RELEASE_BASE_URL – defaults to https://releases.chatcode.dev/gateway
 set -euo pipefail
 
-GATEWAY_RELEASE_BASE_URL="${GATEWAY_RELEASE_BASE_URL:-https://releases.chatcode.dev}"
+GATEWAY_RELEASE_BASE_URL="${GATEWAY_RELEASE_BASE_URL:-https://releases.chatcode.dev/gateway}"
 BINARY_PATH="/usr/local/bin/chatcode-gateway"
 SERVICE_NAME="chatcode-gateway"
 CONFIG_DIR="/etc/chatcode"
@@ -51,7 +51,17 @@ if [ -z "${GATEWAY_VERSION:-}" ]; then
     exit 1
 fi
 
-BINARY_URL="$GATEWAY_RELEASE_BASE_URL/$GATEWAY_VERSION/chatcode-gateway-linux-amd64"
+ARCH="$(uname -m)"
+case "$ARCH" in
+    x86_64|amd64) RELEASE_ARCH="amd64" ;;
+    aarch64|arm64) RELEASE_ARCH="arm64" ;;
+    *)
+        echo "[cloud-init] ERROR: unsupported architecture: $ARCH" >&2
+        exit 1
+        ;;
+esac
+
+BINARY_URL="$GATEWAY_RELEASE_BASE_URL/$GATEWAY_VERSION/chatcode-gateway-linux-$RELEASE_ARCH"
 SHA256_URL="$BINARY_URL.sha256"
 
 echo "[cloud-init] Downloading gateway $GATEWAY_VERSION..."
@@ -59,7 +69,7 @@ curl -fsSL -o "${BINARY_PATH}.new" "$BINARY_URL"
 curl -fsSL -o "${BINARY_PATH}.sha256" "$SHA256_URL"
 
 # Verify checksum
-EXPECTED_SHA256=$(cat "${BINARY_PATH}.sha256")
+EXPECTED_SHA256=$(awk '{print $1}' "${BINARY_PATH}.sha256")
 ACTUAL_SHA256=$(sha256sum "${BINARY_PATH}.new" | awk '{print $1}')
 if [ "$EXPECTED_SHA256" != "$ACTUAL_SHA256" ]; then
     echo "[cloud-init] ERROR: checksum mismatch" >&2

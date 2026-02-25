@@ -34,8 +34,16 @@ Use this for BYO-style testing on an existing machine:
 cd packages/gateway
 make build
 
+# local binary install
 sudo ./deploy/manual-install.sh \
   --binary-source ./gateway \
+  --gateway-id gw-local-test \
+  --gateway-auth-token tok-local-test \
+  --cp-url wss://cp.staging.chatcode.dev/gw/connect
+
+# or install directly from published release
+sudo ./deploy/manual-install.sh \
+  --version latest \
   --gateway-id gw-local-test \
   --gateway-auth-token tok-local-test \
   --cp-url wss://cp.staging.chatcode.dev/gw/connect
@@ -47,6 +55,17 @@ Cleanup script (destructive, removes service/binary/config and `vibe` user by de
 cd packages/gateway
 sudo ./deploy/gateway-cleanup.sh --yes
 ```
+
+## Gateway releases
+
+```bash
+cd packages/gateway
+
+# Build release bundle (linux/amd64, linux/arm64, darwin/arm64)
+./scripts/build-release.sh v0.1.1
+```
+
+Tagging `v*` pushes runs `.github/workflows/gateway-release.yml` to build and attach release assets on GitHub.
 
 ## Architecture
 
