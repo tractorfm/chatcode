@@ -91,7 +91,13 @@ export async function handleDOCallback(
   };
 
   // Look up existing user by email or create new one
-  const email = accountData.account.email;
+  const email = normalizeEmail(accountData.account.email);
+  if (!email) {
+    return new Response(JSON.stringify({ error: "invalid DO account email" }), {
+      status: 500,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
   const existingIdentity = await env.DB
     .prepare("SELECT user_id FROM email_identities WHERE email = ?")
     .bind(email)
@@ -131,6 +137,10 @@ export async function handleDOCallback(
       "Set-Cookie": sessionCookieHeader(sessionToken),
     },
   });
+}
+
+function normalizeEmail(email: string): string {
+  return email.trim().toLowerCase();
 }
 
 /**

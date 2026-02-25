@@ -343,8 +343,8 @@ Planned flow for connecting any user-owned machine (Linux or macOS):
 5. **Remove server**
    - UI: "Remove server" button (instead of Destroy for manual servers).
    - CP deletes VPS/Gateway/Session records, revokes gateway credential.
-   - UI shows uninstall instructions: `sudo vibecode-gateway uninstall`
-   - Gateway, on losing CP connection with revoked credential, logs: "Registration revoked. Run 'vibecode-gateway uninstall' to clean up."
+  - UI shows cleanup instructions: `sudo /path/to/gateway-cleanup.sh --yes`
+  - Gateway, on losing CP connection with revoked credential, logs: "Registration revoked. Run gateway cleanup script to remove local service/config."
 
 6. **UI differences for manual vs DO servers**
    - Power Off / On, Destroy -> only shown for `provider=digitalocean`.

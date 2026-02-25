@@ -85,7 +85,7 @@ CREATE TABLE users (
 
 CREATE TABLE email_identities (
   user_id     TEXT    NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  email       TEXT    NOT NULL UNIQUE,
+  email       TEXT    NOT NULL UNIQUE CHECK (email = lower(email)),
   verified_at INTEGER,
   PRIMARY KEY (user_id, email)
 );

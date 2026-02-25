@@ -26,3 +26,29 @@ crons = ["* * * * *"]
 [vars]
 DO_CLIENT_ID = ""
 AUTH_MODE = "dev"
+
+[env.staging]
+name = "chatcode-cp-staging"
+workers_dev = true
+routes = [{ pattern = "cp.staging.chatcode.dev/*", zone_name = "chatcode.dev" }]
+
+[[env.staging.durable_objects.bindings]]
+name = "GATEWAY_HUB"
+class_name = "GatewayHub"
+
+[[env.staging.migrations]]
+tag = "v1"
+new_classes = ["GatewayHub"]
+
+[[env.staging.d1_databases]]
+binding = "DB"
+database_name = "chatcode-staging"
+database_id = "ab35aec1-8ef2-47fc-b40f-866e5b1fa82e"
+
+[[env.staging.kv_namespaces]]
+binding = "KV"
+id = "d81e938334fc41f884e4b24d7bb55437"
+
+[env.staging.vars]
+DO_CLIENT_ID = "0bcc8cc64037ea9e451de9a3cac9457a1bf13acd8091100e7f369a18f669d31b"
+AUTH_MODE = "dev"

@@ -170,8 +170,10 @@ Gateway is the core — everything else depends on it. Build and test it against
   - `EnvironmentFile=/etc/vibecode/gateway.env`
 - **macOS (roadmap)**: launchd plist `com.vibecode.gateway.plist` (same config, different format).
 - Abstract service install/uninstall behind an interface so both backends share the same gateway code.
-- Install script for cloud-init integration (Linux MVP); BYO install script later (Linux + macOS).
-- `vibecode-gateway uninstall` command: stops service, removes unit/plist, optionally removes binary.
+- Install scripts exist for Linux:
+  - `packages/gateway/deploy/cloud-init.sh` (provisioning path)
+  - `packages/gateway/deploy/manual-install.sh` (manual/BYO-style staging path)
+- Cleanup script: `packages/gateway/deploy/gateway-cleanup.sh` (service/binary/config/user cleanup).
 - **Test**: deploy to a real DO droplet, verify service lifecycle
 
 ---

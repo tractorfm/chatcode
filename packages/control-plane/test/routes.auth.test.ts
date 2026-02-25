@@ -165,6 +165,77 @@ describe("routes/auth", () => {
     expect(res.headers.get("Set-Cookie")).toContain("session=signed-session-token");
   });
 
+  it("normalizes DigitalOcean email to lowercase before lookup and insert", async () => {
+    const kv = {
+      put: vi.fn(async () => {}),
+      get: vi.fn(async () => "1"),
+      delete: vi.fn(async () => {}),
+    };
+
+    const selectBind = vi.fn(() => ({
+      first: vi.fn(async () => null),
+    }));
+    const insertBind = vi.fn(() => ({
+      run: vi.fn(async () => ({})),
+    }));
+
+    const db = {
+      prepare: vi.fn((sql: string) => {
+        if (sql.includes("SELECT user_id FROM email_identities")) {
+          return { bind: selectBind };
+        }
+        return { bind: insertBind };
+      }),
+    };
+
+    const env = {
+      DB: db as unknown as D1Database,
+      KV: kv as unknown as KVNamespace,
+      DO_CLIENT_ID: "do-client-id",
+      DO_CLIENT_SECRET: "do-client-secret",
+      DO_TOKEN_KEK: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+      JWT_SECRET: "jwt-secret",
+      GATEWAY_TOKEN_SALT: "gateway-token-salt",
+    };
+
+    mocks.exchangeOAuthCode.mockResolvedValue({
+      access_token: "access-abc",
+      refresh_token: "refresh-xyz",
+      expires_in: 3600,
+    });
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            account: {
+              uuid: "do-account-1",
+              email: "  User@Example.TEST ",
+              team: { uuid: "team-123" },
+            },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      ),
+    );
+
+    const res = await handleDOCallback(
+      new Request(
+        "https://cp.example.test/auth/do/callback?code=code-1&state=state-nonce-1",
+      ),
+      env,
+    );
+
+    expect(res.status).toBe(302);
+    expect(selectBind).toHaveBeenCalledWith("user@example.test");
+    expect(insertBind).toHaveBeenCalledWith(
+      "usr-test-1",
+      "user@example.test",
+      expect.any(Number),
+    );
+  });
+
   it("deletes stored DO connection on disconnect", async () => {
     const { env } = makeEnv();
 

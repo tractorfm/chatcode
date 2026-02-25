@@ -26,6 +26,28 @@ make mock-cp    # terminal 1: start mock control plane
 make build && ./gateway  # terminal 2: run gateway
 ```
 
+## Manual gateway install (Linux/systemd)
+
+Use this for BYO-style testing on an existing machine:
+
+```bash
+cd packages/gateway
+make build
+
+sudo ./deploy/manual-install.sh \
+  --binary-source ./gateway \
+  --gateway-id gw-local-test \
+  --gateway-auth-token tok-local-test \
+  --cp-url wss://cp.staging.chatcode.dev/gw/connect
+```
+
+Cleanup script (destructive, removes service/binary/config and `vibe` user by default):
+
+```bash
+cd packages/gateway
+sudo ./deploy/gateway-cleanup.sh --yes
+```
+
 ## Architecture
 
 ```

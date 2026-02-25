@@ -58,6 +58,8 @@ cd packages/gateway
 make build
 make test
 make mock-cp
+sudo ./deploy/manual-install.sh --help
+sudo ./deploy/gateway-cleanup.sh --help
 
 # Control plane
 cd packages/control-plane
