@@ -48,6 +48,10 @@ function htmlPage(): string {
 
   <div id="vps" class="section" style="display:none">
     <h2>VPS</h2>
+    <input id="vps-region" value="nyc1" placeholder="region (e.g. nyc1)" />
+    <input id="vps-size" value="s-1vcpu-512mb-10gb" placeholder="size slug" />
+    <input id="vps-image" value="ubuntu-24-04-x64" placeholder="image slug" />
+    <br />
     <button id="vps-create">Create VPS</button>
     <input id="manual-label" placeholder="manual label (optional)" />
     <button id="vps-manual">Add VPS (Manual)</button>
@@ -168,10 +172,13 @@ function htmlPage(): string {
       if (vpsCreateBtn.disabled) return;
       vpsCreateBtn.disabled = true;
       try {
+        const region = document.getElementById("vps-region").value || "nyc1";
+        const size = document.getElementById("vps-size").value || "s-1vcpu-512mb-10gb";
+        const image = document.getElementById("vps-image").value || "ubuntu-24-04-x64";
         await call("/vps", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ region: "nyc1", size: "s-1vcpu-1gb" }),
+          body: JSON.stringify({ region, size, image }),
         });
         await listVPS();
       } finally {

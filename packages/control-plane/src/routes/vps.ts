@@ -8,6 +8,7 @@ import {
   getVPS,
   listVPSByUser,
   updateVPSStatus,
+  updateVPSIpv4,
   deleteVPSCascade,
   createGateway,
   getGatewayByVPS,
@@ -17,6 +18,7 @@ import {
 import {
   getAccessToken,
   createDroplet,
+  getDroplet,
   deleteDroplet,
   powerOffDroplet,
   powerOnDroplet,
@@ -27,7 +29,9 @@ import { newVPSId, newGatewayId, randomHex } from "../lib/ids.js";
 const PROVISIONING_TIMEOUT_SEC = 600; // 10 minutes
 const DEFAULT_GATEWAY_VERSION = "v0.0.1";
 const DEFAULT_GATEWAY_RELEASE_BASE_URL = "https://releases.chatcode.dev/gateway";
-const DROPLET_IMAGE = "ubuntu-24-04-x64";
+const DEFAULT_DROPLET_REGION = "nyc1";
+const DEFAULT_DROPLET_SIZE = "s-1vcpu-512mb-10gb";
+const DEFAULT_DROPLET_IMAGE = "ubuntu-24-04-x64";
 
 /**
  * POST /vps – Create droplet + generate gateway credentials.
@@ -37,14 +41,25 @@ export async function handleVPSCreate(
   env: Env,
   auth: AuthContext,
 ): Promise<Response> {
-  let body: { region?: string; size?: string } = {};
+  let body: { region?: string; size?: string; image?: string } = {};
   try {
-    body = (await request.json()) as { region?: string; size?: string };
+    body = (await request.json()) as { region?: string; size?: string; image?: string };
   } catch {
     // Body is optional. Defaults apply.
   }
-  const region = body.region || "nyc1";
-  const size = body.size || "s-1vcpu-1gb";
+  const region = (body.region ?? env.DEFAULT_DROPLET_REGION ?? DEFAULT_DROPLET_REGION).trim();
+  const size = (body.size ?? env.DEFAULT_DROPLET_SIZE ?? DEFAULT_DROPLET_SIZE).trim();
+  const image = (body.image ?? env.DEFAULT_DROPLET_IMAGE ?? DEFAULT_DROPLET_IMAGE).trim();
+
+  if (!isDropletSlug(region)) {
+    return jsonResponse({ error: "invalid region slug" }, 400);
+  }
+  if (!isDropletSlug(size)) {
+    return jsonResponse({ error: "invalid size slug" }, 400);
+  }
+  if (!isDropletSlug(image)) {
+    return jsonResponse({ error: "invalid image slug" }, 400);
+  }
 
   // Verify user has DO connection
   const conn = await getDOConnection(env.DB, auth.userId);
@@ -89,7 +104,7 @@ export async function handleVPSCreate(
       name: `chatcode-${vpsId}`,
       region,
       size,
-      image: DROPLET_IMAGE,
+      image,
       user_data: userdata,
       tags: ["chatcode"],
     });
@@ -213,6 +228,7 @@ export async function handleVPSList(
   auth: AuthContext,
 ): Promise<Response> {
   const vpsList = await listVPSByUser(env.DB, auth.userId);
+  await hydrateMissingIPv4(env, auth.userId, vpsList);
   return jsonResponse({ vps: vpsList });
 }
 
@@ -229,6 +245,7 @@ export async function handleVPSGet(
   if (!vps || vps.user_id !== auth.userId) {
     return jsonResponse({ error: "not found" }, 404);
   }
+  await hydrateMissingIPv4(env, auth.userId, [vps]);
   return jsonResponse(vps);
 }
 
@@ -352,6 +369,45 @@ function jsonResponse(data: unknown, status = 200): Response {
 
 function isManualVPSAllowed(env: Env): boolean {
   return env.APP_ENV === "dev" || env.APP_ENV === "staging";
+}
+
+function isDropletSlug(value: string): boolean {
+  return /^[a-z0-9][a-z0-9-]{1,100}$/.test(value);
+}
+
+async function hydrateMissingIPv4(
+  env: Env,
+  userId: string,
+  vpsList: VPSRow[],
+): Promise<void> {
+  let accessToken: string | null = null;
+
+  for (const vps of vpsList) {
+    if (vps.ipv4 || vps.droplet_id <= 0) continue;
+
+    try {
+      if (!accessToken) {
+        accessToken = await getAccessToken(
+          env.DB,
+          userId,
+          env.DO_TOKEN_KEK,
+          env.DO_CLIENT_ID,
+          env.DO_CLIENT_SECRET,
+        );
+      }
+
+      const droplet = await getDroplet(accessToken, vps.droplet_id);
+      if (!droplet) continue;
+
+      const publicIp = getPublicIp(droplet);
+      if (!publicIp) continue;
+
+      await updateVPSIpv4(env.DB, vps.id, publicIp);
+      vps.ipv4 = publicIp;
+    } catch (err) {
+      console.warn("vps ipv4 hydrate failed", { vps_id: vps.id, err });
+    }
+  }
 }
 
 function getPublicIp(droplet: { networks: { v4: Array<{ ip_address: string; type: string }> } }): string | undefined {

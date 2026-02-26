@@ -5,8 +5,16 @@
 
 import type { Env, AuthContext } from "./types.js";
 import { authenticateRequest, verifyGatewayToken } from "./lib/auth.js";
-import { getGateway, listProvisioningTimedOut, listDeletingVPS, updateVPSStatus, deleteVPSCascade } from "./db/schema.js";
-import { getAccessToken, deleteDroplet } from "./lib/do-api.js";
+import {
+  getGateway,
+  listProvisioningTimedOut,
+  listDeletingVPS,
+  listVPSMissingIPv4,
+  updateVPSStatus,
+  updateVPSIpv4,
+  deleteVPSCascade,
+} from "./db/schema.js";
+import { getAccessToken, getDroplet, deleteDroplet } from "./lib/do-api.js";
 import {
   handleEmailStart,
   handleEmailVerify,
@@ -212,6 +220,27 @@ export default {
         await deleteVPSCascade(env.DB, vps.id);
       } catch {
         // Will retry next cron cycle
+      }
+    }
+
+    // 3. Backfill missing public IPv4 after droplet assignment.
+    const missingIPv4 = await listVPSMissingIPv4(env.DB);
+    for (const vps of missingIPv4) {
+      try {
+        const accessToken = await getAccessToken(
+          env.DB,
+          vps.user_id,
+          env.DO_TOKEN_KEK,
+          env.DO_CLIENT_ID,
+          env.DO_CLIENT_SECRET,
+        );
+        const droplet = await getDroplet(accessToken, vps.droplet_id);
+        const publicIP = droplet?.networks.v4.find((n) => n.type === "public")?.ip_address;
+        if (publicIP) {
+          await updateVPSIpv4(env.DB, vps.id, publicIP);
+        }
+      } catch {
+        // Best-effort; next cron will retry.
       }
     }
   },

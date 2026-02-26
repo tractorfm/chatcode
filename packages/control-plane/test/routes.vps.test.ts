@@ -64,6 +64,9 @@ function makeEnv() {
     DO_CLIENT_SECRET: "do-client-secret",
     GATEWAY_TOKEN_SALT: "gateway-token-salt",
     APP_ENV: "staging",
+    DEFAULT_DROPLET_REGION: "nyc1",
+    DEFAULT_DROPLET_SIZE: "s-1vcpu-512mb-10gb",
+    DEFAULT_DROPLET_IMAGE: "ubuntu-24-04-x64",
   };
   return { env, doShutdownFetch };
 }
@@ -113,6 +116,30 @@ describe("routes/vps", () => {
     expect(res.status).toBe(502);
     expect(mocks.createVPS).not.toHaveBeenCalled();
     expect(mocks.createGateway).not.toHaveBeenCalled();
+  });
+
+  it("uses configurable defaults for droplet params", async () => {
+    const { env } = makeEnv();
+
+    const res = await handleVPSCreate(
+      new Request("https://cp.example.test/vps", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      }),
+      env,
+      { userId: "usr-1" },
+    );
+
+    expect(res.status).toBe(201);
+    expect(mocks.createDroplet).toHaveBeenCalledWith(
+      "do-access-token",
+      expect.objectContaining({
+        region: "nyc1",
+        size: "s-1vcpu-512mb-10gb",
+        image: "ubuntu-24-04-x64",
+      }),
+    );
   });
 
   it("rolls back droplet when DB write fails", async () => {

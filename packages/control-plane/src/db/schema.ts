@@ -330,6 +330,18 @@ export async function listDeletingVPS(db: D1Database): Promise<VPSRow[]> {
   return result.results;
 }
 
+export async function listVPSMissingIPv4(db: D1Database): Promise<VPSRow[]> {
+  const result = await db
+    .prepare(
+      `SELECT * FROM vps
+       WHERE droplet_id > 0
+         AND ipv4 IS NULL
+         AND status IN ('provisioning', 'active', 'off', 'deleting')`,
+    )
+    .all<VPSRow>();
+  return result.results;
+}
+
 // ---------------------------------------------------------------------------
 // Gateways
 // ---------------------------------------------------------------------------

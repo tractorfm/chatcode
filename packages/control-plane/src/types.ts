@@ -14,6 +14,9 @@ export interface Env {
   GOOGLE_CLIENT_ID?: string;
   GITHUB_CLIENT_ID?: string;
   APP_ENV?: "dev" | "staging" | "prod";
+  DEFAULT_DROPLET_REGION?: string;
+  DEFAULT_DROPLET_SIZE?: string;
+  DEFAULT_DROPLET_IMAGE?: string;
   GATEWAY_VERSION?: string;
   GATEWAY_RELEASE_BASE_URL?: string;
   AUTH_MODE?: string; // "dev" for local dev only
