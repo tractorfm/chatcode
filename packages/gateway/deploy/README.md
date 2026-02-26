@@ -58,20 +58,22 @@ Optional safety flags:
 cd packages/gateway
 ./scripts/build-release.sh v0.1.1
 
-# Publish to R2 (requires wrangler auth and bucket)
+# Publish to R2 (requires R2 S3 access key/secret in env)
+export R2_ACCOUNT_ID="<cloudflare-account-id>"
+export R2_ACCESS_KEY_ID="<r2-access-key-id>"
+export R2_SECRET_ACCESS_KEY="<r2-secret-access-key>"
 ./scripts/publish-release-r2.sh v0.1.1 chatcode-releases
 ```
 
 Recommended release URLs:
 - versioned: `https://releases.chatcode.dev/gateway/v0.1.1/...`
 - mutable latest pointer: `https://releases.chatcode.dev/gateway/latest/...`
-- main-domain installer redirect: `https://chatcode.dev/install.sh` -> `https://releases.chatcode.dev/gateway/latest/install.sh`
+- main-domain installer redirect: `https://chatcode.dev/install.sh` -> `https://releases.chatcode.dev/gateway/latest/gateway-install.sh`
+- main-domain cleanup redirect: `https://chatcode.dev/cleanup.sh` -> `https://releases.chatcode.dev/gateway/latest/gateway-cleanup.sh`
 
 Cloudflare setup suggestion:
 1. Serve release files from an R2 bucket bound to `releases.chatcode.dev`.
-2. Create a redirect rule on `chatcode.dev`:
-  - if `http.request.uri.path == "/install.sh"`
-  - redirect (302/307) to `https://releases.chatcode.dev/gateway/latest/install.sh`
+2. Use `setup-cloudflare-release.sh` to deploy worker routes for both installer and cleanup redirects.
 
 Wrangler setup example:
 ```bash
@@ -95,26 +97,25 @@ cd packages/gateway
   --zone-id <chatcode.dev-zone-id>
 ```
 
-The script deploys a dedicated worker route `chatcode.dev/install.sh*` that redirects to:
-- `https://releases.chatcode.dev/gateway/latest/install.sh`
-- If `chatcode.dev/install.sh` still resolves elsewhere, remove/adjust older zone redirect rules (they can override worker routes).
+The script deploys dedicated worker routes:
+- `chatcode.dev/install.sh*` -> `https://releases.chatcode.dev/gateway/latest/gateway-install.sh`
+- `chatcode.dev/cleanup.sh*` -> `https://releases.chatcode.dev/gateway/latest/gateway-cleanup.sh`
+- If either URL still resolves elsewhere, remove/adjust older zone redirect rules (they can override worker routes).
 
 ## GitHub Actions secrets
 
 Workflow `.github/workflows/gateway-release.yml` expects:
-- `CF_ACCOUNT_ID`
-- `CF_API_TOKEN_R2_RELEASES`
+- `R2_ACCOUNT_ID`
+- `R2_ACCESS_KEY_ID`
+- `R2_SECRET_ACCESS_KEY`
 - `R2_RELEASE_BUCKET`
 
-`CF_API_TOKEN_R2_RELEASES` must be a **Cloudflare API token for Wrangler** (not an R2 S3 access key / secret pair).
-
-Required token scope:
-- Account > Cloudflare R2 > Edit
-- Account > Account Settings > Read (recommended for tooling compatibility)
+Upload credentials should come from an R2 API token/access key pair scoped to the release bucket.
 
 With GitHub CLI (after `gh auth login`):
 ```bash
-gh secret set CF_ACCOUNT_ID --body "<cloudflare-account-id>" --repo tractorfm/chatcode
-gh secret set CF_API_TOKEN_R2_RELEASES --body "<cloudflare-api-token>" --repo tractorfm/chatcode
+gh secret set R2_ACCOUNT_ID --body "<cloudflare-account-id>" --repo tractorfm/chatcode
+gh secret set R2_ACCESS_KEY_ID --body "<r2-access-key-id>" --repo tractorfm/chatcode
+gh secret set R2_SECRET_ACCESS_KEY --body "<r2-secret-access-key>" --repo tractorfm/chatcode
 gh secret set R2_RELEASE_BUCKET --body "chatcode-releases" --repo tractorfm/chatcode
 ```

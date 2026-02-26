@@ -84,12 +84,11 @@ jobs:
             printf '%s  %s\n' "${sha}" "$(basename "${file}")" >> "${DIST_DIR}/checksums.txt"
           done
 
-          cp deploy/manual-install.sh "${DIST_DIR}/manual-install.sh"
-          cp deploy/manual-install.sh "${DIST_DIR}/install.sh"
+          cp deploy/manual-install.sh "${DIST_DIR}/gateway-install.sh"
           cp deploy/gateway-cleanup.sh "${DIST_DIR}/gateway-cleanup.sh"
           cp deploy/cloud-init.sh "${DIST_DIR}/cloud-init.sh"
           cp deploy/chatcode-gateway.service "${DIST_DIR}/chatcode-gateway.service"
-          chmod +x "${DIST_DIR}/manual-install.sh" "${DIST_DIR}/install.sh" "${DIST_DIR}/gateway-cleanup.sh" "${DIST_DIR}/cloud-init.sh"
+          chmod +x "${DIST_DIR}/gateway-install.sh" "${DIST_DIR}/gateway-cleanup.sh" "${DIST_DIR}/cloud-init.sh"
           printf '%s\n' "${VERSION}" > "${DIST_DIR}/latest.txt"
 
           cat > "${DIST_DIR}/manifest.json" <<JSON
@@ -127,15 +126,16 @@ jobs:
     runs-on: ubuntu-latest
     needs: bundle
     env:
-      CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
-      CF_API_TOKEN_R2_RELEASES: ${{ secrets.CF_API_TOKEN_R2_RELEASES }}
+      R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
       R2_RELEASE_BUCKET: ${{ secrets.R2_RELEASE_BUCKET }}
 
     steps:
       - name: Check R2 publish config
         id: check
         run: |
-          if [[ -n "${CF_ACCOUNT_ID}" && -n "${CF_API_TOKEN_R2_RELEASES}" && -n "${R2_RELEASE_BUCKET}" ]]; then
+          if [[ -n "${R2_ACCOUNT_ID}" && -n "${R2_ACCESS_KEY_ID}" && -n "${R2_SECRET_ACCESS_KEY}" && -n "${R2_RELEASE_BUCKET}" ]]; then
             echo "enabled=true" >> "${GITHUB_OUTPUT}"
           else
             echo "enabled=false" >> "${GITHUB_OUTPUT}"
@@ -153,39 +153,40 @@ jobs:
           name: gateway-release-bundle
           path: packages/gateway/dist/${{ github.ref_name }}
 
-      - name: Setup Node
+      - name: Ensure AWS CLI
         if: ${{ steps.check.outputs.enabled == 'true' }}
-        uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-
-      - name: Install Wrangler
-        if: ${{ steps.check.outputs.enabled == 'true' }}
-        run: npm install -g wrangler@4.69.0
+        run: |
+          if command -v aws >/dev/null 2>&1; then
+            aws --version
+            exit 0
+          fi
+          sudo apt-get update
+          sudo apt-get install -y awscli
 
       - name: Verify R2 access
         if: ${{ steps.check.outputs.enabled == 'true' }}
-        env:
-          CLOUDFLARE_ACCOUNT_ID: ${{ env.CF_ACCOUNT_ID }}
-          CLOUDFLARE_API_TOKEN: ${{ env.CF_API_TOKEN_R2_RELEASES }}
         run: |
           set -euo pipefail
+          export AWS_ACCESS_KEY_ID="${R2_ACCESS_KEY_ID}"
+          export AWS_SECRET_ACCESS_KEY="${R2_SECRET_ACCESS_KEY}"
+          export AWS_DEFAULT_REGION="auto"
+          export AWS_EC2_METADATA_DISABLED="true"
 
-          if ! wrangler r2 bucket info "${R2_RELEASE_BUCKET}" >/tmp/r2-info.out 2>/tmp/r2-info.err; then
+          R2_ENDPOINT="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+          if ! aws --endpoint-url "${R2_ENDPOINT}" s3api head-bucket --bucket "${R2_RELEASE_BUCKET}" >/tmp/r2-head.out 2>/tmp/r2-head.err; then
             echo "::error::R2 preflight failed for bucket '${R2_RELEASE_BUCKET}'."
-            echo "::error::Check CF_ACCOUNT_ID and CF_API_TOKEN_R2_RELEASES."
-            echo "::error::Token must be a Cloudflare API token for Wrangler (not R2 S3 Access Key/Secret)."
-            echo "::error::Required permission: Account > Workers R2 Storage > Edit."
-            cat /tmp/r2-info.err
+            echo "::error::Check R2_ACCOUNT_ID / R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY secrets."
+            cat /tmp/r2-head.err
             exit 1
           fi
-          cat /tmp/r2-info.out
+          aws --version
 
       - name: Publish to R2
         if: ${{ steps.check.outputs.enabled == 'true' }}
         working-directory: packages/gateway
         env:
-          CLOUDFLARE_ACCOUNT_ID: ${{ env.CF_ACCOUNT_ID }}
-          CLOUDFLARE_API_TOKEN: ${{ env.CF_API_TOKEN_R2_RELEASES }}
+          R2_ACCOUNT_ID: ${{ env.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ env.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ env.R2_SECRET_ACCESS_KEY }}
           RELEASE_PREFIX: gateway
         run: ./scripts/publish-release-r2.sh "${GITHUB_REF_NAME}" "${R2_RELEASE_BUCKET}"

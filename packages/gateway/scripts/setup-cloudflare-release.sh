@@ -136,8 +136,10 @@ fi
 if [[ "${SKIP_REDIRECT}" -eq 1 ]]; then
   echo "[setup-cloudflare-release] skip redirect worker deploy (--skip-redirect)"
 else
-  TARGET_URL="https://${RELEASE_DOMAIN}/${RELEASE_PREFIX}/latest/install.sh"
-  ROUTE="${INSTALL_DOMAIN}/install.sh*"
+  INSTALL_TARGET_URL="https://${RELEASE_DOMAIN}/${RELEASE_PREFIX}/latest/gateway-install.sh"
+  CLEANUP_TARGET_URL="https://${RELEASE_DOMAIN}/${RELEASE_PREFIX}/latest/gateway-cleanup.sh"
+  INSTALL_ROUTE="${INSTALL_DOMAIN}/install.sh*"
+  CLEANUP_ROUTE="${INSTALL_DOMAIN}/cleanup.sh*"
   COMPAT_DATE="$(date -u +%Y-%m-%d)"
 
   TMP_DIR="$(mktemp -d)"
@@ -147,28 +149,50 @@ else
 export default {
   async fetch(request, env) {
     const reqUrl = new URL(request.url);
-    const target = new URL(env.TARGET_URL);
+    let target;
+    switch (reqUrl.pathname) {
+      case "/install.sh":
+        target = new URL(env.INSTALL_TARGET_URL);
+        break;
+      case "/cleanup.sh":
+        target = new URL(env.CLEANUP_TARGET_URL);
+        break;
+      default:
+        return new Response("Not found", { status: 404 });
+    }
     target.search = reqUrl.search;
     return Response.redirect(target.toString(), 302);
   },
 };
 JS
 
-  echo "[setup-cloudflare-release] deploying install redirect worker '${WORKER_NAME}' on route '${ROUTE}'"
+  echo "[setup-cloudflare-release] deploying redirect worker '${WORKER_NAME}' on routes '${INSTALL_ROUTE}' and '${CLEANUP_ROUTE}'"
   wr deploy "${TMP_WORKER}" \
     --name "${WORKER_NAME}" \
     --compatibility-date "${COMPAT_DATE}" \
-    --routes "${ROUTE}" \
-    --var "TARGET_URL:${TARGET_URL}"
+    --routes "${INSTALL_ROUTE}" \
+    --routes "${CLEANUP_ROUTE}" \
+    --var "INSTALL_TARGET_URL:${INSTALL_TARGET_URL}" \
+    --var "CLEANUP_TARGET_URL:${CLEANUP_TARGET_URL}"
 
   if command -v curl >/dev/null 2>&1; then
-    LIVE_LOCATION="$(
+    LIVE_INSTALL_LOCATION="$(
       curl -I -sS "https://${INSTALL_DOMAIN}/install.sh" \
         | awk 'tolower($1) == "location:" {print $2; exit}' \
         | tr -d '\r'
     )"
-    if [[ -n "${LIVE_LOCATION}" && "${LIVE_LOCATION}" != "${TARGET_URL}" ]]; then
-      echo "[setup-cloudflare-release] WARNING: install.sh currently redirects to ${LIVE_LOCATION}" >&2
+    if [[ -n "${LIVE_INSTALL_LOCATION}" && "${LIVE_INSTALL_LOCATION}" != "${INSTALL_TARGET_URL}" ]]; then
+      echo "[setup-cloudflare-release] WARNING: install.sh currently redirects to ${LIVE_INSTALL_LOCATION}" >&2
+      echo "[setup-cloudflare-release] WARNING: an existing zone redirect/rule may override worker routes" >&2
+    fi
+
+    LIVE_CLEANUP_LOCATION="$(
+      curl -I -sS "https://${INSTALL_DOMAIN}/cleanup.sh" \
+        | awk 'tolower($1) == "location:" {print $2; exit}' \
+        | tr -d '\r'
+    )"
+    if [[ -n "${LIVE_CLEANUP_LOCATION}" && "${LIVE_CLEANUP_LOCATION}" != "${CLEANUP_TARGET_URL}" ]]; then
+      echo "[setup-cloudflare-release] WARNING: cleanup.sh currently redirects to ${LIVE_CLEANUP_LOCATION}" >&2
       echo "[setup-cloudflare-release] WARNING: an existing zone redirect/rule may override worker routes" >&2
     fi
   fi
@@ -177,3 +201,4 @@ fi
 echo "[setup-cloudflare-release] done"
 echo "[setup-cloudflare-release] release domain: https://${RELEASE_DOMAIN}/${RELEASE_PREFIX}/"
 echo "[setup-cloudflare-release] installer URL: https://${INSTALL_DOMAIN}/install.sh"
+echo "[setup-cloudflare-release] cleanup URL: https://${INSTALL_DOMAIN}/cleanup.sh"

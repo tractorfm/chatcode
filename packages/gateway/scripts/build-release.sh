@@ -73,12 +73,11 @@ for file in "${DIST_DIR}"/chatcode-gateway-*; do
   printf '%s  %s\n' "${hash}" "$(basename "${file}")" >> "${DIST_DIR}/checksums.txt"
 done
 
-cp deploy/manual-install.sh "${DIST_DIR}/manual-install.sh"
-cp deploy/manual-install.sh "${DIST_DIR}/install.sh"
+cp deploy/manual-install.sh "${DIST_DIR}/gateway-install.sh"
 cp deploy/gateway-cleanup.sh "${DIST_DIR}/gateway-cleanup.sh"
 cp deploy/cloud-init.sh "${DIST_DIR}/cloud-init.sh"
 cp deploy/chatcode-gateway.service "${DIST_DIR}/chatcode-gateway.service"
-chmod +x "${DIST_DIR}/manual-install.sh" "${DIST_DIR}/install.sh" "${DIST_DIR}/gateway-cleanup.sh" "${DIST_DIR}/cloud-init.sh"
+chmod +x "${DIST_DIR}/gateway-install.sh" "${DIST_DIR}/gateway-cleanup.sh" "${DIST_DIR}/cloud-init.sh"
 printf '%s\n' "${VERSION}" > "${DIST_DIR}/latest.txt"
 
 cat > "${DIST_DIR}/manifest.json" <<JSON
@@ -88,8 +87,7 @@ cat > "${DIST_DIR}/manifest.json" <<JSON
     $(printf '"%s",' "${TARGETS[@]}" | sed 's/,$//')
   ],
   "files": [
-    "install.sh",
-    "manual-install.sh",
+    "gateway-install.sh",
     "gateway-cleanup.sh",
     "cloud-init.sh",
     "chatcode-gateway.service",

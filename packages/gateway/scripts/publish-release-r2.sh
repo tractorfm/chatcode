@@ -11,7 +11,11 @@ Example:
   ./scripts/publish-release-r2.sh v0.1.1 chatcode-releases
 
 Environment:
-  RELEASE_PREFIX   Object key prefix (default: gateway)
+  RELEASE_PREFIX         Object key prefix (default: gateway)
+  R2_ACCOUNT_ID          Cloudflare account id for R2 S3 endpoint
+  R2_ACCESS_KEY_ID       R2 access key id
+  R2_SECRET_ACCESS_KEY   R2 secret access key
+  R2_ENDPOINT            Optional custom endpoint (default: https://<R2_ACCOUNT_ID>.r2.cloudflarestorage.com)
 USAGE
 }
 
@@ -34,27 +38,56 @@ DIST_DIR="${PKG_DIR}/dist/${VERSION}"
   exit 1
 }
 
-command -v wrangler >/dev/null 2>&1 || {
-  echo "[publish-release-r2] wrangler is required in PATH" >&2
+command -v aws >/dev/null 2>&1 || {
+  echo "[publish-release-r2] aws CLI is required in PATH" >&2
   exit 1
+}
+
+R2_ACCOUNT_ID="${R2_ACCOUNT_ID:-}"
+R2_ACCESS_KEY_ID="${R2_ACCESS_KEY_ID:-}"
+R2_SECRET_ACCESS_KEY="${R2_SECRET_ACCESS_KEY:-}"
+R2_ENDPOINT="${R2_ENDPOINT:-}"
+
+if [[ -z "${R2_ENDPOINT}" ]]; then
+  if [[ -z "${R2_ACCOUNT_ID}" ]]; then
+    echo "[publish-release-r2] set R2_ACCOUNT_ID (or R2_ENDPOINT)" >&2
+    exit 1
+  fi
+  R2_ENDPOINT="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+fi
+
+if [[ -z "${R2_ACCESS_KEY_ID}" || -z "${R2_SECRET_ACCESS_KEY}" ]]; then
+  echo "[publish-release-r2] set R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY" >&2
+  exit 1
+fi
+
+export AWS_ACCESS_KEY_ID="${R2_ACCESS_KEY_ID}"
+export AWS_SECRET_ACCESS_KEY="${R2_SECRET_ACCESS_KEY}"
+export AWS_DEFAULT_REGION="auto"
+export AWS_EC2_METADATA_DISABLED="true"
+
+put_object() {
+  local src_file="$1"
+  local key="$2"
+  echo "[publish-release-r2] put ${BUCKET}/${key}"
+  aws --endpoint-url "${R2_ENDPOINT}" s3 cp "${src_file}" "s3://${BUCKET}/${key}" --only-show-errors
 }
 
 for file in "${DIST_DIR}"/*; do
   [[ -f "${file}" ]] || continue
   key="${RELEASE_PREFIX}/${VERSION}/$(basename "${file}")"
-  echo "[publish-release-r2] put ${BUCKET}/${key}"
-  wrangler r2 object put "${BUCKET}/${key}" --file "${file}" --remote
+  put_object "${file}" "${key}"
 done
 
 TMP_LATEST="$(mktemp)"
 printf '%s\n' "${VERSION}" > "${TMP_LATEST}"
-wrangler r2 object put "${BUCKET}/${RELEASE_PREFIX}/latest.txt" --file "${TMP_LATEST}" --remote
+put_object "${TMP_LATEST}" "${RELEASE_PREFIX}/latest.txt"
 rm -f "${TMP_LATEST}"
 
-for name in install.sh manual-install.sh gateway-cleanup.sh cloud-init.sh checksums.txt manifest.json; do
+for name in gateway-install.sh gateway-cleanup.sh cloud-init.sh chatcode-gateway.service checksums.txt manifest.json; do
   src="${DIST_DIR}/${name}"
   [[ -f "${src}" ]] || continue
-  wrangler r2 object put "${BUCKET}/${RELEASE_PREFIX}/latest/${name}" --file "${src}" --remote
+  put_object "${src}" "${RELEASE_PREFIX}/latest/${name}"
 done
 
 echo "[publish-release-r2] done"
