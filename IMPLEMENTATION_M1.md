@@ -172,7 +172,7 @@ Gateway is the core — everything else depends on it. Build and test it against
 - Abstract service install/uninstall behind an interface so both backends share the same gateway code.
 - Install scripts exist for Linux:
   - `packages/gateway/deploy/cloud-init.sh` (provisioning path)
-  - `packages/gateway/deploy/manual-install.sh` (manual/BYO-style staging path)
+  - `packages/gateway/deploy/gateway-install.sh` (manual/BYO-style staging path; `manual-install.sh` is a wrapper alias)
 - Cleanup script: `packages/gateway/deploy/gateway-cleanup.sh` (service/binary/config/user cleanup).
 - **Test**: deploy to a real DO droplet, verify service lifecycle
 

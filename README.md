@@ -26,7 +26,7 @@ make mock-cp    # terminal 1: start mock control plane
 make build && ./gateway  # terminal 2: run gateway
 ```
 
-## Manual gateway install (Linux/systemd)
+## Manual gateway install (Linux/systemd + macOS/launchd)
 
 Use this for BYO-style testing on an existing machine:
 
@@ -35,14 +35,21 @@ cd packages/gateway
 make build
 
 # local binary install
-sudo ./deploy/manual-install.sh \
+sudo ./deploy/gateway-install.sh \
   --binary-source ./gateway \
   --gateway-id gw-local-test \
   --gateway-auth-token tok-local-test \
   --cp-url wss://cp.staging.chatcode.dev/gw/connect
 
 # or install directly from published release
-sudo ./deploy/manual-install.sh \
+sudo ./deploy/gateway-install.sh \
+  --version latest \
+  --gateway-id gw-local-test \
+  --gateway-auth-token tok-local-test \
+  --cp-url wss://cp.staging.chatcode.dev/gw/connect
+
+# macOS (run as your user, not sudo)
+./deploy/gateway-install.sh \
   --version latest \
   --gateway-id gw-local-test \
   --gateway-auth-token tok-local-test \
@@ -54,6 +61,8 @@ Cleanup script (destructive, removes service/binary/config and `vibe` user by de
 ```bash
 cd packages/gateway
 sudo ./deploy/gateway-cleanup.sh --yes
+# macOS:
+./deploy/gateway-cleanup.sh --yes
 ```
 
 ## Gateway releases

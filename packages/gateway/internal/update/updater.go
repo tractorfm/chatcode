@@ -5,7 +5,7 @@
 //  2. Verify SHA-256 checksum
 //  3. Rename current binary to <binaryPath>.prev
 //  4. Rename .new to current binary path
-//  5. Signal systemd to restart the service
+//  5. Restart the host service manager unit (systemd/launchd)
 //
 // On failure: restore .prev → current (rollback).
 package update
@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"runtime"
 	"time"
 )
 
@@ -40,14 +41,36 @@ func NewUpdater(binaryPath string, log *slog.Logger) *Updater {
 		log:        log,
 		httpClient: &http.Client{Timeout: downloadTimeout},
 		restartFn: func() error {
-			return exec.Command("systemctl", "restart", "chatcode-gateway").Run()
+			switch runtime.GOOS {
+			case "linux":
+				return exec.Command("systemctl", "restart", "chatcode-gateway").Run()
+			case "darwin":
+				label := "dev.chatcode.gateway"
+				uid := os.Getuid()
+				targets := []string{
+					fmt.Sprintf("gui/%d/%s", uid, label),
+					fmt.Sprintf("user/%d/%s", uid, label),
+				}
+				var lastErr error
+				for _, target := range targets {
+					if err := exec.Command("launchctl", "kickstart", "-k", target).Run(); err == nil {
+						return nil
+					} else {
+						lastErr = err
+					}
+				}
+				return fmt.Errorf("launchctl kickstart failed: %w", lastErr)
+			default:
+				return fmt.Errorf("service restart unsupported on %s", runtime.GOOS)
+			}
 		},
 	}
 }
 
 // Update downloads the binary at url, verifies its SHA-256, swaps binaries,
-// and triggers a systemd restart. The function returns after initiating the
-// restart – the process will be replaced by systemd shortly after.
+// and triggers a service restart. The function returns after initiating the
+// restart – the process will be replaced by the host service manager shortly
+// after.
 func (u *Updater) Update(url, expectedSHA256 string) error {
 	newPath := u.binaryPath + ".new"
 	prevPath := u.binaryPath + ".prev"
@@ -86,11 +109,11 @@ func (u *Updater) Update(url, expectedSHA256 string) error {
 		return fmt.Errorf("promote new binary: %w", err)
 	}
 
-	u.log.Info("binary replaced, triggering systemd restart")
+	u.log.Info("binary replaced, triggering service restart")
 
-	// 6. Restart via systemd and rollback if restart fails.
+	// 6. Restart service and rollback if restart fails.
 	if err := u.restartFn(); err != nil {
-		u.log.Error("systemd restart failed, rolling back", "err", err)
+		u.log.Error("service restart failed, rolling back", "err", err)
 		u.rollback(prevPath)
 		return fmt.Errorf("restart service: %w", err)
 	}

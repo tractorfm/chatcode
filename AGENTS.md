@@ -63,7 +63,7 @@ make mock-cp
 ./scripts/build-release.sh v0.1.1
 ./scripts/publish-release-r2.sh v0.1.1 chatcode-releases
 ./scripts/setup-cloudflare-release.sh --zone-id <chatcode.dev-zone-id>
-sudo ./deploy/manual-install.sh --help
+./deploy/gateway-install.sh --help
 sudo ./deploy/gateway-cleanup.sh --help
 
 # Control plane

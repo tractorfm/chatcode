@@ -4,19 +4,41 @@ set -euo pipefail
 
 echo "[vibecode] Installing Codex CLI..."
 
-# Ensure Node.js >= 18 is available
-if ! command -v node &>/dev/null; then
-    echo "[vibecode] Node.js not found, installing via NodeSource..."
-    curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-    sudo apt-get install -y nodejs
-fi
+ensure_node() {
+    local os
+    os="$(uname -s)"
+    if command -v node &>/dev/null; then
+        local node_major
+        node_major="$(node --version | cut -d. -f1 | tr -d 'v')"
+        if [ "${node_major}" -ge 18 ]; then
+            return 0
+        fi
+        echo "[vibecode] Node.js version too old ($(node --version)), upgrading..."
+    else
+        echo "[vibecode] Node.js not found, installing..."
+    fi
 
-NODE_VERSION=$(node --version | cut -d. -f1 | tr -d 'v')
-if [ "$NODE_VERSION" -lt 18 ]; then
-    echo "[vibecode] Node.js version too old ($(node --version)), upgrading..."
-    curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-    sudo apt-get install -y nodejs
-fi
+    if [ "${os}" = "Linux" ]; then
+        curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+        sudo apt-get install -y nodejs
+        return 0
+    fi
+
+    if [ "${os}" = "Darwin" ]; then
+        if ! command -v brew &>/dev/null; then
+            echo "[vibecode] ERROR: Homebrew is required on macOS to install Node.js" >&2
+            exit 1
+        fi
+        brew install node@20
+        export PATH="/opt/homebrew/opt/node@20/bin:/usr/local/opt/node@20/bin:${PATH}"
+        return 0
+    fi
+
+    echo "[vibecode] ERROR: unsupported OS ${os} for automatic Node.js install" >&2
+    exit 1
+}
+
+ensure_node
 
 # Install Codex CLI globally
 npm install -g @openai/codex

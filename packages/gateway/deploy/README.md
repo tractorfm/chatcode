@@ -1,31 +1,48 @@
 # Gateway Deploy Scripts
 
-## `manual-install.sh`
+## `gateway-install.sh`
 
-Installs gateway on an existing Linux host (systemd):
+Installs gateway on Linux (systemd, dedicated `vibe` user) or macOS (launchd, current user):
 
 ```bash
 # Option A: from local binary
-sudo ./manual-install.sh \
+sudo ./gateway-install.sh \
   --binary-source /path/to/chatcode-gateway \
   --gateway-id gw_xxx \
   --gateway-auth-token tok_xxx \
   --cp-url wss://cp.staging.chatcode.dev/gw/connect
 
 # Option B: download from release host
-sudo ./manual-install.sh \
+sudo ./gateway-install.sh \
+  --version v0.1.0 \
+  --gateway-id gw_xxx \
+  --gateway-auth-token tok_xxx \
+  --cp-url wss://cp.staging.chatcode.dev/gw/connect
+
+# macOS (do NOT use sudo)
+./gateway-install.sh \
   --version v0.1.0 \
   --gateway-id gw_xxx \
   --gateway-auth-token tok_xxx \
   --cp-url wss://cp.staging.chatcode.dev/gw/connect
 ```
 
-What it does:
+Linux mode:
 - creates `vibe` user (if missing)
 - prepares `~vibe/.ssh/authorized_keys` and `~/workspace`
 - installs binary to `/usr/local/bin/chatcode-gateway`
 - writes `/etc/chatcode/gateway.env`
 - installs `chatcode-gateway.service` and starts it
+
+macOS mode:
+- uses the current user (no `vibe` user creation)
+- prepares `~/.ssh/authorized_keys` and `~/workspace`
+- installs binary to `~/.local/bin/chatcode-gateway` by default
+- writes `~/.config/chatcode/gateway.env`
+- installs `~/Library/LaunchAgents/dev.chatcode.gateway.plist` and starts it
+
+Legacy alias:
+- `manual-install.sh` is now a wrapper to `gateway-install.sh`.
 
 Release-download defaults:
 - `--version latest`
@@ -37,9 +54,11 @@ Removes gateway install artifacts. Destructive by default:
 
 ```bash
 sudo ./gateway-cleanup.sh --yes
+# macOS:
+./gateway-cleanup.sh --yes
 ```
 
-By default it removes:
+Linux cleanup (default) removes:
 - `chatcode-gateway` systemd service
 - `/usr/local/bin/chatcode-gateway`
 - `/etc/chatcode`
@@ -47,9 +66,17 @@ By default it removes:
 - `vibe` sudoers entry
 - `vibe` user and home directory
 
-Optional safety flags:
+macOS cleanup removes:
+- `dev.chatcode.gateway` launchd agent
+- `~/.local/bin/chatcode-gateway`
+- `~/.config/chatcode`
+- `/tmp/chatcode`
+- keeps `~/workspace` by default
+
+Optional flags:
 - `--keep-user` keep `vibe` user/home
 - `--keep-workspace` keep `~/workspace` (requires `--keep-user`)
+- `--remove-workspace` (macOS) remove `~/workspace`
 
 ## Release build/publish
 

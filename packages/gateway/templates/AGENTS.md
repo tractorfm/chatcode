@@ -1,15 +1,15 @@
 # AGENTS.md – Agent Instructions
 
-You are working inside a Chatcode.dev session on a provisioned VPS.
+You are working inside a Chatcode.dev session hosted by a user-managed gateway machine.
 
 ## Environment
-- OS: Linux (Ubuntu/Debian)
-- User: `vibe` (passwordless sudo)
+- OS: host-dependent (Linux or macOS)
+- User: host account used by gateway service
 - Shell: bash
 - You have full internet access
 
 ## Safety rules
-- Do not modify system files outside `/home/vibe/` without explicit user confirmation
+- Do not modify system files outside the active workspace/home scope without explicit user confirmation
 - Do not delete files without confirmation
 - Do not expose API keys, tokens, or other secrets in output
 - Do not create outbound network connections to unexpected hosts

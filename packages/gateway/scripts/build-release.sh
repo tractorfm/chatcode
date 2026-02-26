@@ -73,7 +73,7 @@ for file in "${DIST_DIR}"/chatcode-gateway-*; do
   printf '%s  %s\n' "${hash}" "$(basename "${file}")" >> "${DIST_DIR}/checksums.txt"
 done
 
-cp deploy/manual-install.sh "${DIST_DIR}/gateway-install.sh"
+cp deploy/gateway-install.sh "${DIST_DIR}/gateway-install.sh"
 cp deploy/gateway-cleanup.sh "${DIST_DIR}/gateway-cleanup.sh"
 cp deploy/cloud-init.sh "${DIST_DIR}/cloud-init.sh"
 cp deploy/chatcode-gateway.service "${DIST_DIR}/chatcode-gateway.service"
