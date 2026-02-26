@@ -106,7 +106,9 @@ Workflow `.github/workflows/gateway-release.yml` expects:
 - `CF_API_TOKEN_R2_RELEASES`
 - `R2_RELEASE_BUCKET`
 
-`CF_API_TOKEN_R2_RELEASES` should have (account-scoped) R2 write access:
+`CF_API_TOKEN_R2_RELEASES` must be a **Cloudflare API token for Wrangler** (not an R2 S3 access key / secret pair).
+
+Required token scope:
 - Account > Cloudflare R2 > Edit
 - Account > Account Settings > Read (recommended for tooling compatibility)
 

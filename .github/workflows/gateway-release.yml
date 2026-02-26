@@ -31,6 +31,7 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version-file: packages/gateway/go.mod
+          cache-dependency-path: packages/gateway/go.sum
 
       - name: Build binary
         working-directory: packages/gateway
@@ -160,7 +161,25 @@ jobs:
 
       - name: Install Wrangler
         if: ${{ steps.check.outputs.enabled == 'true' }}
-        run: npm install -g wrangler@4.68.1
+        run: npm install -g wrangler@4.69.0
+
+      - name: Verify R2 access
+        if: ${{ steps.check.outputs.enabled == 'true' }}
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ env.CF_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ env.CF_API_TOKEN_R2_RELEASES }}
+        run: |
+          set -euo pipefail
+
+          if ! wrangler r2 bucket info "${R2_RELEASE_BUCKET}" >/tmp/r2-info.out 2>/tmp/r2-info.err; then
+            echo "::error::R2 preflight failed for bucket '${R2_RELEASE_BUCKET}'."
+            echo "::error::Check CF_ACCOUNT_ID and CF_API_TOKEN_R2_RELEASES."
+            echo "::error::Token must be a Cloudflare API token for Wrangler (not R2 S3 Access Key/Secret)."
+            echo "::error::Required permission: Account > Workers R2 Storage > Edit."
+            cat /tmp/r2-info.err
+            exit 1
+          fi
+          cat /tmp/r2-info.out
 
       - name: Publish to R2
         if: ${{ steps.check.outputs.enabled == 'true' }}
