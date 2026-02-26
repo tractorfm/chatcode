@@ -85,6 +85,20 @@ wrangler r2 bucket domain add chatcode-releases \
   --min-tls 1.2
 ```
 
+Fully scripted setup (R2 + custom domain + installer redirect worker route):
+```bash
+cd packages/gateway
+./scripts/setup-cloudflare-release.sh \
+  --bucket chatcode-releases \
+  --release-domain releases.chatcode.dev \
+  --install-domain chatcode.dev \
+  --zone-id <chatcode.dev-zone-id>
+```
+
+The script deploys a dedicated worker route `chatcode.dev/install.sh*` that redirects to:
+- `https://releases.chatcode.dev/gateway/latest/install.sh`
+- If `chatcode.dev/install.sh` still resolves elsewhere, remove/adjust older zone redirect rules (they can override worker routes).
+
 ## GitHub Actions secrets
 
 Workflow `.github/workflows/gateway-release.yml` expects:
