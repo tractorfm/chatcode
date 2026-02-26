@@ -37,7 +37,12 @@ export async function handleVPSCreate(
   env: Env,
   auth: AuthContext,
 ): Promise<Response> {
-  const body = (await request.json()) as { region?: string; size?: string };
+  let body: { region?: string; size?: string } = {};
+  try {
+    body = (await request.json()) as { region?: string; size?: string };
+  } catch {
+    // Body is optional. Defaults apply.
+  }
   const region = body.region || "nyc1";
   const size = body.size || "s-1vcpu-1gb";
 
@@ -67,50 +72,68 @@ export async function handleVPSCreate(
     gatewayReleaseBaseUrl,
   );
 
-  // Get DO access token (handles refresh)
-  const accessToken = await getAccessToken(
-    env.DB,
-    auth.userId,
-    env.DO_TOKEN_KEK,
-    env.DO_CLIENT_ID,
-    env.DO_CLIENT_SECRET,
-  );
+  let accessToken: string;
+  let droplet: { id: number; networks: { v4: Array<{ ip_address: string; type: string }> } };
+  try {
+    // Get DO access token (handles refresh)
+    accessToken = await getAccessToken(
+      env.DB,
+      auth.userId,
+      env.DO_TOKEN_KEK,
+      env.DO_CLIENT_ID,
+      env.DO_CLIENT_SECRET,
+    );
 
-  // Create droplet via DO API
-  const droplet = await createDroplet(accessToken, {
-    name: `chatcode-${vpsId}`,
-    region,
-    size,
-    image: DROPLET_IMAGE,
-    user_data: userdata,
-    tags: ["chatcode"],
-  });
+    // Create droplet via DO API
+    droplet = await createDroplet(accessToken, {
+      name: `chatcode-${vpsId}`,
+      region,
+      size,
+      image: DROPLET_IMAGE,
+      user_data: userdata,
+      tags: ["chatcode"],
+    });
+  } catch (err) {
+    console.error("vps create: droplet provisioning failed", err);
+    return jsonResponse({ error: "failed to provision droplet" }, 502);
+  }
 
   const now = Math.floor(Date.now() / 1000);
 
-  // Write VPS + Gateway rows to D1
-  await createVPS(env.DB, {
-    id: vpsId,
-    user_id: auth.userId,
-    droplet_id: droplet.id,
-    region,
-    size,
-    ipv4: getPublicIp(droplet) ?? null,
-    status: "provisioning",
-    provisioning_deadline_at: now + PROVISIONING_TIMEOUT_SEC,
-    created_at: now,
-    updated_at: now,
-  });
+  try {
+    // Write VPS + Gateway rows to D1
+    await createVPS(env.DB, {
+      id: vpsId,
+      user_id: auth.userId,
+      droplet_id: droplet.id,
+      region,
+      size,
+      ipv4: getPublicIp(droplet) ?? null,
+      status: "provisioning",
+      provisioning_deadline_at: now + PROVISIONING_TIMEOUT_SEC,
+      created_at: now,
+      updated_at: now,
+    });
 
-  await createGateway(env.DB, {
-    id: gatewayId,
-    vps_id: vpsId,
-    auth_token_hash: authTokenHash,
-    version: null,
-    last_seen_at: null,
-    connected: 0,
-    created_at: now,
-  });
+    await createGateway(env.DB, {
+      id: gatewayId,
+      vps_id: vpsId,
+      auth_token_hash: authTokenHash,
+      version: null,
+      last_seen_at: null,
+      connected: 0,
+      created_at: now,
+    });
+  } catch (err) {
+    // Best-effort rollback of cloud resource to avoid orphan droplets.
+    try {
+      await deleteDroplet(accessToken, droplet.id);
+    } catch {
+      // Reconciliation will not see this orphan yet; keep explicit log.
+    }
+    console.error("vps create: failed to persist DB state", err);
+    return jsonResponse({ error: "failed to persist vps state" }, 500);
+  }
 
   return jsonResponse({ vps_id: vpsId, status: "provisioning" }, 201);
 }

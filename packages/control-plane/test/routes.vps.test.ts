@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { handleVPSDelete, handleVPSManualCreate } from "../src/routes/vps";
+import { handleVPSCreate, handleVPSDelete, handleVPSManualCreate } from "../src/routes/vps";
 
 const mocks = vi.hoisted(() => ({
   createVPS: vi.fn(async () => {}),
@@ -68,7 +68,7 @@ function makeEnv() {
   return { env, doShutdownFetch };
 }
 
-describe("routes/vps delete", () => {
+describe("routes/vps", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.getVPS.mockResolvedValue({
@@ -76,8 +76,61 @@ describe("routes/vps delete", () => {
       user_id: "usr-1",
       droplet_id: 123456,
     });
+    mocks.getDOConnection.mockResolvedValue({
+      user_id: "usr-1",
+      access_token_enc: "enc",
+      refresh_token_enc: "enc",
+      token_key_version: 1,
+      team_uuid: null,
+      expires_at: 9999999999,
+      created_at: 1,
+      updated_at: 1,
+    });
     mocks.getGatewayByVPS.mockResolvedValue({ id: "gw-1" });
     mocks.getAccessToken.mockResolvedValue("do-access-token");
+    mocks.createDroplet.mockResolvedValue({
+      id: 777,
+      networks: { v4: [{ ip_address: "1.2.3.4", type: "public" }] },
+    });
+    mocks.createVPS.mockResolvedValue(undefined);
+    mocks.createGateway.mockResolvedValue(undefined);
+  });
+
+  it("returns 502 when droplet provisioning fails", async () => {
+    const { env } = makeEnv();
+    mocks.createDroplet.mockRejectedValue(new Error("DO create failed"));
+
+    const res = await handleVPSCreate(
+      new Request("https://cp.example.test/vps", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ region: "nyc1", size: "s-1vcpu-1gb" }),
+      }),
+      env,
+      { userId: "usr-1" },
+    );
+
+    expect(res.status).toBe(502);
+    expect(mocks.createVPS).not.toHaveBeenCalled();
+    expect(mocks.createGateway).not.toHaveBeenCalled();
+  });
+
+  it("rolls back droplet when DB write fails", async () => {
+    const { env } = makeEnv();
+    mocks.createVPS.mockRejectedValue(new Error("D1 write failed"));
+
+    const res = await handleVPSCreate(
+      new Request("https://cp.example.test/vps", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ region: "nyc1", size: "s-1vcpu-1gb" }),
+      }),
+      env,
+      { userId: "usr-1" },
+    );
+
+    expect(res.status).toBe(500);
+    expect(mocks.deleteDroplet).toHaveBeenCalledWith("do-access-token", 777);
   });
 
   it("keeps D1 rows when cloud droplet delete fails", async () => {

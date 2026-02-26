@@ -116,21 +116,36 @@ function htmlPage(): string {
       await refreshMe();
     });
 
-    document.getElementById("vps-create").addEventListener("click", async () => {
-      await call("/vps", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ region: "nyc1", size: "s-1vcpu-1gb" }),
-      });
+    const vpsCreateBtn = document.getElementById("vps-create");
+    const vpsManualBtn = document.getElementById("vps-manual");
+
+    vpsCreateBtn.addEventListener("click", async () => {
+      if (vpsCreateBtn.disabled) return;
+      vpsCreateBtn.disabled = true;
+      try {
+        await call("/vps", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ region: "nyc1", size: "s-1vcpu-1gb" }),
+        });
+      } finally {
+        vpsCreateBtn.disabled = false;
+      }
     });
 
-    document.getElementById("vps-manual").addEventListener("click", async () => {
-      const label = document.getElementById("manual-label").value;
-      await call("/vps/manual", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ label }),
-      });
+    vpsManualBtn.addEventListener("click", async () => {
+      if (vpsManualBtn.disabled) return;
+      vpsManualBtn.disabled = true;
+      try {
+        const label = document.getElementById("manual-label").value;
+        await call("/vps/manual", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ label }),
+        });
+      } finally {
+        vpsManualBtn.disabled = false;
+      }
     });
 
     document.getElementById("vps-list").addEventListener("click", async () => {
