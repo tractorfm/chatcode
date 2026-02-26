@@ -63,6 +63,11 @@ export function sessionCookieHeader(token: string): string {
   return `${COOKIE_NAME}=${token}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=${COOKIE_MAX_AGE}`;
 }
 
+/** Build Set-Cookie header to clear the session cookie. */
+export function clearSessionCookieHeader(): string {
+  return `${COOKIE_NAME}=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0`;
+}
+
 /** Parse session cookie from Cookie header. */
 function parseSessionCookie(cookieHeader: string): string | null {
   const match = cookieHeader
@@ -70,6 +75,11 @@ function parseSessionCookie(cookieHeader: string): string | null {
     .map((c) => c.trim())
     .find((c) => c.startsWith(`${COOKIE_NAME}=`));
   return match ? match.slice(COOKIE_NAME.length + 1) : null;
+}
+
+/** Normalize user email for stable account identity matching. */
+export function normalizeEmail(email: string): string {
+  return email.trim().toLowerCase();
 }
 
 // ---------------------------------------------------------------------------

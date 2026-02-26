@@ -11,12 +11,21 @@ export interface Env {
 
   // Vars
   DO_CLIENT_ID: string;
+  GOOGLE_CLIENT_ID?: string;
+  GITHUB_CLIENT_ID?: string;
+  APP_ENV?: "dev" | "staging" | "prod";
   GATEWAY_VERSION?: string;
   GATEWAY_RELEASE_BASE_URL?: string;
   AUTH_MODE?: string; // "dev" for local dev only
 
   // Secrets (set via `wrangler secret put`)
   DO_CLIENT_SECRET: string;
+  GOOGLE_CLIENT_SECRET?: string;
+  GITHUB_CLIENT_SECRET?: string;
+  SES_ACCESS_KEY_ID?: string;
+  SES_SECRET_ACCESS_KEY?: string;
+  SES_REGION?: string;
+  SES_FROM_ADDRESS?: string;
   JWT_SECRET: string;
   GATEWAY_TOKEN_SALT: string;
   DO_TOKEN_KEK: string; // base64-encoded AES-256 key

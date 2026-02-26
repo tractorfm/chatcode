@@ -18,6 +18,16 @@ export interface EmailIdentityRow {
   verified_at: number | null;
 }
 
+export interface AuthIdentityRow {
+  provider: "email" | "google" | "github" | "digitalocean";
+  provider_user_id: string;
+  user_id: string;
+  email_verified: number;
+  created_at: number;
+  updated_at: number;
+  last_login_at: number;
+}
+
 export interface DOConnectionRow {
   user_id: string;
   access_token_enc: string;
@@ -88,6 +98,100 @@ export async function createUser(db: D1Database, id: string): Promise<void> {
 
 export async function getUser(db: D1Database, id: string): Promise<UserRow | null> {
   return db.prepare("SELECT * FROM users WHERE id = ?").bind(id).first<UserRow>();
+}
+
+export async function getEmailIdentityByEmail(
+  db: D1Database,
+  email: string,
+): Promise<EmailIdentityRow | null> {
+  return db
+    .prepare("SELECT * FROM email_identities WHERE email = ?")
+    .bind(email)
+    .first<EmailIdentityRow>();
+}
+
+export async function upsertEmailIdentity(
+  db: D1Database,
+  row: EmailIdentityRow,
+): Promise<void> {
+  await db
+    .prepare(
+      `INSERT INTO email_identities (user_id, email, verified_at)
+       VALUES (?, ?, ?)
+       ON CONFLICT(user_id, email) DO UPDATE SET
+         verified_at = COALESCE(email_identities.verified_at, excluded.verified_at)`,
+    )
+    .bind(row.user_id, row.email, row.verified_at)
+    .run();
+}
+
+export async function getPrimaryEmailForUser(
+  db: D1Database,
+  userId: string,
+): Promise<string | null> {
+  const row = await db
+    .prepare(
+      `SELECT email
+       FROM email_identities
+       WHERE user_id = ?
+       ORDER BY verified_at DESC, email ASC
+       LIMIT 1`,
+    )
+    .bind(userId)
+    .first<{ email: string }>();
+  return row?.email ?? null;
+}
+
+export async function getAuthIdentity(
+  db: D1Database,
+  provider: AuthIdentityRow["provider"],
+  providerUserId: string,
+): Promise<AuthIdentityRow | null> {
+  return db
+    .prepare("SELECT * FROM auth_identities WHERE provider = ? AND provider_user_id = ?")
+    .bind(provider, providerUserId)
+    .first<AuthIdentityRow>();
+}
+
+export async function upsertAuthIdentity(
+  db: D1Database,
+  row: AuthIdentityRow,
+): Promise<void> {
+  await db
+    .prepare(
+      `INSERT INTO auth_identities (provider, provider_user_id, user_id, email_verified, created_at, updated_at, last_login_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(provider, provider_user_id) DO UPDATE SET
+         email_verified = CASE
+           WHEN auth_identities.email_verified = 1 THEN 1
+           ELSE excluded.email_verified
+         END,
+         updated_at = excluded.updated_at,
+         last_login_at = excluded.last_login_at`,
+    )
+    .bind(
+      row.provider,
+      row.provider_user_id,
+      row.user_id,
+      row.email_verified,
+      row.created_at,
+      row.updated_at,
+      row.last_login_at,
+    )
+    .run();
+}
+
+export async function listAuthIdentitiesByUser(
+  db: D1Database,
+  userId: string,
+): Promise<AuthIdentityRow[]> {
+  const result = await db
+    .prepare(
+      "SELECT * FROM auth_identities WHERE user_id = ? ORDER BY provider ASC, created_at ASC",
+    )
+    .bind(userId)
+    .all<AuthIdentityRow>();
+  return result.results;
 }
 
 // ---------------------------------------------------------------------------

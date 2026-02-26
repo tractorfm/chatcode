@@ -3,29 +3,29 @@ import {
   handleDOConnect,
   handleDOCallback,
   handleDODisconnect,
+  handleLogout,
+  handleEmailStart,
+  handleAuthMe,
 } from "../src/routes/auth";
 
 const mocks = vi.hoisted(() => ({
-  createUser: vi.fn(async () => {}),
-  getUser: vi.fn(async () => null),
-  upsertDOConnection: vi.fn(async () => {}),
   deleteDOConnection: vi.fn(async () => {}),
+  listAuthIdentitiesByUser: vi.fn(async () => []),
+  upsertDOConnection: vi.fn(async () => {}),
+  getPrimaryEmailForUser: vi.fn(async () => "user@example.test"),
   importKEK: vi.fn(async () => ({} as CryptoKey)),
   encryptToken: vi.fn(async (token: string) => `enc:${token}`),
-  signSessionCookie: vi.fn(async () => "signed-session-token"),
-  sessionCookieHeader: vi.fn(
-    () => "session=signed-session-token; HttpOnly; Secure; Path=/",
-  ),
   exchangeOAuthCode: vi.fn(),
-  newUserId: vi.fn(() => "usr-test-1"),
+  resolveOrCreateUserByIdentity: vi.fn(),
   randomHex: vi.fn(() => "state-nonce-1"),
+  sendMagicLinkEmail: vi.fn(async () => {}),
 }));
 
 vi.mock("../src/db/schema.js", () => ({
-  createUser: mocks.createUser,
-  getUser: mocks.getUser,
-  upsertDOConnection: mocks.upsertDOConnection,
   deleteDOConnection: mocks.deleteDOConnection,
+  listAuthIdentitiesByUser: mocks.listAuthIdentitiesByUser,
+  upsertDOConnection: mocks.upsertDOConnection,
+  getPrimaryEmailForUser: mocks.getPrimaryEmailForUser,
 }));
 
 vi.mock("../src/lib/do-tokens.js", () => ({
@@ -33,57 +33,43 @@ vi.mock("../src/lib/do-tokens.js", () => ({
   encryptToken: mocks.encryptToken,
 }));
 
-vi.mock("../src/lib/auth.js", () => ({
-  signSessionCookie: mocks.signSessionCookie,
-  sessionCookieHeader: mocks.sessionCookieHeader,
-}));
-
 vi.mock("../src/lib/do-api.js", () => ({
   exchangeOAuthCode: mocks.exchangeOAuthCode,
 }));
 
+vi.mock("../src/lib/identity.js", () => ({
+  resolveOrCreateUserByIdentity: mocks.resolveOrCreateUserByIdentity,
+  IdentityConflictError: class IdentityConflictError extends Error {},
+  InvalidEmailError: class InvalidEmailError extends Error {},
+}));
+
 vi.mock("../src/lib/ids.js", () => ({
-  newUserId: mocks.newUserId,
   randomHex: mocks.randomHex,
+}));
+
+vi.mock("../src/lib/ses.js", () => ({
+  sendMagicLinkEmail: mocks.sendMagicLinkEmail,
 }));
 
 function makeEnv() {
   const kv = {
     put: vi.fn(async () => {}),
-    get: vi.fn(async () => "1"),
+    get: vi.fn(async () => "usr-test-1"),
     delete: vi.fn(async () => {}),
   };
 
-  const emailIdentityQuery = {
-    bind: vi.fn(() => ({
-      first: vi.fn(async () => ({ user_id: "usr-existing" })),
-      run: vi.fn(async () => ({})),
-    })),
-  };
-  const insertIdentityQuery = {
-    bind: vi.fn(() => ({
-      first: vi.fn(async () => null),
-      run: vi.fn(async () => ({})),
-    })),
-  };
-
-  const db = {
-    prepare: vi.fn((sql: string) => {
-      if (sql.includes("SELECT user_id FROM email_identities")) {
-        return emailIdentityQuery;
-      }
-      return insertIdentityQuery;
-    }),
-  };
-
   const env = {
-    DB: db as unknown as D1Database,
+    DB: {} as D1Database,
     KV: kv as unknown as KVNamespace,
     DO_CLIENT_ID: "do-client-id",
     DO_CLIENT_SECRET: "do-client-secret",
     DO_TOKEN_KEK: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
     JWT_SECRET: "jwt-secret",
     GATEWAY_TOKEN_SALT: "gateway-token-salt",
+    SES_ACCESS_KEY_ID: "akid",
+    SES_SECRET_ACCESS_KEY: "secret",
+    SES_REGION: "us-east-1",
+    SES_FROM_ADDRESS: "noreply@staging.chatcode.dev",
   };
 
   return { env, kv };
@@ -92,20 +78,25 @@ function makeEnv() {
 describe("routes/auth", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.resolveOrCreateUserByIdentity.mockResolvedValue({
+      userId: "usr-test-1",
+      email: "user@example.test",
+      created: false,
+    });
   });
 
   afterEach(() => {
     vi.unstubAllGlobals();
   });
 
-  it("creates OAuth state and redirects on /auth/do", async () => {
+  it("stores auth user in state and redirects on /auth/do", async () => {
     const { env, kv } = makeEnv();
     const req = new Request("https://cp.example.test/auth/do");
 
-    const res = await handleDOConnect(req, env);
+    const res = await handleDOConnect(req, env, { userId: "usr-test-1" });
 
     expect(res.status).toBe(302);
-    expect(kv.put).toHaveBeenCalledWith("oauth:state:state-nonce-1", "1", {
+    expect(kv.put).toHaveBeenCalledWith("oauth:state:do:state-nonce-1", "usr-test-1", {
       expirationTtl: 600,
     });
     expect(res.headers.get("Location")).toContain("cloud.digitalocean.com/v1/oauth/authorize");
@@ -126,7 +117,7 @@ describe("routes/auth", () => {
     });
   });
 
-  it("stores encrypted tokens and sets session cookie on successful callback", async () => {
+  it("stores encrypted tokens on successful DO callback", async () => {
     const { env, kv } = makeEnv();
 
     mocks.exchangeOAuthCode.mockResolvedValue({
@@ -159,81 +150,18 @@ describe("routes/auth", () => {
     );
 
     expect(res.status).toBe(302);
-    expect(kv.delete).toHaveBeenCalledWith("oauth:state:state-nonce-1");
-    expect(mocks.upsertDOConnection).toHaveBeenCalledOnce();
-    expect(res.headers.get("Location")).toBe("/dashboard");
-    expect(res.headers.get("Set-Cookie")).toContain("session=signed-session-token");
-  });
-
-  it("normalizes DigitalOcean email to lowercase before lookup and insert", async () => {
-    const kv = {
-      put: vi.fn(async () => {}),
-      get: vi.fn(async () => "1"),
-      delete: vi.fn(async () => {}),
-    };
-
-    const selectBind = vi.fn(() => ({
-      first: vi.fn(async () => null),
-    }));
-    const insertBind = vi.fn(() => ({
-      run: vi.fn(async () => ({})),
-    }));
-
-    const db = {
-      prepare: vi.fn((sql: string) => {
-        if (sql.includes("SELECT user_id FROM email_identities")) {
-          return { bind: selectBind };
-        }
-        return { bind: insertBind };
+    expect(kv.delete).toHaveBeenCalledWith("oauth:state:do:state-nonce-1");
+    expect(mocks.resolveOrCreateUserByIdentity).toHaveBeenCalledWith(
+      env.DB,
+      expect.objectContaining({
+        provider: "digitalocean",
+        providerUserId: "do-account-1",
+        expectedUserId: "usr-test-1",
       }),
-    };
-
-    const env = {
-      DB: db as unknown as D1Database,
-      KV: kv as unknown as KVNamespace,
-      DO_CLIENT_ID: "do-client-id",
-      DO_CLIENT_SECRET: "do-client-secret",
-      DO_TOKEN_KEK: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
-      JWT_SECRET: "jwt-secret",
-      GATEWAY_TOKEN_SALT: "gateway-token-salt",
-    };
-
-    mocks.exchangeOAuthCode.mockResolvedValue({
-      access_token: "access-abc",
-      refresh_token: "refresh-xyz",
-      expires_in: 3600,
-    });
-
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () =>
-        new Response(
-          JSON.stringify({
-            account: {
-              uuid: "do-account-1",
-              email: "  User@Example.TEST ",
-              team: { uuid: "team-123" },
-            },
-          }),
-          { status: 200, headers: { "Content-Type": "application/json" } },
-        ),
-      ),
     );
-
-    const res = await handleDOCallback(
-      new Request(
-        "https://cp.example.test/auth/do/callback?code=code-1&state=state-nonce-1",
-      ),
-      env,
-    );
-
-    expect(res.status).toBe(302);
-    expect(selectBind).toHaveBeenCalledWith("user@example.test");
-    expect(insertBind).toHaveBeenCalledWith(
-      "usr-test-1",
-      "user@example.test",
-      expect.any(Number),
-    );
+    expect(mocks.upsertDOConnection).toHaveBeenCalledOnce();
+    expect(res.headers.get("Location")).toBe("/staging/test");
+    expect(res.headers.get("Set-Cookie")).toContain("session=");
   });
 
   it("deletes stored DO connection on disconnect", async () => {
@@ -247,5 +175,53 @@ describe("routes/auth", () => {
 
     expect(res.status).toBe(200);
     expect(mocks.deleteDOConnection).toHaveBeenCalledWith(env.DB, "usr-1");
+  });
+
+  it("clears session cookie on logout", async () => {
+    const res = await handleLogout(
+      new Request("https://cp.example.test/auth/logout", { method: "POST" }),
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Set-Cookie")).toContain("Max-Age=0");
+  });
+
+  it("starts email auth and sends magic link through SES", async () => {
+    const { env, kv } = makeEnv();
+    const req = new Request("https://cp.example.test/auth/email/start", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: "User@Example.test" }),
+    });
+
+    const res = await handleEmailStart(req, env);
+    expect(res.status).toBe(200);
+    expect(kv.put).toHaveBeenCalledWith(
+      "auth:email:token:state-nonce-1",
+      "user@example.test",
+      { expirationTtl: 600 },
+    );
+    expect(mocks.sendMagicLinkEmail).toHaveBeenCalledOnce();
+  });
+
+  it("returns current user identity summary on /auth/me", async () => {
+    const { env } = makeEnv();
+    mocks.listAuthIdentitiesByUser.mockResolvedValue([
+      { provider: "email" },
+      { provider: "github" },
+      { provider: "github" },
+    ]);
+
+    const res = await handleAuthMe(
+      new Request("https://cp.example.test/auth/me"),
+      env,
+      { userId: "usr-test-1" },
+    );
+
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toEqual({
+      user_id: "usr-test-1",
+      email: "user@example.test",
+      providers: ["email", "github"],
+    });
   });
 });

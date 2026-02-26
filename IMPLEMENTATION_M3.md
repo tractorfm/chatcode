@@ -62,7 +62,6 @@ CREATE TABLE auth_identities (
   provider         TEXT    NOT NULL CHECK (provider IN ('email', 'google', 'github', 'digitalocean')),
   provider_user_id TEXT    NOT NULL,
   user_id          TEXT    NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  email            TEXT    NOT NULL CHECK (email = lower(email)),
   email_verified   INTEGER NOT NULL DEFAULT 0,
   created_at       INTEGER NOT NULL,
   updated_at       INTEGER NOT NULL,
@@ -71,15 +70,16 @@ CREATE TABLE auth_identities (
 );
 
 CREATE INDEX idx_auth_identities_user  ON auth_identities(user_id);
-CREATE INDEX idx_auth_identities_email ON auth_identities(email);
 ```
 
 ### Identity invariants
 
 1. Email is normalized with `trim().toLowerCase()` before any DB lookup/write.
-2. One lowercase email maps to one user (enforced by `email_identities` unique constraint).
-3. One `(provider, provider_user_id)` maps to one user (primary key in `auth_identities`).
-4. If provider identity and email resolve to different users, fail with `409 identity_conflict` (no silent merge).
+2. `email_identities` remains the canonical email lookup table.
+3. One lowercase email maps to one user (enforced by `email_identities` unique constraint).
+4. One `(provider, provider_user_id)` maps to one user (primary key in `auth_identities`).
+5. Provider login first resolves by `(provider, provider_user_id)`; if missing, resolves by canonical lowercase email in `email_identities`.
+6. If provider identity and email resolve to different users, fail with `409 identity_conflict` (no silent merge).
 
 ---
 
@@ -95,9 +95,8 @@ Flow:
 1. User submits email.
 2. Normalize + validate.
 3. Store one-time token in KV (TTL 10 min).
-4. Staging mode: return verification URL inline for quick testing.
-5. Production mode: send email via provider.
-6. Verify endpoint consumes token and signs session cookie.
+4. Send email through Amazon SES (staging and prod, with environment-specific From/reply metadata).
+5. Verify endpoint consumes token and signs session cookie.
 
 ## 2) Google OAuth
 
@@ -168,6 +167,8 @@ Returns install-ready gateway credentials:
 - example install commands for Linux/macOS
 
 M3 keeps this as a pragmatic test path for manual gateway connection before full BYO UX.
+Enforcement:
+- route returns `404` or `403` unless environment is staging/dev.
 
 ---
 
@@ -209,9 +210,10 @@ Page behavior:
   - register new routes + staging test page route
 - `src/db/schema.ts`
   - auth identity helpers
-- `src/db/migrations/0002_auth_identities.sql` (or equivalent schema refresh)
+- `src/db/migrations/0001_initial.sql`
+  - refresh to include `auth_identities` for a clean staging reset (no migration chain yet)
 - `wrangler.toml`
-  - add vars for provider client IDs and test-page toggle
+  - add vars for provider client IDs and app env
 
 ### Tests
 
@@ -231,11 +233,18 @@ New vars/secrets expected (staging first):
   - `GOOGLE_CLIENT_ID`
   - `GITHUB_CLIENT_ID`
   - `AUTH_MODE` (staging should move from `dev` to cookie auth during M3 validation)
+  - `APP_ENV` (`dev` | `staging` | `prod`) for `/vps/manual` route gating
 - Secrets:
   - `GOOGLE_CLIENT_SECRET`
   - `GITHUB_CLIENT_SECRET`
   - `EMAIL_SIGNING_SECRET` (if required by chosen magic-link token format)
-  - email-provider API key (if production email sending is enabled)
+  - `SES_ACCESS_KEY_ID`
+  - `SES_SECRET_ACCESS_KEY`
+  - `SES_REGION`
+  - `SES_FROM_ADDRESS`
+
+Implementation note:
+- run SES via HTTPS API from Worker (SigV4), not SMTP socket flow.
 
 ---
 
@@ -255,6 +264,30 @@ New vars/secrets expected (staging first):
    - create VPS from test page
    - add manual VPS and connect gateway via install script
    - logout and re-login via different provider, confirm same account
+
+---
+
+## Implementation Phases (Order)
+
+1. Schema reset first:
+   - update `0001_initial.sql` with M3 auth schema
+   - recreate staging D1 and apply schema from scratch
+2. Identity core:
+   - add normalization and identity-linking library
+   - add unit tests for linking and conflict behavior
+3. Auth routes:
+   - email start/verify
+   - google/github start/callback
+   - me/logout
+   - update `/auth/do` to authenticated connect-only
+4. Staging test UI:
+   - add `/staging/test`
+   - wire buttons to existing/new APIs
+5. Manual gateway path:
+   - add `/vps/manual` with strict staging/dev gating
+6. Full test pass:
+   - route/unit tests
+   - staging smoke for all three login methods + vps flows
 
 ---
 

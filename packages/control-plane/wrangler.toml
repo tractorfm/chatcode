@@ -25,6 +25,9 @@ crons = ["* * * * *"]
 
 [vars]
 DO_CLIENT_ID = ""
+GOOGLE_CLIENT_ID = ""
+GITHUB_CLIENT_ID = ""
+APP_ENV = "dev"
 GATEWAY_VERSION = "v0.0.1"
 GATEWAY_RELEASE_BASE_URL = "https://releases.chatcode.dev/gateway"
 AUTH_MODE = "dev"
@@ -53,6 +56,9 @@ id = "d81e938334fc41f884e4b24d7bb55437"
 
 [env.staging.vars]
 DO_CLIENT_ID = "0bcc8cc64037ea9e451de9a3cac9457a1bf13acd8091100e7f369a18f669d31b"
+GOOGLE_CLIENT_ID = ""
+GITHUB_CLIENT_ID = ""
+APP_ENV = "staging"
 GATEWAY_VERSION = "v0.0.1"
 GATEWAY_RELEASE_BASE_URL = "https://releases.chatcode.dev/gateway"
 AUTH_MODE = "dev"

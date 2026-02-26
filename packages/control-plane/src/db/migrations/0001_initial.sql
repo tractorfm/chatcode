@@ -11,6 +11,17 @@ CREATE TABLE email_identities (
   PRIMARY KEY (user_id, email)
 );
 
+CREATE TABLE auth_identities (
+  provider         TEXT    NOT NULL CHECK (provider IN ('email', 'google', 'github', 'digitalocean')),
+  provider_user_id TEXT    NOT NULL,
+  user_id          TEXT    NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  email_verified   INTEGER NOT NULL DEFAULT 0,
+  created_at       INTEGER NOT NULL,
+  updated_at       INTEGER NOT NULL,
+  last_login_at    INTEGER NOT NULL,
+  PRIMARY KEY (provider, provider_user_id)
+);
+
 -- DigitalOcean OAuth tokens (one row per user).
 -- access_token and refresh_token are AES-GCM encrypted at application layer
 -- using DO_TOKEN_KEK wrangler secret. See lib/do-tokens.ts.
@@ -79,3 +90,4 @@ CREATE TABLE authorized_keys (
 CREATE INDEX idx_sessions_vps  ON sessions(vps_id);
 CREATE INDEX idx_sessions_user ON sessions(user_id);
 CREATE INDEX idx_vps_user      ON vps(user_id);
+CREATE INDEX idx_auth_id_user  ON auth_identities(user_id);

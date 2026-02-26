@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { handleVPSDelete } from "../src/routes/vps";
+import { handleVPSDelete, handleVPSManualCreate } from "../src/routes/vps";
 
 const mocks = vi.hoisted(() => ({
   createVPS: vi.fn(async () => {}),
@@ -63,6 +63,7 @@ function makeEnv() {
     DO_CLIENT_ID: "do-client-id",
     DO_CLIENT_SECRET: "do-client-secret",
     GATEWAY_TOKEN_SALT: "gateway-token-salt",
+    APP_ENV: "staging",
   };
   return { env, doShutdownFetch };
 }
@@ -112,5 +113,64 @@ describe("routes/vps delete", () => {
     expect(doShutdownFetch).toHaveBeenCalledOnce();
     expect(mocks.deleteDroplet).toHaveBeenCalledWith("do-access-token", 123456);
     expect(mocks.deleteVPSCascade).toHaveBeenCalledWith(env.DB, "vps-1");
+  });
+
+  it("mints manual gateway credentials in staging", async () => {
+    const { env } = makeEnv();
+
+    const res = await handleVPSManualCreate(
+      new Request("https://cp.example.test/vps/manual", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ label: "raspi" }),
+      }),
+      env,
+      { userId: "usr-1" },
+    );
+
+    expect(res.status).toBe(201);
+    await expect(res.json()).resolves.toMatchObject({
+      vps_id: "vps-test-1",
+      gateway_id: "gw-test-1",
+      gateway_auth_token: "abcdef123456",
+      cp_url: "wss://cp.example.test/gw/connect",
+    });
+    expect(mocks.createVPS).toHaveBeenCalledWith(
+      env.DB,
+      expect.objectContaining({
+        id: "vps-test-1",
+        user_id: "usr-1",
+        droplet_id: 0,
+        region: "manual",
+        status: "provisioning",
+      }),
+    );
+    expect(mocks.createGateway).toHaveBeenCalledWith(
+      env.DB,
+      expect.objectContaining({
+        id: "gw-test-1",
+        vps_id: "vps-test-1",
+        auth_token_hash: "hash-token",
+      }),
+    );
+  });
+
+  it("blocks manual gateway credentials outside staging/dev", async () => {
+    const { env } = makeEnv();
+    env.APP_ENV = "prod";
+
+    const res = await handleVPSManualCreate(
+      new Request("https://cp.example.test/vps/manual", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      }),
+      env,
+      { userId: "usr-1" },
+    );
+
+    expect(res.status).toBe(404);
+    expect(mocks.createVPS).not.toHaveBeenCalled();
+    expect(mocks.createGateway).not.toHaveBeenCalled();
   });
 });

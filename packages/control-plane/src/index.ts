@@ -7,9 +7,30 @@ import type { Env, AuthContext } from "./types.js";
 import { authenticateRequest, verifyGatewayToken } from "./lib/auth.js";
 import { getGateway, listProvisioningTimedOut, listDeletingVPS, updateVPSStatus, deleteVPSCascade } from "./db/schema.js";
 import { getAccessToken, deleteDroplet } from "./lib/do-api.js";
-import { handleDOConnect, handleDOCallback, handleDODisconnect } from "./routes/auth.js";
-import { handleVPSCreate, handleVPSList, handleVPSGet, handleVPSDelete, handleVPSPowerOff, handleVPSPowerOn } from "./routes/vps.js";
+import {
+  handleEmailStart,
+  handleEmailVerify,
+  handleGoogleStart,
+  handleGoogleCallback,
+  handleGitHubStart,
+  handleGitHubCallback,
+  handleDOConnect,
+  handleDOCallback,
+  handleDODisconnect,
+  handleAuthMe,
+  handleLogout,
+} from "./routes/auth.js";
+import {
+  handleVPSCreate,
+  handleVPSList,
+  handleVPSGet,
+  handleVPSDelete,
+  handleVPSPowerOff,
+  handleVPSPowerOn,
+  handleVPSManualCreate,
+} from "./routes/vps.js";
 import { handleSessionList, handleSessionCreate, handleSessionDelete, handleSessionSnapshot, handleTerminalUpgrade } from "./routes/sessions.js";
+import { handleStagingTestPage } from "./routes/staging.js";
 
 export { GatewayHub } from "./durables/GatewayHub.js";
 
@@ -25,9 +46,32 @@ export default {
         return handleCORS();
       }
 
-      // --- Auth routes (unauthenticated) ---
-      if (path === "/auth/do" && method === "GET") {
-        return handleDOConnect(request, env);
+      // --- Minimal staging test UI ---
+      if (path === "/staging/test" && method === "GET") {
+        return handleStagingTestPage(request, env);
+      }
+
+      // --- Auth routes (unauthenticated entrypoints/callbacks) ---
+      if (path === "/auth/email/start" && method === "POST") {
+        return withCORS(await handleEmailStart(request, env));
+      }
+      if (path === "/auth/email/verify" && method === "GET") {
+        return handleEmailVerify(request, env);
+      }
+      if (path === "/auth/google/start" && method === "GET") {
+        return handleGoogleStart(request, env);
+      }
+      if (path === "/auth/google/callback" && method === "GET") {
+        return handleGoogleCallback(request, env);
+      }
+      if (path === "/auth/github/start" && method === "GET") {
+        return handleGitHubStart(request, env);
+      }
+      if (path === "/auth/github/callback" && method === "GET") {
+        return handleGitHubCallback(request, env);
+      }
+      if (path === "/auth/logout" && method === "POST") {
+        return withCORS(await handleLogout(request));
       }
       if (path === "/auth/do/callback" && method === "GET") {
         return handleDOCallback(request, env);
@@ -47,6 +91,12 @@ export default {
       const auth: AuthContext = authResult;
 
       // --- Auth (authenticated) ---
+      if (path === "/auth/me" && method === "GET") {
+        return withCORS(await handleAuthMe(request, env, auth));
+      }
+      if (path === "/auth/do" && method === "GET") {
+        return handleDOConnect(request, env, auth);
+      }
       if (path === "/auth/do/disconnect" && method === "POST") {
         return withCORS(await handleDODisconnect(request, env, auth));
       }
@@ -57,6 +107,9 @@ export default {
       }
       if (path === "/vps" && method === "POST") {
         return withCORS(await handleVPSCreate(request, env, auth));
+      }
+      if (path === "/vps/manual" && method === "POST") {
+        return withCORS(await handleVPSManualCreate(request, env, auth));
       }
 
       const vpsMatch = path.match(/^\/vps\/([a-zA-Z0-9_-]+)$/);

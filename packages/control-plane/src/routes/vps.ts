@@ -25,7 +25,7 @@ import { hashGatewayToken } from "../lib/auth.js";
 import { newVPSId, newGatewayId, randomHex } from "../lib/ids.js";
 
 const PROVISIONING_TIMEOUT_SEC = 600; // 10 minutes
-const DEFAULT_GATEWAY_VERSION = "v0.1.0";
+const DEFAULT_GATEWAY_VERSION = "v0.0.1";
 const DEFAULT_GATEWAY_RELEASE_BASE_URL = "https://releases.chatcode.dev/gateway";
 const DROPLET_IMAGE = "ubuntu-24-04-x64";
 
@@ -113,6 +113,72 @@ export async function handleVPSCreate(
   });
 
   return jsonResponse({ vps_id: vpsId, status: "provisioning" }, 201);
+}
+
+/**
+ * POST /vps/manual – Staging/dev helper to mint manual gateway credentials.
+ */
+export async function handleVPSManualCreate(
+  request: Request,
+  env: Env,
+  auth: AuthContext,
+): Promise<Response> {
+  if (!isManualVPSAllowed(env)) {
+    return jsonResponse({ error: "not found" }, 404);
+  }
+
+  let body: { label?: string } = {};
+  try {
+    body = (await request.json()) as { label?: string };
+  } catch {
+    // Body is optional; ignore parse errors from empty body
+  }
+
+  const vpsId = newVPSId();
+  const gatewayId = newGatewayId();
+  const authToken = randomHex(32);
+  const authTokenHash = await hashGatewayToken(authToken, env.GATEWAY_TOKEN_SALT);
+  const now = Math.floor(Date.now() / 1000);
+
+  await createVPS(env.DB, {
+    id: vpsId,
+    user_id: auth.userId,
+    droplet_id: 0,
+    region: "manual",
+    size: body.label?.trim() ? `manual:${body.label.trim()}` : "manual",
+    ipv4: null,
+    status: "provisioning",
+    provisioning_deadline_at: now + PROVISIONING_TIMEOUT_SEC,
+    created_at: now,
+    updated_at: now,
+  });
+
+  await createGateway(env.DB, {
+    id: gatewayId,
+    vps_id: vpsId,
+    auth_token_hash: authTokenHash,
+    version: null,
+    last_seen_at: null,
+    connected: 0,
+    created_at: now,
+  });
+
+  const cp = new URL(request.url);
+  const cpWsBase = `wss://${cp.hostname}/gw/connect`;
+
+  return jsonResponse(
+    {
+      vps_id: vpsId,
+      gateway_id: gatewayId,
+      gateway_auth_token: authToken,
+      cp_url: cpWsBase,
+      install: {
+        linux: `curl -fsSL https://chatcode.dev/install.sh | sudo bash -s -- --version latest --gateway-id ${gatewayId} --gateway-auth-token ${authToken} --cp-url ${cpWsBase}`,
+        macos: `curl -fsSL https://chatcode.dev/install.sh | bash -s -- --version latest --gateway-id ${gatewayId} --gateway-auth-token ${authToken} --cp-url ${cpWsBase}`,
+      },
+    },
+    201,
+  );
 }
 
 /**
@@ -259,6 +325,10 @@ function jsonResponse(data: unknown, status = 200): Response {
     status,
     headers: { "Content-Type": "application/json" },
   });
+}
+
+function isManualVPSAllowed(env: Env): boolean {
+  return env.APP_ENV === "dev" || env.APP_ENV === "staging";
 }
 
 function getPublicIp(droplet: { networks: { v4: Array<{ ip_address: string; type: string }> } }): string | undefined {
