@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
-# Install Claude Code CLI on the vibe user's VPS.
-# Claude Code requires Node.js 24+ and is installed via npm.
+# Install OpenCode CLI on the gateway host.
 set -euo pipefail
 
-echo "[vibecode] Installing Claude Code..."
+echo "[vibecode] Installing OpenCode CLI..."
 
 ensure_node() {
     local os
@@ -41,13 +40,13 @@ ensure_node() {
 
 ensure_node
 
-# Install/upgrade Claude Code globally
-npm install -g @anthropic-ai/claude-code@latest
+# Install OpenCode CLI globally
+npm install -g opencode-ai@latest
 
 # Verify installation
-if ! command -v claude &>/dev/null; then
-    echo "[vibecode] ERROR: claude not found in PATH after install" >&2
+if ! command -v opencode &>/dev/null; then
+    echo "[vibecode] ERROR: opencode not found in PATH after install" >&2
     exit 1
 fi
 
-echo "[vibecode] Claude Code installed: $(claude --version)"
+echo "[vibecode] OpenCode installed: $(opencode --version)"

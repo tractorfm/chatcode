@@ -84,6 +84,7 @@ const (
 	AgentClaudeCode AgentType = "claude-code"
 	AgentCodex      AgentType = "codex"
 	AgentGemini     AgentType = "gemini"
+	AgentOpenCode   AgentType = "opencode"
 	AgentNone       AgentType = "none"
 )
 

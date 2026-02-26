@@ -10,7 +10,7 @@ ensure_node() {
     if command -v node &>/dev/null; then
         local node_major
         node_major="$(node --version | cut -d. -f1 | tr -d 'v')"
-        if [ "${node_major}" -ge 18 ]; then
+        if [ "${node_major}" -ge 24 ]; then
             return 0
         fi
         echo "[vibecode] Node.js version too old ($(node --version)), upgrading..."
@@ -19,7 +19,7 @@ ensure_node() {
     fi
 
     if [ "${os}" = "Linux" ]; then
-        curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+        curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
         sudo apt-get install -y nodejs
         return 0
     fi
@@ -29,8 +29,8 @@ ensure_node() {
             echo "[vibecode] ERROR: Homebrew is required on macOS to install Node.js" >&2
             exit 1
         fi
-        brew install node@20
-        export PATH="/opt/homebrew/opt/node@20/bin:/usr/local/opt/node@20/bin:${PATH}"
+        brew install node@24
+        export PATH="/opt/homebrew/opt/node@24/bin:/usr/local/opt/node@24/bin:${PATH}"
         return 0
     fi
 
@@ -40,8 +40,8 @@ ensure_node() {
 
 ensure_node
 
-# Install Codex CLI globally
-npm install -g @openai/codex
+# Install/upgrade Codex CLI globally
+npm install -g @openai/codex@latest
 
 # Verify installation
 if ! command -v codex &>/dev/null; then

@@ -23,3 +23,6 @@ var InstallCodexScript string
 
 //go:embed scripts/install-gemini.sh
 var InstallGeminiScript string
+
+//go:embed scripts/install-opencode.sh
+var InstallOpenCodeScript string

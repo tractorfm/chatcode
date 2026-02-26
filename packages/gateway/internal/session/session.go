@@ -115,6 +115,8 @@ func (s *Session) agentCommand() string {
 		return "codex"
 	case "gemini":
 		return "gemini"
+	case "opencode":
+		return "opencode"
 	default:
 		return "$SHELL"
 	}

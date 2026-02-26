@@ -37,7 +37,7 @@ export interface SessionCreate extends BaseCommand {
   session_id: string;
   name: string;
   workdir: string;
-  agent?: "claude-code" | "codex" | "gemini" | "none";
+  agent?: "claude-code" | "codex" | "gemini" | "opencode" | "none";
   agent_config?: {
     claude_md?: string;
     agents_md?: string;
@@ -126,7 +126,7 @@ export interface FileCancel extends BaseCommand {
 
 export interface AgentsInstall extends BaseCommand {
   type: "agents.install";
-  agent: "claude-code" | "codex" | "gemini";
+  agent: "claude-code" | "codex" | "gemini" | "opencode";
 }
 
 export interface GatewayUpdate extends BaseCommand {

@@ -78,6 +78,27 @@ Optional flags:
 - `--keep-workspace` keep `~/workspace` (requires `--keep-user`)
 - `--remove-workspace` (macOS) remove `~/workspace`
 
+## Agent CLIs
+
+Gateway supports installing these CLIs:
+- `claude-code`
+- `codex`
+- `gemini`
+- `opencode`
+
+Node.js baseline for installer scripts is Node 24 (LTS on current timeline).
+
+Update all installed CLIs to latest:
+```bash
+cd packages/gateway
+./scripts/update-agent-clis.sh
+```
+
+Update specific CLIs:
+```bash
+./scripts/update-agent-clis.sh codex opencode
+```
+
 ## Release build/publish
 
 ```bash

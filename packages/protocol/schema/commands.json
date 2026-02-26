@@ -29,7 +29,7 @@
         "workdir": { "type": "string" },
         "agent": {
           "type": "string",
-          "enum": ["claude-code", "codex", "gemini", "none"],
+          "enum": ["claude-code", "codex", "gemini", "opencode", "none"],
           "default": "claude-code"
         },
         "agent_config": {
@@ -193,7 +193,7 @@
         "type": { "const": "agents.install" },
         "agent": {
           "type": "string",
-          "enum": ["claude-code", "codex", "gemini"]
+          "enum": ["claude-code", "codex", "gemini", "opencode"]
         }
       },
       "required": ["type", "request_id", "agent"]

@@ -18,6 +18,7 @@ const (
 	AgentClaudeCode AgentName = "claude-code"
 	AgentCodex      AgentName = "codex"
 	AgentGemini     AgentName = "gemini"
+	AgentOpenCode   AgentName = "opencode"
 )
 
 // Install runs the embedded install script for the given agent and returns
@@ -70,6 +71,8 @@ func agentScript(agent AgentName) (script, binaryName string, err error) {
 		return gw.InstallCodexScript, "codex", nil
 	case AgentGemini:
 		return gw.InstallGeminiScript, "gemini", nil
+	case AgentOpenCode:
+		return gw.InstallOpenCodeScript, "opencode", nil
 	default:
 		return "", "", fmt.Errorf("unknown agent: %q", agent)
 	}
@@ -88,6 +91,8 @@ func getVersion(binary string) (string, error) {
 	case "codex":
 		args = []string{"--version"}
 	case "gemini":
+		args = []string{"--version"}
+	case "opencode":
 		args = []string{"--version"}
 	default:
 		args = []string{"--version"}
