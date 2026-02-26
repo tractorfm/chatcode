@@ -8,6 +8,7 @@ Build the self-serve Chatcode.dev core: provision user-owned VPS, connect gatewa
 - ✅ M2 core implemented: control plane scaffold, D1 schema/helpers, routes, GatewayHub DO, scheduled reconciliation worker.
 - ✅ M2 hardening pass completed: gateway-id validation, snapshot path fix, and broader route/DO test coverage.
 - Current focus is M2 staging validation: remote D1/KV/DO setup, deploy smoke tests, and reconciliation verification against real cloud resources.
+- Gateway release distribution is automated: GitHub tag builds publish multi-arch bundles, and optional R2 upload mirrors releases under `releases.chatcode.dev/gateway/`.
 - Keep scope intentionally narrow: make "provision VPS -> connect gateway -> open terminal reliably" solid before adding broader UX surface area.
 
 ## Architecture Constraints
@@ -46,6 +47,7 @@ Build the self-serve Chatcode.dev core: provision user-owned VPS, connect gatewa
 - Never commit secrets or rely on `.env` values being present.
 - Keep `MVP.md` as architecture source of truth and milestone docs (`IMPLEMENTATION_M1.md`, `IMPLEMENTATION_M2.md`) as execution plans.
 - For control-plane changes, run `pnpm --filter @chatcode/control-plane test` and `pnpm --filter @chatcode/control-plane build` before merge.
+- For gateway release automation, keep GitHub repo secrets in sync: `CF_ACCOUNT_ID`, `CF_API_TOKEN_R2_RELEASES`, and `R2_RELEASE_BUCKET`.
 
 ## Useful Commands
 ```bash

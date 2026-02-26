@@ -72,3 +72,29 @@ Cloudflare setup suggestion:
 2. Create a redirect rule on `chatcode.dev`:
   - if `http.request.uri.path == "/install.sh"`
   - redirect (302/307) to `https://releases.chatcode.dev/gateway/latest/install.sh`
+
+Wrangler setup example:
+```bash
+# Create bucket
+wrangler r2 bucket create chatcode-releases
+
+# Connect custom domain
+wrangler r2 bucket domain add chatcode-releases \
+  --domain releases.chatcode.dev \
+  --zone-id <chatcode.dev-zone-id> \
+  --min-tls 1.2
+```
+
+## GitHub Actions secrets
+
+Workflow `.github/workflows/gateway-release.yml` expects:
+- `CF_ACCOUNT_ID`
+- `CF_API_TOKEN_R2_RELEASES`
+- `R2_RELEASE_BUCKET`
+
+With GitHub CLI (after `gh auth login`):
+```bash
+gh secret set CF_ACCOUNT_ID --body "<cloudflare-account-id>" --repo tractorfm/chatcode
+gh secret set CF_API_TOKEN_R2_RELEASES --body "<cloudflare-api-token>" --repo tractorfm/chatcode
+gh secret set R2_RELEASE_BUCKET --body "chatcode-releases" --repo tractorfm/chatcode
+```

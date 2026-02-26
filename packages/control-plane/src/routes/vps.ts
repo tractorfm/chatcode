@@ -25,7 +25,8 @@ import { hashGatewayToken } from "../lib/auth.js";
 import { newVPSId, newGatewayId, randomHex } from "../lib/ids.js";
 
 const PROVISIONING_TIMEOUT_SEC = 600; // 10 minutes
-const GATEWAY_VERSION = "v0.1.0"; // current release tag
+const DEFAULT_GATEWAY_VERSION = "v0.1.0";
+const DEFAULT_GATEWAY_RELEASE_BASE_URL = "https://releases.chatcode.dev/gateway";
 const DROPLET_IMAGE = "ubuntu-24-04-x64";
 
 /**
@@ -55,7 +56,16 @@ export async function handleVPSCreate(
   // Build cloud-init userdata
   const cpUrl = new URL(request.url);
   const gatewayWsUrl = `wss://${cpUrl.hostname}/gw/connect`;
-  const userdata = buildCloudInit(gatewayId, authToken, gatewayWsUrl, GATEWAY_VERSION);
+  const gatewayVersion = env.GATEWAY_VERSION || DEFAULT_GATEWAY_VERSION;
+  const gatewayReleaseBaseUrl =
+    env.GATEWAY_RELEASE_BASE_URL || DEFAULT_GATEWAY_RELEASE_BASE_URL;
+  const userdata = buildCloudInit(
+    gatewayId,
+    authToken,
+    gatewayWsUrl,
+    gatewayVersion,
+    gatewayReleaseBaseUrl,
+  );
 
   // Get DO access token (handles refresh)
   const accessToken = await getAccessToken(
@@ -260,6 +270,7 @@ function buildCloudInit(
   authToken: string,
   cpUrl: string,
   version: string,
+  releaseBaseUrl: string,
 ): string {
   return `#!/bin/bash
 set -euo pipefail
@@ -272,7 +283,7 @@ echo "vibe ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/vibe
 mkdir -p /opt/chatcode
 cd /opt/chatcode
 
-GATEWAY_RELEASE_BASE_URL="https://releases.chatcode.dev/gateway"
+GATEWAY_RELEASE_BASE_URL="${releaseBaseUrl}"
 ARCH="$(uname -m)"
 case "$ARCH" in
   x86_64|amd64) GATEWAY_ARCH="amd64" ;;

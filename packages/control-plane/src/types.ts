@@ -11,6 +11,8 @@ export interface Env {
 
   // Vars
   DO_CLIENT_ID: string;
+  GATEWAY_VERSION?: string;
+  GATEWAY_RELEASE_BASE_URL?: string;
   AUTH_MODE?: string; // "dev" for local dev only
 
   // Secrets (set via `wrangler secret put`)
