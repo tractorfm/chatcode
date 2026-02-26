@@ -425,8 +425,16 @@ function buildCloudInit(
 set -euo pipefail
 
 # Create vibe user
-useradd -m -s /bin/bash vibe
+id -u vibe >/dev/null 2>&1 || useradd -m -s /bin/bash vibe
 echo "vibe ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/vibe
+chmod 440 /etc/sudoers.d/vibe
+
+# Ensure vibe-owned home paths
+install -d -m 700 -o vibe -g vibe /home/vibe/.ssh
+touch /home/vibe/.ssh/authorized_keys
+chown vibe:vibe /home/vibe/.ssh/authorized_keys
+chmod 600 /home/vibe/.ssh/authorized_keys
+install -d -m 755 -o vibe -g vibe /home/vibe/workspace
 
 # Install gateway
 mkdir -p /opt/chatcode
@@ -474,11 +482,15 @@ Wants=network-online.target
 
 [Service]
 Type=simple
+User=vibe
+Group=vibe
 ExecStart=/opt/chatcode/gateway
-WorkingDirectory=/opt/chatcode
+WorkingDirectory=/home/vibe
+Environment=HOME=/home/vibe
 Environment=GATEWAY_ID=${gatewayId}
 Environment=GATEWAY_AUTH_TOKEN=${authToken}
 Environment=GATEWAY_CP_URL=${cpUrl}
+Environment=GATEWAY_SSH_KEYS_FILE=/home/vibe/.ssh/authorized_keys
 Restart=always
 RestartSec=5
 

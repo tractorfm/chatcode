@@ -140,6 +140,14 @@ describe("routes/vps", () => {
         image: "ubuntu-24-04-x64",
       }),
     );
+    const createPayload = mocks.createDroplet.mock.calls[0]?.[1];
+    expect(createPayload?.user_data).toContain("User=vibe");
+    expect(createPayload?.user_data).toContain(
+      "Environment=GATEWAY_SSH_KEYS_FILE=/home/vibe/.ssh/authorized_keys",
+    );
+    expect(createPayload?.user_data).toContain(
+      "install -d -m 700 -o vibe -g vibe /home/vibe/.ssh",
+    );
   });
 
   it("rolls back droplet when DB write fails", async () => {
