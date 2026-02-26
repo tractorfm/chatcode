@@ -106,6 +106,10 @@ Workflow `.github/workflows/gateway-release.yml` expects:
 - `CF_API_TOKEN_R2_RELEASES`
 - `R2_RELEASE_BUCKET`
 
+`CF_API_TOKEN_R2_RELEASES` should have (account-scoped) R2 write access:
+- Account > Cloudflare R2 > Edit
+- Account > Account Settings > Read (recommended for tooling compatibility)
+
 With GitHub CLI (after `gh auth login`):
 ```bash
 gh secret set CF_ACCOUNT_ID --body "<cloudflare-account-id>" --repo tractorfm/chatcode
