@@ -52,6 +52,7 @@ function htmlPage(): string {
     <input id="manual-label" placeholder="manual label (optional)" />
     <button id="vps-manual">Add VPS (Manual)</button>
     <button id="vps-list">List VPS</button>
+    <div id="vps-list-panel"></div>
   </div>
 
   <h2>Last API Result</h2>
@@ -63,6 +64,7 @@ function htmlPage(): string {
     const unauth = document.getElementById("auth-unauth");
     const authed = document.getElementById("auth-authed");
     const vps = document.getElementById("vps");
+    const vpsListPanel = document.getElementById("vps-list-panel");
 
     function show(obj) {
       out.textContent = typeof obj === "string" ? obj : JSON.stringify(obj, null, 2);
@@ -84,11 +86,54 @@ function htmlPage(): string {
         authed.style.display = "block";
         vps.style.display = "block";
         meEl.textContent = JSON.stringify(body, null, 2);
+        await listVPS();
       } else {
         unauth.style.display = "block";
         authed.style.display = "none";
         vps.style.display = "none";
+        vpsListPanel.innerHTML = "";
       }
+    }
+
+    function escapeHtml(value) {
+      return String(value)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#39;");
+    }
+
+    function renderVPSList(vpsRows) {
+      if (!Array.isArray(vpsRows) || vpsRows.length === 0) {
+        vpsListPanel.innerHTML = "<p>No VPS yet.</p>";
+        return;
+      }
+
+      const rows = vpsRows.map((row) => {
+        const id = escapeHtml(row.id);
+        const status = escapeHtml(row.status || "unknown");
+        const region = escapeHtml(row.region || "");
+        const size = escapeHtml(row.size || "");
+        const ip = escapeHtml(row.ipv4 || "-");
+        return (
+          "<div style='padding:8px;border:1px solid #ddd;margin-top:8px'>" +
+          "<div><strong>" + id + "</strong></div>" +
+          "<div>Status: " + status + " | Region: " + region + " | Size: " + size + " | IPv4: " + ip + "</div>" +
+          "<button data-id='" + id + "' class='destroy-vps' style='margin-top:6px'>Destroy VPS</button>" +
+          "</div>"
+        );
+      }).join("");
+
+      vpsListPanel.innerHTML = rows;
+    }
+
+    async function listVPS() {
+      const { res, body } = await call("/vps", { method: "GET" });
+      if (res.ok && body && Array.isArray(body.vps)) {
+        renderVPSList(body.vps);
+      }
+      return { res, body };
     }
 
     document.getElementById("email-form").addEventListener("submit", async (e) => {
@@ -128,6 +173,7 @@ function htmlPage(): string {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ region: "nyc1", size: "s-1vcpu-1gb" }),
         });
+        await listVPS();
       } finally {
         vpsCreateBtn.disabled = false;
       }
@@ -143,13 +189,32 @@ function htmlPage(): string {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ label }),
         });
+        await listVPS();
       } finally {
         vpsManualBtn.disabled = false;
       }
     });
 
     document.getElementById("vps-list").addEventListener("click", async () => {
-      await call("/vps", { method: "GET" });
+      await listVPS();
+    });
+
+    vpsListPanel.addEventListener("click", async (event) => {
+      const target = event.target;
+      if (!target || !target.classList || !target.classList.contains("destroy-vps")) {
+        return;
+      }
+      const id = target.dataset.id;
+      if (!id) return;
+      if (!confirm("Destroy VPS " + id + "?")) return;
+
+      target.disabled = true;
+      try {
+        await call("/vps/" + encodeURIComponent(id), { method: "DELETE" });
+        await listVPS();
+      } finally {
+        target.disabled = false;
+      }
     });
 
     refreshMe();
