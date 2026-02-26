@@ -43,18 +43,18 @@ for file in "${DIST_DIR}"/*; do
   [[ -f "${file}" ]] || continue
   key="${RELEASE_PREFIX}/${VERSION}/$(basename "${file}")"
   echo "[publish-release-r2] put ${BUCKET}/${key}"
-  wrangler r2 object put "${BUCKET}/${key}" --file "${file}"
+  wrangler r2 object put "${BUCKET}/${key}" --file "${file}" --remote
 done
 
 TMP_LATEST="$(mktemp)"
 printf '%s\n' "${VERSION}" > "${TMP_LATEST}"
-wrangler r2 object put "${BUCKET}/${RELEASE_PREFIX}/latest.txt" --file "${TMP_LATEST}"
+wrangler r2 object put "${BUCKET}/${RELEASE_PREFIX}/latest.txt" --file "${TMP_LATEST}" --remote
 rm -f "${TMP_LATEST}"
 
 for name in install.sh manual-install.sh gateway-cleanup.sh cloud-init.sh checksums.txt manifest.json; do
   src="${DIST_DIR}/${name}"
   [[ -f "${src}" ]] || continue
-  wrangler r2 object put "${BUCKET}/${RELEASE_PREFIX}/latest/${name}" --file "${src}"
+  wrangler r2 object put "${BUCKET}/${RELEASE_PREFIX}/latest/${name}" --file "${src}" --remote
 done
 
 echo "[publish-release-r2] done"
