@@ -149,7 +149,11 @@ if [[ "${url}" == *"/chatcode-gateway-darwin-arm64" ]]; then
 fi
 
 if [[ "${url}" == *"/chatcode-gateway-darwin-arm64.sha256" ]]; then
-  sha="$(printf '#!/usr/bin/env bash\necho release-binary\n' | sha256sum | awk '{print $1}')"
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha="$(printf '#!/usr/bin/env bash\necho release-binary\n' | sha256sum | awk '{print $1}')"
+  else
+    sha="$(printf '#!/usr/bin/env bash\necho release-binary\n' | shasum -a 256 | awk '{print $1}')"
+  fi
   if [[ -n "${out_file}" ]]; then
     printf '%s\n' "${sha}" > "${out_file}"
   else

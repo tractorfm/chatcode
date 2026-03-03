@@ -4,9 +4,11 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../../../.." && pwd)"
 CLEANUP_SCRIPT="${REPO_ROOT}/packages/gateway/deploy/gateway-cleanup.sh"
+TMP_CHATCODE_BACKUP=""
 
 fail() {
   echo "[gateway-cleanup.test] FAIL: $*" >&2
+  restore_tmp_chatcode_state
   exit 1
 }
 
@@ -19,6 +21,24 @@ assert_not_exists() {
   local path="$1"
   [[ ! -e "${path}" ]] || fail "expected path to be removed: ${path}"
 }
+
+prepare_tmp_chatcode_state() {
+  if [[ -e /tmp/chatcode ]]; then
+    TMP_CHATCODE_BACKUP="/tmp/chatcode.pretest.$$.$RANDOM"
+    mv /tmp/chatcode "${TMP_CHATCODE_BACKUP}"
+  fi
+  mkdir -p /tmp/chatcode
+}
+
+restore_tmp_chatcode_state() {
+  rm -rf /tmp/chatcode
+  if [[ -n "${TMP_CHATCODE_BACKUP}" && -e "${TMP_CHATCODE_BACKUP}" ]]; then
+    mv "${TMP_CHATCODE_BACKUP}" /tmp/chatcode
+  fi
+  TMP_CHATCODE_BACKUP=""
+}
+
+trap restore_tmp_chatcode_state EXIT
 
 setup_darwin_stubs() {
   local stub_dir="$1"
@@ -77,7 +97,7 @@ test_darwin_cleanup_keeps_workspace_by_default() {
   mkdir -p "${stub_dir}" "${home_dir}"
   setup_darwin_stubs "${stub_dir}"
   create_darwin_layout "${home_dir}"
-  mkdir -p /tmp/chatcode
+  prepare_tmp_chatcode_state
 
   env HOME="${home_dir}" PATH="${stub_dir}:${PATH}" "${CLEANUP_SCRIPT}" --yes
 
@@ -85,6 +105,8 @@ test_darwin_cleanup_keeps_workspace_by_default() {
   assert_not_exists "${home_dir}/.config/chatcode"
   assert_not_exists "${home_dir}/.local/bin/chatcode-gateway"
   assert_exists "${home_dir}/workspace"
+  assert_not_exists "/tmp/chatcode"
+  restore_tmp_chatcode_state
   rm -rf "${tmp}"
 }
 
@@ -97,7 +119,7 @@ test_darwin_cleanup_remove_workspace() {
   mkdir -p "${stub_dir}" "${home_dir}"
   setup_darwin_stubs "${stub_dir}"
   create_darwin_layout "${home_dir}"
-  mkdir -p /tmp/chatcode
+  prepare_tmp_chatcode_state
 
   env HOME="${home_dir}" PATH="${stub_dir}:${PATH}" "${CLEANUP_SCRIPT}" --yes --remove-workspace
 
@@ -105,6 +127,8 @@ test_darwin_cleanup_remove_workspace() {
   assert_not_exists "${home_dir}/Library/LaunchAgents/dev.chatcode.gateway.plist"
   assert_not_exists "${home_dir}/.config/chatcode"
   assert_not_exists "${home_dir}/.local/bin/chatcode-gateway"
+  assert_not_exists "/tmp/chatcode"
+  restore_tmp_chatcode_state
   rm -rf "${tmp}"
 }
 
