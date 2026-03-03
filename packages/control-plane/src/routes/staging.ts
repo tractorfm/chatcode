@@ -104,7 +104,7 @@ function htmlPage(): string {
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Chatcode Staging Test</title>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.5.0/css/xterm.min.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css" />
   <style>
     body { font-family: ui-sans-serif, system-ui, sans-serif; margin: 20px; line-height: 1.4; }
     h1, h2 { margin: 0 0 8px 0; }
@@ -224,7 +224,7 @@ function htmlPage(): string {
   <h2>Last API Result</h2>
   <pre id="out">{}</pre>
 
-  <script src="https://cdn.jsdelivr.net/npm/xterm@5.5.0/lib/xterm.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
   <script>
     const out = document.getElementById("out");
     const meEl = document.getElementById("me");
