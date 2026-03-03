@@ -38,7 +38,7 @@ import {
   handleVPSManualCreate,
 } from "./routes/vps.js";
 import { handleSessionList, handleSessionCreate, handleSessionDelete, handleSessionSnapshot, handleTerminalUpgrade } from "./routes/sessions.js";
-import { handleStagingTestPage } from "./routes/staging.js";
+import { handleStagingCommand, handleStagingTestPage } from "./routes/staging.js";
 
 export { GatewayHub } from "./durables/GatewayHub.js";
 
@@ -101,6 +101,9 @@ export default {
       // --- Auth (authenticated) ---
       if (path === "/auth/me" && method === "GET") {
         return withCORS(await handleAuthMe(request, env, auth));
+      }
+      if (path === "/staging/cmd" && method === "POST") {
+        return withCORS(await handleStagingCommand(request, env, auth));
       }
       if (path === "/auth/do" && method === "GET") {
         return handleDOConnect(request, env, auth);

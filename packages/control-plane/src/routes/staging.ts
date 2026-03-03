@@ -1,13 +1,99 @@
-import type { Env } from "../types.js";
+import type { Env, AuthContext } from "../types.js";
+import { getGatewayByVPS, getVPS } from "../db/schema.js";
 
 export function handleStagingTestPage(_request: Request, env: Env): Response {
-  if (env.APP_ENV !== "staging" && env.APP_ENV !== "dev") {
+  if (!isStagingEnabled(env)) {
     return new Response("not found", { status: 404 });
   }
 
   return new Response(htmlPage(), {
     status: 200,
     headers: { "Content-Type": "text/html; charset=utf-8" },
+  });
+}
+
+export async function handleStagingCommand(
+  request: Request,
+  env: Env,
+  auth: AuthContext,
+): Promise<Response> {
+  if (!isStagingEnabled(env)) {
+    return jsonResponse({ error: "not found" }, 404);
+  }
+
+  let body: { vps_id?: string; cmd?: Record<string, unknown> };
+  try {
+    body = (await request.json()) as { vps_id?: string; cmd?: Record<string, unknown> };
+  } catch {
+    return jsonResponse({ error: "invalid JSON body" }, 400);
+  }
+
+  const vpsId = typeof body.vps_id === "string" ? body.vps_id.trim() : "";
+  if (!vpsId) {
+    return jsonResponse({ error: "vps_id is required" }, 400);
+  }
+
+  const vps = await getVPS(env.DB, vpsId);
+  if (!vps || vps.user_id !== auth.userId) {
+    return jsonResponse({ error: "not found" }, 404);
+  }
+
+  const gateway = await getGatewayByVPS(env.DB, vpsId);
+  if (!gateway) {
+    return jsonResponse({ error: "gateway not found" }, 404);
+  }
+
+  const cmd = body.cmd;
+  if (!cmd || typeof cmd !== "object") {
+    return jsonResponse({ error: "cmd object is required" }, 400);
+  }
+
+  const type = typeof cmd.type === "string" ? cmd.type.trim() : "";
+  if (!type) {
+    return jsonResponse({ error: "cmd.type is required" }, 400);
+  }
+
+  const finalCmd: Record<string, unknown> = { ...cmd };
+  if (typeof finalCmd.schema_version !== "string" || !String(finalCmd.schema_version).trim()) {
+    finalCmd.schema_version = "1";
+  }
+  if (typeof finalCmd.request_id !== "string" || !String(finalCmd.request_id).trim()) {
+    finalCmd.request_id = `stg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  }
+
+  const doId = env.GATEWAY_HUB.idFromName(gateway.id);
+  const stub = env.GATEWAY_HUB.get(doId);
+
+  try {
+    const resp = await stub.fetch(
+      new Request("http://do/cmd", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(finalCmd),
+      }),
+    );
+
+    const text = await resp.text();
+    return new Response(text, {
+      status: resp.status,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (err) {
+    return jsonResponse(
+      { error: `failed to relay command: ${err instanceof Error ? err.message : "unknown"}` },
+      502,
+    );
+  }
+}
+
+function isStagingEnabled(env: Env): boolean {
+  return env.APP_ENV === "staging" || env.APP_ENV === "dev";
+}
+
+function jsonResponse(data: unknown, status = 200): Response {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { "Content-Type": "application/json" },
   });
 }
 
@@ -23,13 +109,14 @@ function htmlPage(): string {
     body { font-family: ui-sans-serif, system-ui, sans-serif; margin: 20px; line-height: 1.4; }
     h1, h2 { margin: 0 0 8px 0; }
     button { margin-right: 8px; margin-bottom: 8px; }
-    input, select { margin-right: 8px; margin-bottom: 8px; padding: 6px; }
+    input, select, textarea { margin-right: 8px; margin-bottom: 8px; padding: 6px; }
     pre { background: #f5f5f5; padding: 12px; overflow: auto; border: 1px solid #ddd; white-space: pre-wrap; }
     .section { margin-bottom: 16px; border: 1px solid #ddd; padding: 12px; border-radius: 6px; }
     .row { margin-bottom: 8px; }
     .muted { color: #666; font-size: 12px; }
     #terminal { height: 420px; width: 100%; border: 1px solid #222; background: #111; }
     .vps-card, .session-card { padding: 8px; border: 1px solid #ddd; margin-top: 8px; border-radius: 4px; }
+    #schema-json { width: 100%; min-height: 150px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
   </style>
 </head>
 <body>
@@ -104,6 +191,36 @@ function htmlPage(): string {
     <div id="terminal"></div>
   </div>
 
+  <div id="schema-wrap" class="section" style="display:none">
+    <h2>Schema Command Tester (staging only)</h2>
+    <div class="row muted">Build a command from protocol schema presets, edit JSON if needed, then relay to gateway via control-plane.</div>
+    <div class="row">
+      <select id="schema-command-type">
+        <option value="session.snapshot">session.snapshot</option>
+        <option value="session.resize">session.resize</option>
+        <option value="session.input">session.input</option>
+        <option value="session.end">session.end</option>
+        <option value="ssh.list">ssh.list</option>
+        <option value="agents.install">agents.install</option>
+      </select>
+      <input id="schema-session-id" placeholder="session_id" style="min-width: 240px" />
+      <input id="schema-input-text" placeholder="input text for session.input" style="min-width: 260px" />
+      <input id="schema-cols" type="number" min="1" value="120" placeholder="cols" style="width:90px" />
+      <input id="schema-rows" type="number" min="1" value="32" placeholder="rows" style="width:90px" />
+      <select id="schema-agent">
+        <option value="claude-code">claude-code</option>
+        <option value="codex">codex</option>
+        <option value="gemini">gemini</option>
+        <option value="opencode">opencode</option>
+      </select>
+    </div>
+    <div class="row">
+      <button id="schema-build">Build Preset</button>
+      <button id="schema-send">Send Command</button>
+    </div>
+    <textarea id="schema-json" spellcheck="false"></textarea>
+  </div>
+
   <h2>Last API Result</h2>
   <pre id="out">{}</pre>
 
@@ -116,11 +233,19 @@ function htmlPage(): string {
     const vps = document.getElementById("vps");
     const sessions = document.getElementById("sessions");
     const terminalWrap = document.getElementById("terminal-wrap");
+    const schemaWrap = document.getElementById("schema-wrap");
     const vpsListPanel = document.getElementById("vps-list-panel");
     const sessionsListPanel = document.getElementById("sessions-list-panel");
     const vpsSelect = document.getElementById("session-vps-select");
     const terminalSessionInput = document.getElementById("terminal-session-id");
     const terminalStatus = document.getElementById("terminal-status");
+    const schemaCommandType = document.getElementById("schema-command-type");
+    const schemaSessionId = document.getElementById("schema-session-id");
+    const schemaInputText = document.getElementById("schema-input-text");
+    const schemaCols = document.getElementById("schema-cols");
+    const schemaRows = document.getElementById("schema-rows");
+    const schemaAgent = document.getElementById("schema-agent");
+    const schemaJson = document.getElementById("schema-json");
 
     let vpsRows = [];
     let activeVpsId = "";
@@ -204,6 +329,13 @@ function htmlPage(): string {
       terminalStatus.textContent = text;
     }
 
+    function syncActiveSession(sessionId) {
+      if (!sessionId) return;
+      activeSessionId = sessionId;
+      terminalSessionInput.value = sessionId;
+      schemaSessionId.value = sessionId;
+    }
+
     function disconnectTerminal() {
       if (termInputDisposable) {
         termInputDisposable.dispose();
@@ -216,6 +348,70 @@ function htmlPage(): string {
       setTerminalStatus("disconnected");
     }
 
+    function buildSchemaPreset() {
+      const type = schemaCommandType.value;
+      const sessionId = schemaSessionId.value.trim() || activeSessionId;
+      const cmd = {
+        type: type,
+        schema_version: "1",
+        request_id: requestId("schema"),
+      };
+
+      if (type === "session.snapshot" || type === "session.end") {
+        cmd.session_id = sessionId;
+      }
+
+      if (type === "session.resize") {
+        cmd.session_id = sessionId;
+        cmd.cols = Number(schemaCols.value || 120);
+        cmd.rows = Number(schemaRows.value || 32);
+      }
+
+      if (type === "session.input") {
+        cmd.session_id = sessionId;
+        const text = schemaInputText.value || "\n";
+        cmd.data = utf8ToBase64(text);
+      }
+
+      if (type === "agents.install") {
+        cmd.agent = schemaAgent.value || "claude-code";
+      }
+
+      return cmd;
+    }
+
+    async function sendSchemaCommand() {
+      if (!activeVpsId && !vpsSelect.value) {
+        show("Select VPS first");
+        return;
+      }
+
+      let cmd;
+      try {
+        cmd = JSON.parse(schemaJson.value);
+      } catch {
+        show("Invalid JSON in schema command payload");
+        return;
+      }
+
+      const vpsId = vpsSelect.value || activeVpsId;
+      const { res, body } = await call("/staging/cmd", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ vps_id: vpsId, cmd: cmd }),
+      });
+
+      if (res.ok && cmd && typeof cmd.session_id === "string") {
+        syncActiveSession(cmd.session_id);
+      }
+
+      if (vpsId) {
+        await listSessions(vpsId);
+      }
+
+      return { res, body };
+    }
+
     async function refreshMe() {
       const { res, body } = await call("/auth/me", { method: "GET" });
       if (res.ok) {
@@ -224,6 +420,7 @@ function htmlPage(): string {
         vps.style.display = "block";
         sessions.style.display = "block";
         terminalWrap.style.display = "block";
+        schemaWrap.style.display = "block";
         meEl.textContent = JSON.stringify(body, null, 2);
         await listVPS();
       } else {
@@ -232,6 +429,7 @@ function htmlPage(): string {
         vps.style.display = "none";
         sessions.style.display = "none";
         terminalWrap.style.display = "none";
+        schemaWrap.style.display = "none";
         vpsListPanel.innerHTML = "";
         sessionsListPanel.innerHTML = "";
       }
@@ -326,8 +524,7 @@ function htmlPage(): string {
 
       disconnectTerminal();
       activeVpsId = vpsId;
-      activeSessionId = sessionId;
-      terminalSessionInput.value = sessionId;
+      syncActiveSession(sessionId);
 
       term.clear();
       term.writeln("Connecting to " + sessionId + " ...");
@@ -542,8 +739,7 @@ function htmlPage(): string {
       });
 
       if (res.ok && body && body.session_id) {
-        activeSessionId = body.session_id;
-        terminalSessionInput.value = body.session_id;
+        syncActiveSession(body.session_id);
       }
 
       await listSessions(vpsId);
@@ -558,6 +754,7 @@ function htmlPage(): string {
       if (!vpsId || !sessionId) return;
 
       if (target.classList.contains("connect-session")) {
+        syncActiveSession(sessionId);
         await connectTerminal(vpsId, sessionId);
         return;
       }
@@ -577,6 +774,7 @@ function htmlPage(): string {
       const vpsId = vpsSelect.value || activeVpsId;
       const sessionId = terminalSessionInput.value.trim();
       if (!vpsId || !sessionId) return;
+      syncActiveSession(sessionId);
       await connectTerminal(vpsId, sessionId);
     });
 
@@ -598,6 +796,23 @@ function htmlPage(): string {
       await call("/vps/" + encodeURIComponent(vpsId) + "/sessions/" + encodeURIComponent(sessionId), { method: "DELETE" });
       await listSessions(vpsId);
     });
+
+    document.getElementById("schema-build").addEventListener("click", () => {
+      const preset = buildSchemaPreset();
+      schemaJson.value = JSON.stringify(preset, null, 2);
+    });
+
+    document.getElementById("schema-send").addEventListener("click", async () => {
+      await sendSchemaCommand();
+    });
+
+    schemaCommandType.addEventListener("change", () => {
+      const preset = buildSchemaPreset();
+      schemaJson.value = JSON.stringify(preset, null, 2);
+    });
+
+    const initialPreset = buildSchemaPreset();
+    schemaJson.value = JSON.stringify(initialPreset, null, 2);
 
     refreshMe();
   </script>
