@@ -47,6 +47,7 @@ Build the self-serve Chatcode.dev core: provision user-owned VPS, connect gatewa
 - Never commit secrets or rely on `.env` values being present.
 - Keep `MVP.md` as architecture source of truth and milestone docs (`IMPLEMENTATION_M1.md`, `IMPLEMENTATION_M2.md`) as execution plans.
 - For control-plane changes, run `pnpm --filter @chatcode/control-plane test` and `pnpm --filter @chatcode/control-plane build` before merge.
+- For gateway deploy script changes, run `cd packages/gateway && make test-deploy` before merge.
 - For gateway release automation, keep GitHub repo secrets in sync: `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, and `R2_RELEASE_BUCKET`.
 
 ## Useful Commands
@@ -59,6 +60,7 @@ pnpm build
 cd packages/gateway
 make build
 make test
+make test-deploy
 make mock-cp
 ./scripts/build-release.sh v0.1.1
 ./scripts/publish-release-r2.sh v0.1.1 chatcode-releases

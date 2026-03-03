@@ -148,6 +148,9 @@ describe("routes/vps", () => {
     expect(createPayload?.user_data).toContain(
       "install -d -m 700 -o vibe -g vibe /home/vibe/.ssh",
     );
+    expect(createPayload?.user_data).toContain(
+      "apt-get install -y -q tmux curl ca-certificates",
+    );
   });
 
   it("rolls back droplet when DB write fails", async () => {

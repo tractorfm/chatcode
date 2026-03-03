@@ -79,7 +79,7 @@ USAGE
 }
 
 log() {
-  echo "[gateway-install] $*"
+  echo "[gateway-install] $*" >&2
 }
 
 die() {
@@ -226,6 +226,7 @@ GATEWAY_AUTH_TOKEN=${GATEWAY_AUTH_TOKEN}
 GATEWAY_CP_URL=${GATEWAY_CP_URL}
 GATEWAY_SSH_KEYS_FILE=${TARGET_HOME}/.ssh/authorized_keys
 GATEWAY_TEMP_DIR=/tmp/chatcode
+TMUX_TMPDIR=/tmp/chatcode
 GATEWAY_BINARY_PATH=${BINARY_PATH}
 GATEWAY_LOG_LEVEL=${GATEWAY_LOG_LEVEL}
 GATEWAY_HEALTH_INTERVAL=${GATEWAY_HEALTH_INTERVAL}
@@ -259,6 +260,7 @@ Type=simple
 User=${TARGET_USER}
 Group=${TARGET_USER}
 WorkingDirectory=${TARGET_HOME}
+ExecStartPre=/usr/bin/install -d -m 700 -o ${TARGET_USER} -g ${TARGET_USER} /tmp/chatcode
 ExecStart=${BINARY_PATH}
 EnvironmentFile=${ENV_FILE}
 Restart=on-failure
@@ -380,6 +382,7 @@ prepare_linux_user() {
   chown "${TARGET_USER}:${TARGET_USER}" "${TARGET_HOME}/.ssh/authorized_keys"
   chmod 600 "${TARGET_HOME}/.ssh/authorized_keys"
   install -d -m 755 -o "${TARGET_USER}" -g "${TARGET_USER}" "${TARGET_HOME}/workspace"
+  install -d -m 700 -o "${TARGET_USER}" -g "${TARGET_USER}" /tmp/chatcode
 
   echo "${TARGET_USER} ALL=(ALL) NOPASSWD:ALL" > "${SUDOERS_FILE}"
   chmod 0440 "${SUDOERS_FILE}"
@@ -390,6 +393,7 @@ prepare_darwin_user() {
   touch "${TARGET_HOME}/.ssh/authorized_keys"
   chmod 600 "${TARGET_HOME}/.ssh/authorized_keys"
   install -d -m 755 "${TARGET_HOME}/workspace"
+  install -d -m 700 /tmp/chatcode
 }
 
 install_binary() {
@@ -556,6 +560,7 @@ if [[ "${OS_NAME}" == "Linux" ]]; then
   systemctl enable "${SERVICE_NAME}" >/dev/null
 
   if [[ "${NO_START}" -eq 0 ]]; then
+    systemctl reset-failed "${SERVICE_NAME}" >/dev/null 2>&1 || true
     if systemctl is-active --quiet "${SERVICE_NAME}"; then
       systemctl restart "${SERVICE_NAME}"
     else

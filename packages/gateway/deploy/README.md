@@ -27,6 +27,17 @@ sudo ./gateway-install.sh \
   --cp-url wss://cp.staging.chatcode.dev/gw/connect
 ```
 
+Automated script tests:
+```bash
+cd packages/gateway
+make test-deploy
+```
+Coverage includes:
+- darwin-mode install with local binary (`--no-start`)
+- darwin-mode install with release download (`--version latest`)
+- linux non-root guard behavior
+- darwin-mode cleanup behavior with and without workspace removal
+
 Linux mode:
 - creates `vibe` user (if missing)
 - prepares `~vibe/.ssh/authorized_keys` and `~/workspace`

@@ -424,6 +424,11 @@ function buildCloudInit(
   return `#!/bin/bash
 set -euo pipefail
 
+# Install runtime dependencies required by gateway sessions.
+export DEBIAN_FRONTEND=noninteractive
+apt-get update -q
+apt-get install -y -q tmux curl ca-certificates
+
 # Create vibe user
 id -u vibe >/dev/null 2>&1 || useradd -m -s /bin/bash vibe
 echo "vibe ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/vibe

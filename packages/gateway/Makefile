@@ -4,7 +4,7 @@ VERSION    ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "
 BUILD_TIME := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 LDFLAGS    := -ldflags "-X main.Version=$(VERSION) -X main.BuildTime=$(BUILD_TIME) -s -w"
 
-.PHONY: build build-linux build-linux-arm64 build-darwin-arm64 release test lint clean mock-cp tidy
+.PHONY: build build-linux build-linux-arm64 build-darwin-arm64 release test test-deploy lint clean mock-cp tidy
 
 build:
 	go build $(LDFLAGS) -o $(BINARY) ./cmd/gateway
@@ -27,6 +27,9 @@ release:
 
 test:
 	go test ./... -v -count=1 -timeout 120s
+
+test-deploy:
+	./deploy/test/run.sh
 
 lint:
 	@which golangci-lint > /dev/null || (echo "install golangci-lint first: https://golangci-lint.run/usage/install/" && exit 1)
