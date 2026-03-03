@@ -254,6 +254,8 @@ function htmlPage(): string {
     let term = null;
     let termSocket = null;
     let termInputDisposable = null;
+    let lastResizeCols = 0;
+    let lastResizeRows = 0;
 
     function show(obj) {
       out.textContent = typeof obj === "string" ? obj : JSON.stringify(obj, null, 2);
@@ -321,6 +323,13 @@ function htmlPage(): string {
           theme: { background: "#111", foreground: "#ddd" },
         });
         term.open(document.getElementById("terminal"));
+        term.onResize(({ cols, rows }) => {
+          sendSessionResize(cols, rows);
+        });
+        window.addEventListener("resize", () => {
+          if (!term) return;
+          sendSessionResize(term.cols || 80, term.rows || 24);
+        });
       }
       return true;
     }
@@ -345,7 +354,28 @@ function htmlPage(): string {
         try { termSocket.close(1000, "user disconnect"); } catch {}
       }
       termSocket = null;
+      lastResizeCols = 0;
+      lastResizeRows = 0;
       setTerminalStatus("disconnected");
+    }
+
+    function sendSessionResize(cols, rows) {
+      if (!termSocket || termSocket.readyState !== WebSocket.OPEN) return;
+      if (!activeSessionId) return;
+      if (cols === lastResizeCols && rows === lastResizeRows) return;
+      lastResizeCols = cols;
+      lastResizeRows = rows;
+      const resizeMsg = {
+        type: "session.resize",
+        schema_version: "1",
+        request_id: requestId("resize"),
+        session_id: activeSessionId,
+        cols: cols,
+        rows: rows,
+      };
+      try {
+        termSocket.send(JSON.stringify(resizeMsg));
+      } catch {}
     }
 
     function buildSchemaPreset() {
@@ -535,16 +565,7 @@ function htmlPage(): string {
 
       termSocket.addEventListener("open", () => {
         setTerminalStatus("connected: " + sessionId);
-
-        const resizeMsg = {
-          type: "session.resize",
-          schema_version: "1",
-          request_id: requestId("resize-init"),
-          session_id: sessionId,
-          cols: term.cols || 80,
-          rows: term.rows || 24,
-        };
-        try { termSocket.send(JSON.stringify(resizeMsg)); } catch {}
+        sendSessionResize(term.cols || 80, term.rows || 24);
 
         termInputDisposable = term.onData((data) => {
           if (!termSocket || termSocket.readyState !== WebSocket.OPEN) return;
@@ -591,6 +612,16 @@ function htmlPage(): string {
           if (frame.sessionId !== activeSessionId) return;
           const text = new TextDecoder().decode(frame.payload);
           term.write(text);
+          if (termSocket && termSocket.readyState === WebSocket.OPEN) {
+            const ackMsg = {
+              type: "session.ack",
+              schema_version: "1",
+              request_id: requestId("ack"),
+              session_id: frame.sessionId,
+              seq: frame.seq,
+            };
+            try { termSocket.send(JSON.stringify(ackMsg)); } catch {}
+          }
         }
       });
 
