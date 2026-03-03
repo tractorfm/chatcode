@@ -1,80 +1,74 @@
 # AGENTS.md – chatcode monorepo
 
 ## Objective
-Build the self-serve Chatcode.dev core: provision user-owned VPS, connect gateway reliably, and run AI agent terminal sessions with minimal friction.
+Ship a reliable MVP path:
 
-## Current Priority
-- ✅ M1 complete: protocol schemas + gateway reliability.
-- ✅ M2 core implemented: control plane scaffold, D1 schema/helpers, routes, GatewayHub DO, scheduled reconciliation worker.
-- ✅ M2 hardening pass completed: gateway-id validation, snapshot path fix, and broader route/DO test coverage.
-- Current focus is M2 staging validation: remote D1/KV/DO setup, deploy smoke tests, and reconciliation verification against real cloud resources.
-- Gateway release distribution is automated: GitHub tag builds publish multi-arch bundles, and optional R2 upload mirrors releases under `releases.chatcode.dev/gateway/`.
-- Keep scope intentionally narrow: make "provision VPS -> connect gateway -> open terminal reliably" solid before adding broader UX surface area.
+1. provision user VPS
+2. connect gateway to control plane
+3. run stable terminal sessions
 
-## Architecture Constraints
-- One DigitalOcean droplet per user by default.
-- Gateway runs on user VPS and maintains one persistent WebSocket to control plane.
-- One session equals one tmux-backed workspace terminal.
-- MVP limit is max 5 concurrent sessions per VPS.
-- Control plane must never store private SSH keys.
-- Agent startup should write instruction files (`CLAUDE.md` and `AGENTS.md`) into the session workdir.
-- BYO roadmap is prepared (not fully enabled): `gateway.hello` includes optional `bootstrap_token` and required `system_info`; gateway has service-manager abstraction seam for systemd/launchd.
+## Current Focus
 
-## Protocol Rules
-- JSON Schema in `packages/protocol/schema/` is the source of truth.
-- All protocol messages must include `schema_version`.
-- Use JSON text frames for commands/events.
-- Use binary frames for terminal output (`kind=0x01` with session and sequence metadata).
-- Keep TS and Go protocol types consistent with schema changes.
+- M1 complete (protocol + gateway core).
+- M2 complete + hardening (control-plane, D1 helpers, routes, DO, scheduler).
+- Active: staging validation and M3 auth/session UX.
+- Keep scope narrow: reliability before broader UX.
 
-## Package Responsibilities
-- `packages/protocol`: schema and typed contract shared by all components.
-- `packages/gateway`: tmux/session lifecycle, output streaming, ssh key management, file transfer, health, updater.
-- `packages/control-plane`: Cloudflare Workers/DO orchestration and gateway registration flow (current milestone).
-- `packages/web`: browser UX and terminal client (later milestone).
+## Architecture Rules
 
-## Development Priorities
-1. Staging deploy readiness: wrangler bindings/secrets, remote migrations, and safe rollout checks.
-2. End-to-end staging verification: OAuth, provisioning, gateway connect, session lifecycle, terminal stream, destroy flow.
-3. D1 state transition correctness for provisioning/deleting reconciliation under real scheduler conditions.
-4. Provisioning robustness (DO create flow, timeout/retry/error states).
-5. Keep gateway and protocol compatibility stable while M2 matures.
+- One DO droplet per user by default.
+- Gateway keeps one persistent WebSocket to control-plane.
+- One session = tmux-backed workspace terminal.
+- MVP limit: max 5 concurrent sessions per VPS.
+- Control-plane must not store private SSH keys.
+- Protocol schema source of truth: `packages/protocol/schema/`.
+- Every protocol message must include `schema_version`.
 
-## Workflow Rules
-- Prefer minimal dependencies, especially in `packages/gateway` (stdlib-first unless justified).
-- Read and extend existing package boundaries instead of cross-cutting quick fixes.
-- Add or update tests when behavior changes.
-- Never commit secrets or rely on `.env` values being present.
-- Keep `MVP.md` as architecture source of truth and milestone docs (`IMPLEMENTATION_M1.md`, `IMPLEMENTATION_M2.md`) as execution plans.
-- For control-plane changes, run `pnpm --filter @chatcode/control-plane test` and `pnpm --filter @chatcode/control-plane build` before merge.
-- For gateway deploy script changes, run `cd packages/gateway && make test-deploy` before merge.
-- For gateway release automation, keep GitHub repo secrets in sync: `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, and `R2_RELEASE_BUCKET`.
+## Package Boundaries
+
+- `packages/protocol`: schema + shared types.
+- `packages/gateway`: session lifecycle, streaming, SSH keys, file transfer, health, updater.
+- `packages/control-plane`: Worker/DO orchestration and provisioning flows.
+- `packages/web`: browser UX (later stage).
+
+## Working Rules
+
+- Prefer stdlib/min deps in `packages/gateway`.
+- Keep fixes inside package boundaries; avoid cross-cut shortcuts.
+- Update/add tests when behavior changes.
+- Never commit secrets.
+- Keep `MVP.md` as architecture source; `IMPLEMENTATION_M*.md` as execution docs.
+
+## Required Checks Before Merge
+
+- Control-plane changes:
+  - `pnpm --filter @chatcode/control-plane test`
+  - `pnpm --filter @chatcode/control-plane build`
+- Gateway runtime/deploy changes:
+  - `cd packages/gateway && make test`
+  - `cd packages/gateway && make test-deploy`
 
 ## Useful Commands
+
 ```bash
-# Monorepo
+# monorepo
 pnpm install
 pnpm build
 
-# Gateway
+# gateway
 cd packages/gateway
 make build
 make test
 make test-deploy
-make mock-cp
-./scripts/build-release.sh v0.1.1
-./scripts/publish-release-r2.sh v0.1.1 chatcode-releases
-./scripts/setup-cloudflare-release.sh --zone-id <chatcode.dev-zone-id>
-./scripts/update-agent-clis.sh
 ./deploy/gateway-install.sh --help
 sudo ./deploy/gateway-cleanup.sh --help
 
-# Control plane
+# control-plane
 cd packages/control-plane
 npm run dev
 npm run test
 
-# Protocol
+# protocol
 cd packages/protocol
 npm run build
 ```

@@ -1,89 +1,118 @@
-# chatcode
+# Chatcode
 
-Implementation monorepo for [Chatcode.dev](https://chatcode.dev) – provision a VPS, open a terminal in the browser, start coding with your AI agent.
+Provision a VPS, connect a gateway, and use AI agents in a browser terminal.
 
-## Packages
+- Website: [chatcode.dev](https://chatcode.dev)
+- Architecture plan: [`MVP.md`](MVP.md)
+- Security model: [`docs/SECURITY.md`](docs/SECURITY.md)
+- Self-host guide: [`docs/CLOUDFLARE_SELF_HOST.md`](docs/CLOUDFLARE_SELF_HOST.md)
 
-| Package | Description | Status |
-|---|---|---|
-| `packages/protocol` | Shared protocol definitions (JSON Schema + TS + Go types) | M1 |
-| `packages/gateway` | Go daemon running on user VPS | M1 |
-| `packages/control-plane` | Cloudflare Workers + Durable Objects | M2 |
-| `packages/web` | React + xterm.js web app | M4 |
+## Why Chatcode
 
-## Quick start
+Chatcode focuses on one reliable path for MVP:
+
+1. Provision user-owned VPS.
+2. Keep one persistent gateway connection to control plane.
+3. Run tmux-backed sessions for AI coding agents.
+
+Current status:
+
+- `M1` complete (protocol + gateway core).
+- `M2` complete and hardened (control plane + reconciliation).
+- Active work: staging validation and session UX (M3).
+
+## Architecture (MVP)
+
+```text
+Browser <-> Control Plane (Cloudflare Worker + Durable Object) <-> Gateway (user VPS) <-> tmux/PTY <-> AI agent process
+```
+
+## Quick Start (Developers)
 
 ```bash
-# Install JS dependencies
 pnpm install
-
-# Build everything
 pnpm build
 
-# Develop gateway
+# control-plane checks
+pnpm --filter @chatcode/control-plane test
+pnpm --filter @chatcode/control-plane build
+
+# gateway checks
 cd packages/gateway
-make mock-cp    # terminal 1: start mock control plane
-make build && ./gateway  # terminal 2: run gateway
+make test
+make test-deploy
 ```
 
-## Manual gateway install (Linux/systemd + macOS/launchd)
+## Install Gateway Manually
 
-Use this for BYO-style testing on an existing machine:
+For manual/BYO testing on Linux or macOS:
 
 ```bash
-cd packages/gateway
-make build
-
-# local binary install
-sudo ./deploy/gateway-install.sh \
-  --binary-source ./gateway \
-  --gateway-id gw-local-test \
-  --gateway-auth-token tok-local-test \
-  --cp-url wss://cp.staging.chatcode.dev/gw/connect
-
-# or install directly from published release
-sudo ./deploy/gateway-install.sh \
+# Linux
+curl -fsSL https://chatcode.dev/install.sh | sudo bash -s -- \
   --version latest \
-  --gateway-id gw-local-test \
-  --gateway-auth-token tok-local-test \
+  --gateway-id gw_xxx \
+  --gateway-auth-token tok_xxx \
   --cp-url wss://cp.staging.chatcode.dev/gw/connect
 
-# macOS (run as your user, not sudo)
-./deploy/gateway-install.sh \
+# macOS (no sudo)
+curl -fsSL https://chatcode.dev/install.sh | bash -s -- \
   --version latest \
-  --gateway-id gw-local-test \
-  --gateway-auth-token tok-local-test \
+  --gateway-id gw_xxx \
+  --gateway-auth-token tok_xxx \
   --cp-url wss://cp.staging.chatcode.dev/gw/connect
 ```
 
-Cleanup script (destructive, removes service/binary/config and `vibe` user by default):
+Cleanup:
 
 ```bash
-cd packages/gateway
-sudo ./deploy/gateway-cleanup.sh --yes
-# macOS:
-./deploy/gateway-cleanup.sh --yes
+# Linux
+curl -fsSL https://chatcode.dev/cleanup.sh | sudo bash -s -- --yes
+
+# macOS
+curl -fsSL https://chatcode.dev/cleanup.sh | bash -s -- --yes
 ```
 
-## Gateway releases
+Details: [`packages/gateway/deploy/README.md`](packages/gateway/deploy/README.md)
 
-```bash
-cd packages/gateway
+## Security and Trust Model
 
-# Build release bundle (linux/amd64, linux/arm64, darwin/arm64)
-./scripts/build-release.sh v0.1.1
-```
+Short version:
 
-Tagging `v*` pushes runs `.github/workflows/gateway-release.yml` to build and attach release assets on GitHub.
+- Traffic is TLS-protected on each hop.
+- **There is no end-to-end encryption between browser and gateway in MVP.**
+- Control plane relays terminal streams and can inspect command/output payloads.
+- Control plane does not store private SSH keys.
 
-## Architecture
+This is a conscious MVP tradeoff (simplicity + operability). We are explicit about it and open to improvements.
 
-```
-Browser ←─ WebSocket ─→ Control Plane (Cloudflare Workers + DO)
-                                ↕ WebSocket
-                        Gateway daemon (Go, on user VPS)
-                                ↕ tmux/PTY
-                          AI Agent process
-```
+Security details, verification checklist, and roadmap:
 
-See `MVP.md` for full architecture details and `IMPLEMENTATION_M1.md` for M1 plan.
+- [`docs/SECURITY.md`](docs/SECURITY.md)
+
+## Self-Host in Your Own Cloudflare Account
+
+You can run Chatcode control-plane and release distribution in your own Cloudflare account and domain.
+
+Guide:
+
+- [`docs/CLOUDFLARE_SELF_HOST.md`](docs/CLOUDFLARE_SELF_HOST.md)
+
+## Repository Layout
+
+| Path | Purpose |
+|---|---|
+| `packages/protocol` | Shared schema and typed contract (TS + Go). |
+| `packages/gateway` | Gateway daemon running on user VPS. |
+| `packages/control-plane` | Cloudflare Worker + Durable Object + D1 control plane. |
+| `packages/web` | Browser app (later milestone). |
+
+## Star History
+
+<a href="https://star-history.com/#tractorfm/chatcode&Date">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/image?repos=tractorfm/chatcode&type=Date&theme=dark" />
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/image?repos=tractorfm/chatcode&type=Date" />
+    <img alt="Star History Chart" src="https://api.star-history.com/image?repos=tractorfm/chatcode&type=Date" />
+  </picture>
+</a>
