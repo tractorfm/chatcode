@@ -369,7 +369,7 @@ function htmlPage(): string {
 
       if (type === "session.input") {
         cmd.session_id = sessionId;
-        const text = schemaInputText.value || "\n";
+        const text = schemaInputText.value || "\\n";
         cmd.data = utf8ToBase64(text);
       }
 
