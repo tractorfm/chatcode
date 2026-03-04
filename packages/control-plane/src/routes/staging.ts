@@ -333,7 +333,7 @@ function htmlPage(): string {
       if (!term) {
         term = new window.Terminal({
           cursorBlink: true,
-          convertEol: false,
+          convertEol: true,
           fontSize: 13,
           fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace',
           scrollback: 50000,
