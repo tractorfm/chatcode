@@ -10,9 +10,10 @@ import (
 )
 
 const (
-	batchInterval  = 50 * time.Millisecond
-	bufferCapacity = 64
-	maxPayload     = 16 * 1024 // 16KB per frame
+	batchInterval      = 50 * time.Millisecond
+	cursorPollInterval = 150 * time.Millisecond
+	bufferCapacity     = 64
+	maxPayload         = 16 * 1024 // 16KB per frame
 )
 
 // outputCapturer reads tmux pipe-pane output and batches it into OutputChunks.
@@ -27,10 +28,11 @@ type outputCapturer struct {
 	buf    []byte
 	ticker *time.Ticker
 
-	lastContent string
-	lastCursorX int
-	lastCursorY int
-	lastCursorV int
+	lastContent  string
+	lastCursorX  int
+	lastCursorY  int
+	lastCursorV  int
+	lastCursorAt time.Time
 }
 
 func newOutputCapturer(
@@ -39,14 +41,15 @@ func newOutputCapturer(
 	outCh chan OutputChunk,
 ) *outputCapturer {
 	return &outputCapturer{
-		tmuxName:    tmuxName,
-		sessionID:   sessionID,
-		seq:         seq,
-		lastAct:     lastAct,
-		outCh:       outCh,
-		lastCursorX: -1,
-		lastCursorY: -1,
-		lastCursorV: -1,
+		tmuxName:     tmuxName,
+		sessionID:    sessionID,
+		seq:          seq,
+		lastAct:      lastAct,
+		outCh:        outCh,
+		lastCursorX:  -1,
+		lastCursorY:  -1,
+		lastCursorV:  -1,
+		lastCursorAt: time.Time{},
 	}
 }
 
@@ -67,6 +70,7 @@ func (c *outputCapturer) start() {
 		c.lastCursorX = cursorX
 		c.lastCursorY = cursorY
 		c.lastCursorV = cursorV
+		c.lastCursorAt = time.Now()
 	}
 	go c.pollLoop(ctx)
 }
@@ -93,13 +97,17 @@ func (c *outputCapturer) pollLoop(ctx context.Context) {
 			if err != nil {
 				continue
 			}
-			cursorX, cursorY, cursorV, cursorErr := c.captureCursor()
 			if content == c.lastContent {
 				// Some full-screen apps move cursor without changing text content.
 				// Emit cursor-only control sequence so remote terminal stays aligned.
+				if !c.lastCursorAt.IsZero() && time.Since(c.lastCursorAt) < cursorPollInterval {
+					continue
+				}
+				cursorX, cursorY, cursorV, cursorErr := c.captureCursor()
 				if cursorErr != nil {
 					continue
 				}
+				c.lastCursorAt = time.Now()
 				moved := cursorX != c.lastCursorX || cursorY != c.lastCursorY
 				visCtrl := c.cursorVisibilityControl(cursorV)
 				if !moved && visCtrl == "" {
@@ -122,20 +130,20 @@ func (c *outputCapturer) pollLoop(ctx context.Context) {
 			if len(delta) == 0 {
 				continue
 			}
-			if cursorErr == nil {
-				if visCtrl := c.cursorVisibilityControl(cursorV); visCtrl != "" {
-					if redraw {
+
+			// Only query cursor when needed for full redraw alignment.
+			if redraw {
+				cursorX, cursorY, cursorV, cursorErr := c.captureCursor()
+				if cursorErr == nil {
+					c.lastCursorAt = time.Now()
+					if visCtrl := c.cursorVisibilityControl(cursorV); visCtrl != "" {
 						delta = visCtrl + delta
-					} else {
-						delta += visCtrl
+						c.lastCursorV = cursorV
 					}
-					c.lastCursorV = cursorV
+					c.lastCursorX = cursorX
+					c.lastCursorY = cursorY
+					delta += cursorMove(cursorX, cursorY)
 				}
-			}
-			if redraw && cursorErr == nil {
-				c.lastCursorX = cursorX
-				c.lastCursorY = cursorY
-				delta += cursorMove(cursorX, cursorY)
 			}
 
 			c.emitDelta(delta)
