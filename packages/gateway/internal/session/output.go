@@ -142,7 +142,9 @@ func (c *outputCapturer) capturePane() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return string(out), nil
+	// tmux capture-pane -p always appends a trailing newline; drop it so
+	// redraw payloads do not add a phantom extra row in terminal consumers.
+	return strings.TrimSuffix(string(out), "\n"), nil
 }
 
 func (c *outputCapturer) captureCursor() (int, int, error) {
