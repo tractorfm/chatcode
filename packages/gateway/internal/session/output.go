@@ -83,16 +83,16 @@ func (c *outputCapturer) pollLoop(ctx context.Context) {
 				continue
 			}
 
-			delta, redraw := diff(c.lastContent, content)
+			delta, _ := diff(c.lastContent, content)
 			c.lastContent = content
 
 			if len(delta) == 0 {
 				continue
 			}
-			if redraw {
-				if cursorX, cursorY, err := c.captureCursor(); err == nil {
-					delta += fmt.Sprintf("\x1b[%d;%dH", cursorY+1, cursorX+1)
-				}
+			// Always finish a frame by restoring tmux cursor position. This keeps
+			// cursor placement stable when diff mode switches between append and redraw.
+			if cursorX, cursorY, err := c.captureCursor(); err == nil {
+				delta += fmt.Sprintf("\x1b[%d;%dH", cursorY+1, cursorX+1)
 			}
 
 			atomic.StoreInt64(c.lastAct, time.Now().UnixNano())

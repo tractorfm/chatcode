@@ -637,16 +637,27 @@ function htmlPage(): string {
       term.focus();
 
       const path = "/vps/" + encodeURIComponent(vpsId) + "/terminal?session_id=" + encodeURIComponent(sessionId);
-      termSocket = new WebSocket(wsUrl(path));
-      termSocket.binaryType = "arraybuffer";
+      const socket = new WebSocket(wsUrl(path));
+      termSocket = socket;
+      socket.binaryType = "arraybuffer";
 
-      termSocket.addEventListener("open", () => {
+      const sendSocketJSON = (payload) => {
+        if (socket !== termSocket) return;
+        if (socket.readyState !== WebSocket.OPEN) return;
+        try { socket.send(JSON.stringify(payload)); } catch {}
+      };
+
+      socket.addEventListener("open", () => {
+        if (socket !== termSocket) return;
         setTerminalStatus("connected: " + sessionId);
         scheduleTerminalFit();
         term.focus();
 
+        if (termInputDisposable) {
+          termInputDisposable.dispose();
+          termInputDisposable = null;
+        }
         termInputDisposable = term.onData((data) => {
-          if (!termSocket || termSocket.readyState !== WebSocket.OPEN) return;
           const inputMsg = {
             type: "session.input",
             schema_version: "1",
@@ -654,18 +665,29 @@ function htmlPage(): string {
             session_id: sessionId,
             data: utf8ToBase64(data),
           };
-          try {
-            termSocket.send(JSON.stringify(inputMsg));
-          } catch {}
+          sendSocketJSON(inputMsg);
         });
 
+        if (termKeepaliveTimer) {
+          clearInterval(termKeepaliveTimer);
+          termKeepaliveTimer = null;
+        }
         termKeepaliveTimer = setInterval(() => {
-          if (!termSocket || termSocket.readyState !== WebSocket.OPEN) return;
-          try { termSocket.send(JSON.stringify({ type: "ping" })); } catch {}
+          sendSocketJSON({ type: "ping" });
         }, 20000);
+
+        // Force a clean initial render and cursor sync on first connect.
+        sendSocketJSON({
+          type: "session.snapshot",
+          schema_version: "1",
+          request_id: requestId("snapshot"),
+          session_id: sessionId,
+        });
+        sendSessionResize(term.cols || 80, term.rows || 24);
       });
 
-      termSocket.addEventListener("message", (event) => {
+      socket.addEventListener("message", (event) => {
+        if (socket !== termSocket) return;
         if (typeof event.data === "string") {
           let msg;
           try { msg = JSON.parse(event.data); } catch { return; }
@@ -715,7 +737,7 @@ function htmlPage(): string {
           if (frame.sessionId !== activeSessionId) return;
           const text = new TextDecoder().decode(frame.payload);
           term.write(text);
-          if (termSocket && termSocket.readyState === WebSocket.OPEN) {
+          if (socket.readyState === WebSocket.OPEN) {
             const ackMsg = {
               type: "session.ack",
               schema_version: "1",
@@ -723,12 +745,13 @@ function htmlPage(): string {
               session_id: frame.sessionId,
               seq: frame.seq,
             };
-            try { termSocket.send(JSON.stringify(ackMsg)); } catch {}
+            try { socket.send(JSON.stringify(ackMsg)); } catch {}
           }
         }
       });
 
-      termSocket.addEventListener("close", (ev) => {
+      socket.addEventListener("close", (ev) => {
+        if (socket !== termSocket) return;
         if (termInputDisposable) {
           termInputDisposable.dispose();
           termInputDisposable = null;
@@ -745,7 +768,8 @@ function htmlPage(): string {
         setTerminalStatus("disconnected");
       });
 
-      termSocket.addEventListener("error", () => {
+      socket.addEventListener("error", () => {
+        if (socket !== termSocket) return;
         if (term) term.writeln("\\r\\n[terminal socket error]");
       });
     }
