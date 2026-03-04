@@ -117,8 +117,8 @@ function htmlPage(): string {
     #terminal {
       width: 100%;
       min-width: 360px;
-      min-height: 360px;
-      height: 420px;
+      min-height: 720px;
+      height: 840px;
       border: 1px solid #222;
       background: #111;
       line-height: 1;
@@ -271,8 +271,7 @@ function htmlPage(): string {
     let termKeepaliveTimer = null;
     let lastResizeCols = 0;
     let lastResizeRows = 0;
-    const terminalMinHeightPx = 360;
-    const terminalMaxViewportRatio = 0.88;
+    const terminalMinHeightPx = 720;
 
     function show(obj) {
       out.textContent = typeof obj === "string" ? obj : JSON.stringify(obj, null, 2);
@@ -378,11 +377,7 @@ function htmlPage(): string {
       if (viewportHeight <= 0) return;
 
       const availableHeight = Math.floor(viewportHeight - rect.top - 20);
-      const maxByViewport = Math.floor(viewportHeight * terminalMaxViewportRatio);
-      const targetHeight = Math.max(
-        terminalMinHeightPx,
-        Math.min(Math.max(availableHeight, terminalMinHeightPx), maxByViewport),
-      );
+      const targetHeight = Math.max(terminalMinHeightPx, availableHeight);
 
       const currentHeight = parseInt(terminalNode.style.height || "0", 10);
       if (!Number.isFinite(currentHeight) || Math.abs(currentHeight - targetHeight) >= 1) {
@@ -682,8 +677,11 @@ function htmlPage(): string {
           }
 
           if (msg.type === "session.snapshot" && msg.session_id === activeSessionId && typeof msg.content === "string") {
+            const rowsHint = Number.isFinite(msg.rows) && msg.rows > 0 ? msg.rows : 80;
+            const contentLines = String(msg.content).split("\\n");
+            const trimmed = contentLines.slice(-rowsHint).join("\\n").replace(/[ \\t\\r\\n]+$/, "");
             term.reset();
-            term.write(String(msg.content));
+            term.write(trimmed || String(msg.content));
             return;
           }
 
