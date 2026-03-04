@@ -28,6 +28,8 @@ type outputCapturer struct {
 	ticker *time.Ticker
 
 	lastContent string
+	lastCursorX int
+	lastCursorY int
 }
 
 func newOutputCapturer(
@@ -36,11 +38,13 @@ func newOutputCapturer(
 	outCh chan OutputChunk,
 ) *outputCapturer {
 	return &outputCapturer{
-		tmuxName:  tmuxName,
-		sessionID: sessionID,
-		seq:       seq,
-		lastAct:   lastAct,
-		outCh:     outCh,
+		tmuxName:    tmuxName,
+		sessionID:   sessionID,
+		seq:         seq,
+		lastAct:     lastAct,
+		outCh:       outCh,
+		lastCursorX: -1,
+		lastCursorY: -1,
 	}
 }
 
@@ -56,6 +60,10 @@ func (c *outputCapturer) start() {
 	// by the first capture tick after websocket connect/reconnect.
 	if content, err := c.capturePane(); err == nil {
 		c.lastContent = content
+	}
+	if cursorX, cursorY, err := c.captureCursor(); err == nil {
+		c.lastCursorX = cursorX
+		c.lastCursorY = cursorY
 	}
 	go c.pollLoop(ctx)
 }
@@ -79,7 +87,19 @@ func (c *outputCapturer) pollLoop(ctx context.Context) {
 			return
 		case <-c.ticker.C:
 			content, err := c.capturePane()
-			if err != nil || content == c.lastContent {
+			if err != nil {
+				continue
+			}
+			if content == c.lastContent {
+				// Some full-screen apps move cursor without changing text content.
+				// Emit cursor-only control sequence so remote terminal stays aligned.
+				cursorX, cursorY, err := c.captureCursor()
+				if err != nil || (cursorX == c.lastCursorX && cursorY == c.lastCursorY) {
+					continue
+				}
+				c.lastCursorX = cursorX
+				c.lastCursorY = cursorY
+				c.emitDelta(cursorMove(cursorX, cursorY))
 				continue
 			}
 
@@ -91,31 +111,44 @@ func (c *outputCapturer) pollLoop(ctx context.Context) {
 			}
 			if redraw {
 				if cursorX, cursorY, err := c.captureCursor(); err == nil {
-					delta += fmt.Sprintf("\x1b[%d;%dH", cursorY+1, cursorX+1)
+					c.lastCursorX = cursorX
+					c.lastCursorY = cursorY
+					delta += cursorMove(cursorX, cursorY)
 				}
 			}
 
-			atomic.StoreInt64(c.lastAct, time.Now().UnixNano())
-
-			// Split into ≤maxPayload chunks
-			for len(delta) > 0 {
-				chunk := delta
-				if len(chunk) > maxPayload {
-					chunk = delta[:maxPayload]
-				}
-				delta = delta[len(chunk):]
-
-				seq := atomic.AddUint64(c.seq, 1) - 1
-				payload := OutputChunk{
-					SessionID: c.sessionID,
-					Seq:       seq,
-					Data:      []byte(chunk),
-				}
-
-				enqueueLatest(c.outCh, payload)
-			}
+			c.emitDelta(delta)
 		}
 	}
+}
+
+func (c *outputCapturer) emitDelta(delta string) {
+	if len(delta) == 0 {
+		return
+	}
+	atomic.StoreInt64(c.lastAct, time.Now().UnixNano())
+
+	// Split into ≤maxPayload chunks
+	for len(delta) > 0 {
+		chunk := delta
+		if len(chunk) > maxPayload {
+			chunk = delta[:maxPayload]
+		}
+		delta = delta[len(chunk):]
+
+		seq := atomic.AddUint64(c.seq, 1) - 1
+		payload := OutputChunk{
+			SessionID: c.sessionID,
+			Seq:       seq,
+			Data:      []byte(chunk),
+		}
+
+		enqueueLatest(c.outCh, payload)
+	}
+}
+
+func cursorMove(cursorX, cursorY int) string {
+	return fmt.Sprintf("\x1b[%d;%dH", cursorY+1, cursorX+1)
 }
 
 func enqueueLatest(outCh chan OutputChunk, payload OutputChunk) {

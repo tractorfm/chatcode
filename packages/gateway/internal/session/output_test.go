@@ -65,3 +65,11 @@ func TestDiffInPlaceLineUpdate(t *testing.T) {
 		t.Fatalf("diff in-place update should request redraw")
 	}
 }
+
+func TestCursorMove(t *testing.T) {
+	got := cursorMove(3, 10)
+	want := "\x1b[11;4H"
+	if got != want {
+		t.Fatalf("cursorMove = %q, want %q", got, want)
+	}
+}
