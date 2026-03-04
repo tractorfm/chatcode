@@ -209,6 +209,16 @@ func TestExponentialBackoff(t *testing.T) {
 	}
 }
 
+func TestNextBackoff(t *testing.T) {
+	if got := nextBackoff(4*time.Second, 45*time.Second); got != minBackoff {
+		t.Fatalf("nextBackoff stable connection: got %v, want %v", got, minBackoff)
+	}
+
+	if got := nextBackoff(8*time.Second, 5*time.Second); got != 16*time.Second {
+		t.Fatalf("nextBackoff short connection: got %v, want %v", got, 16*time.Second)
+	}
+}
+
 func TestClientConcurrentSendsAreSerialized(t *testing.T) {
 	ms := newMockServer(t)
 	defer ms.close()

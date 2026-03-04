@@ -19,9 +19,13 @@ import (
 
 const (
 	minBackoff           = 1 * time.Second
-	maxBackoff           = 5 * time.Minute
+	maxBackoff           = 30 * time.Second
 	backoffMul           = 2.0
 	defaultReadLimitByte = 2 << 20 // 2 MiB
+	backoffResetAfter    = 30 * time.Second
+	dialTimeout          = 15 * time.Second
+	pingInterval         = 20 * time.Second
+	pingTimeout          = 10 * time.Second
 )
 
 // TextHandler is called for every incoming JSON text frame.
@@ -61,43 +65,53 @@ func NewClient(url, authToken string, onText TextHandler, onBinary BinaryHandler
 func (c *Client) Run(ctx context.Context) {
 	backoff := minBackoff
 	for {
-		if err := c.connect(ctx); err != nil {
+		connectedFor, err := c.connect(ctx)
+		if err != nil {
 			if ctx.Err() != nil {
 				return
 			}
+
+			backoff = nextBackoff(backoff, connectedFor)
 			c.log.Warn("ws disconnected", "err", err, "retry_in", backoff)
 			select {
 			case <-ctx.Done():
 				return
 			case <-time.After(backoff):
 			}
-			backoff = min(time.Duration(float64(backoff)*backoffMul), maxBackoff)
-		} else {
-			backoff = minBackoff
 		}
 	}
 }
 
 // connect dials, reads until error, then returns.
-func (c *Client) connect(ctx context.Context) error {
+func (c *Client) connect(ctx context.Context) (time.Duration, error) {
+	dialCtx, cancelDial := context.WithTimeout(ctx, dialTimeout)
+	defer cancelDial()
+
 	headers := http.Header{
 		"Authorization": []string{"Bearer " + c.authToken},
 	}
-	conn, _, err := websocket.Dial(ctx, c.url, &websocket.DialOptions{
+	conn, _, err := websocket.Dial(dialCtx, c.url, &websocket.DialOptions{
 		HTTPHeader: headers,
 	})
 	if err != nil {
-		return fmt.Errorf("dial: %w", err)
+		return 0, fmt.Errorf("dial: %w", err)
 	}
+	connectedAt := time.Now()
 	conn.SetReadLimit(defaultReadLimitByte)
 	c.setConn(conn)
+
+	pingCtx, cancelPing := context.WithCancel(ctx)
+	go c.pingLoop(pingCtx, conn)
+
 	defer func() {
+		cancelPing()
 		c.setConn(nil)
 		conn.CloseNow()
 	}()
 
 	c.log.Info("ws connected", "url", c.url)
-	return c.readLoop(ctx, conn)
+	err = c.readLoop(ctx, conn)
+	return time.Since(connectedAt), err
 }
 
 func (c *Client) readLoop(ctx context.Context, conn *websocket.Conn) error {
@@ -114,6 +128,27 @@ func (c *Client) readLoop(ctx context.Context, conn *websocket.Conn) error {
 		case websocket.MessageBinary:
 			if c.onBinary != nil {
 				c.onBinary(ctx, data)
+			}
+		}
+	}
+}
+
+func (c *Client) pingLoop(ctx context.Context, conn *websocket.Conn) {
+	t := time.NewTicker(pingInterval)
+	defer t.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			pingCtx, cancel := context.WithTimeout(ctx, pingTimeout)
+			err := conn.Ping(pingCtx)
+			cancel()
+			if err != nil {
+				c.log.Warn("ws ping failed", "err", err)
+				_ = conn.Close(websocket.StatusGoingAway, "ping failed")
+				return
 			}
 		}
 	}
@@ -167,6 +202,13 @@ func min(a, b time.Duration) time.Duration {
 		return a
 	}
 	return b
+}
+
+func nextBackoff(current time.Duration, connectedFor time.Duration) time.Duration {
+	if connectedFor >= backoffResetAfter {
+		return minBackoff
+	}
+	return min(time.Duration(float64(current)*backoffMul), maxBackoff)
 }
 
 // exponentialBackoff computes capped backoff for attempt n (0-indexed).
