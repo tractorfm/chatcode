@@ -117,7 +117,7 @@ function htmlPage(): string {
     #terminal {
       width: 100%;
       min-width: 360px;
-      min-height: 260px;
+      min-height: 360px;
       height: 420px;
       border: 1px solid #222;
       background: #111;
@@ -271,8 +271,8 @@ function htmlPage(): string {
     let termKeepaliveTimer = null;
     let lastResizeCols = 0;
     let lastResizeRows = 0;
-    const terminalMinHeightPx = 260;
-    const terminalMaxViewportRatio = 0.72;
+    const terminalMinHeightPx = 360;
+    const terminalMaxViewportRatio = 0.88;
 
     function show(obj) {
       out.textContent = typeof obj === "string" ? obj : JSON.stringify(obj, null, 2);
@@ -334,7 +334,7 @@ function htmlPage(): string {
       if (!term) {
         term = new window.Terminal({
           cursorBlink: true,
-          convertEol: true,
+          convertEol: false,
           fontSize: 13,
           fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace',
           scrollback: 50000,
@@ -403,13 +403,6 @@ function htmlPage(): string {
         }
         sendSessionResize(term.cols || 80, term.rows || 24);
       }, 16);
-    }
-
-    function normalizeSnapshotContent(content) {
-      // tmux capture-pane includes full viewport and often trailing empty lines/newline.
-      // Trimming tail whitespace keeps cursor on the actual prompt line in staging UI.
-      const normalized = String(content || "").replace(/[ \\t\\r\\n]+$/, "");
-      return normalized.length > 0 ? normalized : String(content || "");
     }
 
     function setTerminalStatus(text) {
@@ -689,8 +682,8 @@ function htmlPage(): string {
           }
 
           if (msg.type === "session.snapshot" && msg.session_id === activeSessionId && typeof msg.content === "string") {
-            term.clear();
-            term.write(normalizeSnapshotContent(msg.content));
+            term.reset();
+            term.write(String(msg.content));
             return;
           }
 

@@ -53,7 +53,8 @@ Sudo logging details (Linux):
 - log file is root-owned and read-only for `vibe` (`root:vibe`, mode `0640`)
 - if supported, installer sets append-only flag (`chattr +a`) on the log file
 - logrotate temporarily removes append-only, rotates, and restores append-only
-- service sandbox includes `/var/log/chatcode` in `ReadWritePaths` so sudo logging works from gateway sessions
+- systemd filesystem sandboxing is intentionally relaxed so explicitly-approved
+  `sudo` workflows behave like a normal shell session
 - cloud-init bootstrap installs `logrotate`; manual installs should ensure `logrotate` is present
 
 macOS mode:

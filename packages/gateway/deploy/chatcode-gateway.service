@@ -16,9 +16,8 @@ EnvironmentFile=/etc/chatcode/gateway.env
 Restart=on-failure
 RestartSec=5s
 
-# Harden the service (allow privilege escalation tools like sudo when explicitly requested)
-ProtectSystem=strict
-ReadWritePaths=/home/vibe /tmp/chatcode /var/log/chatcode
+# Keep service environment close to host defaults so explicitly-approved sudo
+# commands behave the same as on a normal SSH shell.
 PrivateTmp=false
 
 # Logging

@@ -25,6 +25,8 @@ type outputCapturer struct {
 	cancel context.CancelFunc
 	buf    []byte
 	ticker *time.Ticker
+
+	lastContent string
 }
 
 func newOutputCapturer(
@@ -48,6 +50,12 @@ func (c *outputCapturer) start() {
 	ctx, cancel := context.WithCancel(context.Background())
 	c.cancel = cancel
 	c.ticker = time.NewTicker(batchInterval)
+
+	// Seed initial content so browser's initial snapshot is not duplicated
+	// by the first capture tick after websocket connect/reconnect.
+	if content, err := c.capturePane(); err == nil {
+		c.lastContent = content
+	}
 	go c.pollLoop(ctx)
 }
 
@@ -64,20 +72,18 @@ func (c *outputCapturer) stop() {
 // We track the last captured content to emit only deltas.
 // This is a simple, reliable approach for the MVP.
 func (c *outputCapturer) pollLoop(ctx context.Context) {
-	var lastContent string
-
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-c.ticker.C:
 			content, err := c.capturePane()
-			if err != nil || content == lastContent {
+			if err != nil || content == c.lastContent {
 				continue
 			}
 
-			delta := diff(lastContent, content)
-			lastContent = content
+			delta := diff(c.lastContent, content)
+			c.lastContent = content
 
 			if len(delta) == 0 {
 				continue
@@ -139,9 +145,37 @@ func (c *outputCapturer) capturePane() (string, error) {
 // everything if it changed, and rely on the xterm.js terminal at the client to
 // handle re-renders correctly. The seq number ensures ordering.
 func diff(old, new string) string {
+	if old == "" {
+		return new
+	}
+	if old == new {
+		return ""
+	}
+
 	if strings.HasPrefix(new, old) {
 		return new[len(old):]
 	}
-	// Content scrolled or wrapped – send full current view
-	return new
+
+	// Sliding window case: viewport scrolled; keep only unseen tail.
+	overlap := longestSuffixPrefixOverlap(old, new)
+	if overlap > 0 {
+		return new[overlap:]
+	}
+
+	// In-place updates (e.g. progress bars) cannot be represented as a suffix
+	// diff from capture-pane snapshots, so redraw the visible pane content.
+	return "\x1b[H\x1b[2J" + new
+}
+
+func longestSuffixPrefixOverlap(old, new string) int {
+	max := len(old)
+	if len(new) < max {
+		max = len(new)
+	}
+	for size := max; size > 0; size-- {
+		if old[len(old)-size:] == new[:size] {
+			return size
+		}
+	}
+	return 0
 }
