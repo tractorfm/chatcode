@@ -678,12 +678,16 @@ function htmlPage(): string {
 
           if (msg.type === "session.snapshot" && msg.session_id === activeSessionId && typeof msg.content === "string") {
             const rowsHint = Number.isFinite(msg.rows) && msg.rows > 0 ? msg.rows : 80;
-            const contentLines = String(msg.content).split("\\n");
-            const snapshotTail = contentLines.slice(-rowsHint).join("\\n");
+            const normalizedContent = String(msg.content).replace(/\\r\\n/g, "\\n").replace(/\\r/g, "\\n");
+            const contentLines = normalizedContent.split("\\n");
+            // capture-pane usually ends with a trailing newline, which creates an
+            // extra empty split item and shifts viewport rows by one if not removed.
+            if (contentLines.length > 0 && contentLines[contentLines.length - 1] === "") {
+              contentLines.pop();
+            }
+            const snapshotTail = contentLines.slice(-rowsHint).join("\\r\\n");
             term.reset();
-            // capture-pane lines are LF-separated; normalize to CRLF so each line
-            // starts at column 0 consistently.
-            term.write(snapshotTail.replace(/\\r?\\n/g, "\\r\\n"));
+            term.write(snapshotTail);
             if (Number.isFinite(msg.cursor_x) && Number.isFinite(msg.cursor_y)) {
               const col = Math.max(0, Math.floor(msg.cursor_x)) + 1;
               const row = Math.max(0, Math.floor(msg.cursor_y)) + 1;

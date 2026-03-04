@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	"fmt"
 	"os/exec"
 	"strings"
 	"sync/atomic"
@@ -82,11 +83,16 @@ func (c *outputCapturer) pollLoop(ctx context.Context) {
 				continue
 			}
 
-			delta := diff(c.lastContent, content)
+			delta, redraw := diff(c.lastContent, content)
 			c.lastContent = content
 
 			if len(delta) == 0 {
 				continue
+			}
+			if redraw {
+				if cursorX, cursorY, err := c.captureCursor(); err == nil {
+					delta += fmt.Sprintf("\x1b[%d;%dH", cursorY+1, cursorX+1)
+				}
 			}
 
 			atomic.StoreInt64(c.lastAct, time.Now().UnixNano())
@@ -139,33 +145,47 @@ func (c *outputCapturer) capturePane() (string, error) {
 	return string(out), nil
 }
 
+func (c *outputCapturer) captureCursor() (int, int, error) {
+	out, err := exec.Command(
+		"tmux", "display-message", "-t", c.tmuxName, "-p", "#{cursor_x} #{cursor_y}",
+	).Output()
+	if err != nil {
+		return 0, 0, err
+	}
+	var cursorX, cursorY int
+	if _, err := fmt.Sscanf(strings.TrimSpace(string(out)), "%d %d", &cursorX, &cursorY); err != nil {
+		return 0, 0, err
+	}
+	return cursorX, cursorY, nil
+}
+
 // diff returns the bytes in b that are not a suffix match of a.
 // For the MVP this is a simple heuristic: return content added since last snapshot.
 // In practice tmux capture-pane returns the full visible buffer, so we return
 // everything if it changed, and rely on the xterm.js terminal at the client to
 // handle re-renders correctly. The seq number ensures ordering.
-func diff(old, new string) string {
+func diff(old, new string) (string, bool) {
 	if old == "" {
-		return new
+		return new, false
 	}
 	if old == new {
-		return ""
+		return "", false
 	}
 
 	if strings.HasPrefix(new, old) {
-		return new[len(old):]
+		return new[len(old):], false
 	}
 
 	// Sliding window case: viewport scrolled; keep only unseen tail.
 	overlap := longestSuffixPrefixOverlap(old, new)
 	if overlap > 0 {
-		return new[overlap:]
+		return new[overlap:], false
 	}
 
 	// In-place updates (e.g. progress bars) cannot be represented as a suffix
 	// diff from capture-pane snapshots, so redraw the visible pane content.
 	// This assumes a VT-compatible terminal consumer (xterm.js in MVP).
-	return "\x1b[H\x1b[2J" + new
+	return "\x1b[H\x1b[2J" + new, true
 }
 
 func longestSuffixPrefixOverlap(old, new string) int {
