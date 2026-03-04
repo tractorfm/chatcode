@@ -37,6 +37,7 @@ const COMMAND_TIMEOUT_MS = 10_000;
 const IDLE_TIMEOUT_MS = 600_000; // 10 minutes
 const GRACE_PERIOD_MS = 30_000; // 30s reconnect grace
 const SESSION_RECONCILE_END_GRACE_MS = 90_000; // avoid ending sessions right after reconnect
+const SESSION_CONTROL_LEASE_MS = 30_000; // lock input/resize source for 30s since last write
 
 interface PendingEntry {
   resolve: (result: GatewayCommandResult) => void;
@@ -48,6 +49,11 @@ interface PendingEntry {
 interface BrowserAckEntry {
   ws: WebSocket;
   timeout: ReturnType<typeof setTimeout>;
+}
+
+interface SessionController {
+  ws: WebSocket;
+  lastWriteAt: number;
 }
 
 interface SocketAttachment {
@@ -100,6 +106,10 @@ export class GatewayHub {
 
   // Session ID per browser WS (for cleanup)
   private browserSessionMap = new Map<WebSocket, string>();
+
+  // One active input source per session; other sockets are read-only for writes.
+  private sessionControllers = new Map<string, SessionController>();
+  private controlledSessionBySocket = new Map<WebSocket, string>();
 
   // Grace period timer for gateway reconnect
   private graceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -615,6 +625,16 @@ export class GatewayHub {
     switch (msg.type) {
       case "session.input":
       case "session.resize":
+        if (!this.tryAcquireSessionControl(sessionId, ws)) {
+          this.sendReadOnlyError(ws, sessionId, msg);
+          return;
+        }
+        if (typeof msg.request_id === "string" && msg.request_id.length > 0) {
+          this.trackBrowserAck(msg.request_id, ws);
+        }
+        this.sendRealtime(data);
+        break;
+
       case "session.ack":
         if (typeof msg.request_id === "string" && msg.request_id.length > 0) {
           this.trackBrowserAck(msg.request_id, ws);
@@ -657,6 +677,7 @@ export class GatewayHub {
     }
     this.lastActivity.delete(ws);
     this.browserSessionMap.delete(ws);
+    this.releaseSessionControl(ws, sessionId);
 
     const requestIds = this.browserAckBySocket.get(ws);
     if (requestIds) {
@@ -859,6 +880,8 @@ export class GatewayHub {
     this.subscribers.clear();
     this.lastActivity.clear();
     this.browserSessionMap.clear();
+    this.sessionControllers.clear();
+    this.controlledSessionBySocket.clear();
     for (const requestId of this.browserAckWaiters.keys()) {
       this.clearBrowserAck(requestId);
     }
@@ -904,9 +927,86 @@ export class GatewayHub {
         } else {
           this.lastActivity.delete(ws);
           this.browserSessionMap.delete(ws);
+          this.releaseSessionControl(ws);
         }
       }
     }
+  }
+
+  private tryAcquireSessionControl(sessionId: string, ws: WebSocket): boolean {
+    const now = Date.now();
+    const current = this.sessionControllers.get(sessionId);
+    if (!current) {
+      this.assignSessionControl(sessionId, ws, now);
+      return true;
+    }
+    if (current.ws.readyState !== WebSocket.OPEN) {
+      this.assignSessionControl(sessionId, ws, now);
+      return true;
+    }
+    if (current.ws === ws) {
+      current.lastWriteAt = now;
+      this.sessionControllers.set(sessionId, current);
+      return true;
+    }
+    if (now - current.lastWriteAt > SESSION_CONTROL_LEASE_MS) {
+      this.assignSessionControl(sessionId, ws, now);
+      return true;
+    }
+    return false;
+  }
+
+  private assignSessionControl(sessionId: string, ws: WebSocket, now: number): void {
+    const prev = this.sessionControllers.get(sessionId);
+    if (prev && prev.ws !== ws) {
+      this.controlledSessionBySocket.delete(prev.ws);
+    }
+    const prevSession = this.controlledSessionBySocket.get(ws);
+    if (prevSession && prevSession !== sessionId) {
+      this.sessionControllers.delete(prevSession);
+    }
+    this.sessionControllers.set(sessionId, { ws, lastWriteAt: now });
+    this.controlledSessionBySocket.set(ws, sessionId);
+  }
+
+  private releaseSessionControl(ws: WebSocket, knownSessionId?: string): void {
+    const sessionId = knownSessionId ?? this.controlledSessionBySocket.get(ws);
+    if (!sessionId) return;
+    const current = this.sessionControllers.get(sessionId);
+    if (current?.ws === ws) {
+      this.sessionControllers.delete(sessionId);
+    }
+    this.controlledSessionBySocket.delete(ws);
+  }
+
+  private sendReadOnlyError(
+    ws: WebSocket,
+    sessionId: string,
+    msg: { type: string } & Record<string, unknown>,
+  ): void {
+    const requestId =
+      typeof msg.request_id === "string" && msg.request_id.length > 0 ? msg.request_id : null;
+    if (requestId) {
+      safeSend(
+        ws,
+        JSON.stringify({
+          type: "ack",
+          schema_version: "1",
+          request_id: requestId,
+          ok: false,
+          error: "session is read-only (active input in another connection)",
+        }),
+      );
+    }
+    safeSend(
+      ws,
+      JSON.stringify({
+        type: "error",
+        code: "read_only",
+        session_id: sessionId,
+        message: "session input is locked by another active connection",
+      }),
+    );
   }
 
   private trackBrowserAck(requestId: string, ws: WebSocket): void {

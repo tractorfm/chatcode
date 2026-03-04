@@ -50,7 +50,115 @@ function makeHub(
   return hub;
 }
 
+function makeSocket(send = vi.fn(), readyState = WebSocket.OPEN): WebSocket {
+  return {
+    readyState,
+    send,
+    close: vi.fn(),
+  } as unknown as WebSocket;
+}
+
 describe("GatewayHub", () => {
+  it("allows one active writer per session and makes other sockets read-only for input/resize", () => {
+    const hub = makeHub();
+    const gatewaySend = vi.fn();
+    const ws1Send = vi.fn();
+    const ws2Send = vi.fn();
+    const ws1 = makeSocket(ws1Send);
+    const ws2 = makeSocket(ws2Send);
+
+    (hub as unknown as { gatewaySocket: WebSocket | null }).gatewaySocket = makeSocket(gatewaySend);
+
+    (
+      hub as unknown as {
+        onBrowserText: (ws: WebSocket, sessionId: string, data: string) => void;
+      }
+    ).onBrowserText(
+      ws1,
+      "ses-1",
+      JSON.stringify({
+        type: "session.input",
+        schema_version: "1",
+        request_id: "req-1",
+        session_id: "ses-1",
+        data: "Cg==",
+      }),
+    );
+
+    (
+      hub as unknown as {
+        onBrowserText: (ws: WebSocket, sessionId: string, data: string) => void;
+      }
+    ).onBrowserText(
+      ws2,
+      "ses-1",
+      JSON.stringify({
+        type: "session.resize",
+        schema_version: "1",
+        request_id: "req-2",
+        session_id: "ses-1",
+        cols: 120,
+        rows: 30,
+      }),
+    );
+
+    expect(gatewaySend).toHaveBeenCalledTimes(1);
+    expect(gatewaySend.mock.calls[0][0]).toContain("\"request_id\":\"req-1\"");
+    expect(ws2Send).toHaveBeenCalled();
+    expect(ws2Send.mock.calls[0][0]).toContain("\"type\":\"ack\"");
+    expect(ws2Send.mock.calls[0][0]).toContain("\"ok\":false");
+    expect(ws2Send.mock.calls[0][0]).toContain("read-only");
+  });
+
+  it("allows writer takeover after input lease timeout", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-04T00:00:00.000Z"));
+
+    const hub = makeHub();
+    const gatewaySend = vi.fn();
+    const ws1 = makeSocket();
+    const ws2 = makeSocket();
+
+    (hub as unknown as { gatewaySocket: WebSocket | null }).gatewaySocket = makeSocket(gatewaySend);
+
+    const onBrowserText = (
+      hub as unknown as {
+        onBrowserText: (ws: WebSocket, sessionId: string, data: string) => void;
+      }
+    ).onBrowserText.bind(hub);
+
+    onBrowserText(
+      ws1,
+      "ses-1",
+      JSON.stringify({
+        type: "session.input",
+        schema_version: "1",
+        request_id: "req-1",
+        session_id: "ses-1",
+        data: "Cg==",
+      }),
+    );
+
+    vi.advanceTimersByTime(31_000);
+
+    onBrowserText(
+      ws2,
+      "ses-1",
+      JSON.stringify({
+        type: "session.input",
+        schema_version: "1",
+        request_id: "req-2",
+        session_id: "ses-1",
+        data: "bHMK",
+      }),
+    );
+
+    expect(gatewaySend).toHaveBeenCalledTimes(2);
+    expect(gatewaySend.mock.calls[1][0]).toContain("\"request_id\":\"req-2\"");
+
+    vi.useRealTimers();
+  });
+
   it("rejects mismatched gateway_id in gateway.hello", async () => {
     const hub = makeHub();
     const close = vi.fn();

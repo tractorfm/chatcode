@@ -114,7 +114,17 @@ function htmlPage(): string {
     .section { margin-bottom: 16px; border: 1px solid #ddd; padding: 12px; border-radius: 6px; }
     .row { margin-bottom: 8px; }
     .muted { color: #666; font-size: 12px; }
-    #terminal { height: 420px; width: 100%; border: 1px solid #222; background: #111; }
+    #terminal {
+      width: 100%;
+      min-width: 360px;
+      min-height: 260px;
+      height: 420px;
+      border: 1px solid #222;
+      background: #111;
+      line-height: 1;
+      overflow: hidden;
+      box-sizing: border-box;
+    }
     .vps-card, .session-card { padding: 8px; border: 1px solid #ddd; margin-top: 8px; border-radius: 4px; }
     #schema-json { width: 100%; min-height: 150px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
   </style>
@@ -225,7 +235,7 @@ function htmlPage(): string {
   <pre id="out">{}</pre>
 
   <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@6.0.0/lib/xterm.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.11.0/lib/addon-fit.js"></script>
   <script>
     const out = document.getElementById("out");
     const meEl = document.getElementById("me");
@@ -261,6 +271,8 @@ function htmlPage(): string {
     let termKeepaliveTimer = null;
     let lastResizeCols = 0;
     let lastResizeRows = 0;
+    const terminalMinHeightPx = 260;
+    const terminalMaxViewportRatio = 0.72;
 
     function show(obj) {
       out.textContent = typeof obj === "string" ? obj : JSON.stringify(obj, null, 2);
@@ -337,6 +349,9 @@ function htmlPage(): string {
         term.open(terminalNode);
         scheduleTerminalFit();
         setTimeout(scheduleTerminalFit, 120);
+        if (document.fonts && document.fonts.ready && typeof document.fonts.ready.then === "function") {
+          document.fonts.ready.then(() => scheduleTerminalFit()).catch(() => {});
+        }
 
         term.onResize(({ cols, rows }) => {
           sendSessionResize(cols, rows);
@@ -353,12 +368,36 @@ function htmlPage(): string {
       return true;
     }
 
+    function applyTerminalHostSize() {
+      const terminalNode = document.getElementById("terminal");
+      if (!terminalNode) return;
+      if (terminalNode.offsetParent === null) return;
+
+      const rect = terminalNode.getBoundingClientRect();
+      const viewportHeight = window.innerHeight || 0;
+      if (viewportHeight <= 0) return;
+
+      const availableHeight = Math.floor(viewportHeight - rect.top - 20);
+      const maxByViewport = Math.floor(viewportHeight * terminalMaxViewportRatio);
+      const targetHeight = Math.max(
+        terminalMinHeightPx,
+        Math.min(Math.max(availableHeight, terminalMinHeightPx), maxByViewport),
+      );
+
+      const currentHeight = parseInt(terminalNode.style.height || "0", 10);
+      if (!Number.isFinite(currentHeight) || Math.abs(currentHeight - targetHeight) >= 1) {
+        terminalNode.style.height = targetHeight + "px";
+      }
+      terminalNode.style.width = "100%";
+    }
+
     function scheduleTerminalFit() {
       if (!term) return;
       if (fitTimer) clearTimeout(fitTimer);
       fitTimer = setTimeout(() => {
         fitTimer = null;
         if (!term) return;
+        applyTerminalHostSize();
         if (fitAddon && typeof fitAddon.fit === "function") {
           try { fitAddon.fit(); } catch {}
         }
