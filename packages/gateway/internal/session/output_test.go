@@ -73,3 +73,17 @@ func TestCursorMove(t *testing.T) {
 		t.Fatalf("cursorMove = %q, want %q", got, want)
 	}
 }
+
+func TestCursorVisibilityControl(t *testing.T) {
+	c := &outputCapturer{lastCursorV: -1}
+	if got := c.cursorVisibilityControl(0); got != "\x1b[?25l" {
+		t.Fatalf("cursorVisibilityControl(0) = %q", got)
+	}
+	c.lastCursorV = 0
+	if got := c.cursorVisibilityControl(0); got != "" {
+		t.Fatalf("cursorVisibilityControl(0) should be empty, got %q", got)
+	}
+	if got := c.cursorVisibilityControl(1); got != "\x1b[?25h" {
+		t.Fatalf("cursorVisibilityControl(1) = %q", got)
+	}
+}

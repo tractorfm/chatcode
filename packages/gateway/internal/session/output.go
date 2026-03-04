@@ -30,6 +30,7 @@ type outputCapturer struct {
 	lastContent string
 	lastCursorX int
 	lastCursorY int
+	lastCursorV int
 }
 
 func newOutputCapturer(
@@ -45,6 +46,7 @@ func newOutputCapturer(
 		outCh:       outCh,
 		lastCursorX: -1,
 		lastCursorY: -1,
+		lastCursorV: -1,
 	}
 }
 
@@ -61,9 +63,10 @@ func (c *outputCapturer) start() {
 	if content, err := c.capturePane(); err == nil {
 		c.lastContent = content
 	}
-	if cursorX, cursorY, err := c.captureCursor(); err == nil {
+	if cursorX, cursorY, cursorV, err := c.captureCursor(); err == nil {
 		c.lastCursorX = cursorX
 		c.lastCursorY = cursorY
+		c.lastCursorV = cursorV
 	}
 	go c.pollLoop(ctx)
 }
@@ -90,16 +93,26 @@ func (c *outputCapturer) pollLoop(ctx context.Context) {
 			if err != nil {
 				continue
 			}
+			cursorX, cursorY, cursorV, cursorErr := c.captureCursor()
 			if content == c.lastContent {
 				// Some full-screen apps move cursor without changing text content.
 				// Emit cursor-only control sequence so remote terminal stays aligned.
-				cursorX, cursorY, err := c.captureCursor()
-				if err != nil || (cursorX == c.lastCursorX && cursorY == c.lastCursorY) {
+				if cursorErr != nil {
+					continue
+				}
+				moved := cursorX != c.lastCursorX || cursorY != c.lastCursorY
+				visCtrl := c.cursorVisibilityControl(cursorV)
+				if !moved && visCtrl == "" {
 					continue
 				}
 				c.lastCursorX = cursorX
 				c.lastCursorY = cursorY
-				c.emitDelta(cursorMove(cursorX, cursorY))
+				c.lastCursorV = cursorV
+				delta := visCtrl
+				if moved {
+					delta += cursorMove(cursorX, cursorY)
+				}
+				c.emitDelta(delta)
 				continue
 			}
 
@@ -109,12 +122,20 @@ func (c *outputCapturer) pollLoop(ctx context.Context) {
 			if len(delta) == 0 {
 				continue
 			}
-			if redraw {
-				if cursorX, cursorY, err := c.captureCursor(); err == nil {
-					c.lastCursorX = cursorX
-					c.lastCursorY = cursorY
-					delta += cursorMove(cursorX, cursorY)
+			if cursorErr == nil {
+				if visCtrl := c.cursorVisibilityControl(cursorV); visCtrl != "" {
+					if redraw {
+						delta = visCtrl + delta
+					} else {
+						delta += visCtrl
+					}
+					c.lastCursorV = cursorV
 				}
+			}
+			if redraw && cursorErr == nil {
+				c.lastCursorX = cursorX
+				c.lastCursorY = cursorY
+				delta += cursorMove(cursorX, cursorY)
 			}
 
 			c.emitDelta(delta)
@@ -180,18 +201,31 @@ func (c *outputCapturer) capturePane() (string, error) {
 	return strings.TrimSuffix(string(out), "\n"), nil
 }
 
-func (c *outputCapturer) captureCursor() (int, int, error) {
+func (c *outputCapturer) captureCursor() (int, int, int, error) {
 	out, err := exec.Command(
-		"tmux", "display-message", "-t", c.tmuxName, "-p", "#{cursor_x} #{cursor_y}",
+		"tmux", "display-message", "-t", c.tmuxName, "-p", "#{cursor_x} #{cursor_y} #{cursor_flag}",
 	).Output()
 	if err != nil {
-		return 0, 0, err
+		return 0, 0, 0, err
 	}
-	var cursorX, cursorY int
-	if _, err := fmt.Sscanf(strings.TrimSpace(string(out)), "%d %d", &cursorX, &cursorY); err != nil {
-		return 0, 0, err
+	var cursorX, cursorY, cursorV int
+	if _, err := fmt.Sscanf(strings.TrimSpace(string(out)), "%d %d %d", &cursorX, &cursorY, &cursorV); err != nil {
+		return 0, 0, 0, err
 	}
-	return cursorX, cursorY, nil
+	return cursorX, cursorY, cursorV, nil
+}
+
+func (c *outputCapturer) cursorVisibilityControl(cursorVisible int) string {
+	if cursorVisible != 0 && cursorVisible != 1 {
+		return ""
+	}
+	if c.lastCursorV == cursorVisible {
+		return ""
+	}
+	if cursorVisible == 0 {
+		return "\x1b[?25l"
+	}
+	return "\x1b[?25h"
 }
 
 // diff returns the bytes in b that are not a suffix match of a.
