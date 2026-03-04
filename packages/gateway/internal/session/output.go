@@ -164,18 +164,29 @@ func diff(old, new string) string {
 
 	// In-place updates (e.g. progress bars) cannot be represented as a suffix
 	// diff from capture-pane snapshots, so redraw the visible pane content.
+	// This assumes a VT-compatible terminal consumer (xterm.js in MVP).
 	return "\x1b[H\x1b[2J" + new
 }
 
 func longestSuffixPrefixOverlap(old, new string) int {
-	max := len(old)
-	if len(new) < max {
-		max = len(new)
-	}
-	for size := max; size > 0; size-- {
-		if old[len(old)-size:] == new[:size] {
-			return size
+	// O(n): longest prefix(new) that is also suffix(old).
+	// Build KMP prefix function for: new + \x00 + old.
+	sep := "\x00"
+	combined := new + sep + old
+	pi := make([]int, len(combined))
+	for i := 1; i < len(combined); i++ {
+		j := pi[i-1]
+		for j > 0 && combined[i] != combined[j] {
+			j = pi[j-1]
 		}
+		if combined[i] == combined[j] {
+			j++
+		}
+		pi[i] = j
 	}
-	return 0
+	overlap := pi[len(combined)-1]
+	if overlap > len(new) {
+		return len(new)
+	}
+	return overlap
 }
