@@ -626,7 +626,7 @@ export class GatewayHub {
       case "session.input":
       case "session.resize":
         if (!this.tryAcquireSessionControl(sessionId, ws)) {
-          this.sendReadOnlyError(ws, sessionId, msg);
+          this.sendReadOnlyError(ws, msg);
           return;
         }
         if (typeof msg.request_id === "string" && msg.request_id.length > 0) {
@@ -981,7 +981,6 @@ export class GatewayHub {
 
   private sendReadOnlyError(
     ws: WebSocket,
-    sessionId: string,
     msg: { type: string } & Record<string, unknown>,
   ): void {
     const requestId =
@@ -998,15 +997,6 @@ export class GatewayHub {
         }),
       );
     }
-    safeSend(
-      ws,
-      JSON.stringify({
-        type: "error",
-        code: "read_only",
-        session_id: sessionId,
-        message: "session input is locked by another active connection",
-      }),
-    );
   }
 
   private trackBrowserAck(requestId: string, ws: WebSocket): void {

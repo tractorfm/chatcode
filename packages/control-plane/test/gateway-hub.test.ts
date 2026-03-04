@@ -104,7 +104,7 @@ describe("GatewayHub", () => {
 
     expect(gatewaySend).toHaveBeenCalledTimes(1);
     expect(gatewaySend.mock.calls[0][0]).toContain("\"request_id\":\"req-1\"");
-    expect(ws2Send).toHaveBeenCalled();
+    expect(ws2Send).toHaveBeenCalledTimes(1);
     expect(ws2Send.mock.calls[0][0]).toContain("\"type\":\"ack\"");
     expect(ws2Send.mock.calls[0][0]).toContain("\"ok\":false");
     expect(ws2Send.mock.calls[0][0]).toContain("read-only");
