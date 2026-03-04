@@ -168,22 +168,15 @@ func (s *Session) Snapshot() (content string, cols, rows, cursorX, cursorY int, 
 		return "", 0, 0, -1, -1, fmt.Errorf("capture-pane: %w", err)
 	}
 
-	// Get dimensions
+	// Get dimensions and cursor position in one tmux call.
 	cols, rows = 80, 24
 	cursorX, cursorY = -1, -1
 
-	dimOut, err := exec.Command(
-		"tmux", "display-message", "-t", s.tmuxName, "-p", "#{window_width} #{window_height}",
+	stateOut, err := exec.Command(
+		"tmux", "display-message", "-t", s.tmuxName, "-p", "#{window_width} #{window_height} #{cursor_x} #{cursor_y}",
 	).Output()
 	if err == nil {
-		fmt.Sscanf(string(dimOut), "%d %d", &cols, &rows)
-	}
-
-	cursorOut, err := exec.Command(
-		"tmux", "display-message", "-t", s.tmuxName, "-p", "#{cursor_x} #{cursor_y}",
-	).Output()
-	if err == nil {
-		fmt.Sscanf(string(cursorOut), "%d %d", &cursorX, &cursorY)
+		fmt.Sscanf(string(stateOut), "%d %d %d %d", &cols, &rows, &cursorX, &cursorY)
 	}
 
 	return string(out), cols, rows, cursorX, cursorY, nil
