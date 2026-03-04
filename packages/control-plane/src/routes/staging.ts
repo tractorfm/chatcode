@@ -679,9 +679,9 @@ function htmlPage(): string {
           if (msg.type === "session.snapshot" && msg.session_id === activeSessionId && typeof msg.content === "string") {
             const rowsHint = Number.isFinite(msg.rows) && msg.rows > 0 ? msg.rows : 80;
             const contentLines = String(msg.content).split("\\n");
-            const trimmed = contentLines.slice(-rowsHint).join("\\n").replace(/[ \\t\\r\\n]+$/, "");
+            const snapshotTail = contentLines.slice(-rowsHint).join("\\n");
             term.reset();
-            term.write(trimmed || String(msg.content));
+            term.write(snapshotTail);
             return;
           }
 
