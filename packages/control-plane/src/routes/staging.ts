@@ -681,7 +681,9 @@ function htmlPage(): string {
             const contentLines = String(msg.content).split("\\n");
             const snapshotTail = contentLines.slice(-rowsHint).join("\\n");
             term.reset();
-            term.write(snapshotTail);
+            // capture-pane lines are LF-separated; normalize to CRLF so each line
+            // starts at column 0 even with convertEol disabled.
+            term.write(snapshotTail.replace(/\\r?\\n/g, "\\r\\n"));
             return;
           }
 
