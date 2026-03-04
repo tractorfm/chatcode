@@ -198,6 +198,7 @@ func snapshotCaptureArgs(tmuxName string) []string {
 	return []string{
 		"capture-pane",
 		"-e",
+		"-N",
 		"-S", fmt.Sprintf("-%d", snapshotHistoryLines),
 		"-t", tmuxName,
 		"-p",

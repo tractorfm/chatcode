@@ -638,8 +638,8 @@ function htmlPage(): string {
       activeVpsId = vpsId;
       syncActiveSession(sessionId);
 
-      term.clear();
-      term.writeln("Connecting to " + sessionId + " ...");
+      term.reset();
+      setTerminalStatus("connecting: " + sessionId);
       scheduleTerminalFit();
       term.focus();
 

@@ -173,7 +173,7 @@ func TestSetHistoryLimitArgs(t *testing.T) {
 
 func TestSnapshotCaptureArgs(t *testing.T) {
 	args := snapshotCaptureArgs("vibe-ses-test")
-	want := []string{"capture-pane", "-e", "-S", "-" + strconv.Itoa(snapshotHistoryLines), "-t", "vibe-ses-test", "-p"}
+	want := []string{"capture-pane", "-e", "-N", "-S", "-" + strconv.Itoa(snapshotHistoryLines), "-t", "vibe-ses-test", "-p"}
 	if len(args) != len(want) {
 		t.Fatalf("args len = %d, want %d", len(args), len(want))
 	}
