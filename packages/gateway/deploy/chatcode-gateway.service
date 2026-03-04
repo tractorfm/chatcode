@@ -16,8 +16,7 @@ EnvironmentFile=/etc/chatcode/gateway.env
 Restart=on-failure
 RestartSec=5s
 
-# Harden the service
-NoNewPrivileges=true
+# Harden the service (allow privilege escalation tools like sudo when explicitly requested)
 ProtectSystem=strict
 ReadWritePaths=/home/vibe /tmp/chatcode
 PrivateTmp=false

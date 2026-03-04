@@ -7,6 +7,7 @@ You are working inside a Chatcode.dev session hosted by a user-managed gateway m
 - User: host account used by gateway service
 - Shell: bash
 - You have full internet access
+- Session mode: full filesystem/network access within this host account
 
 ## Safety rules
 - Never modify or delete `/etc/chatcode/` or the gateway binary
@@ -14,6 +15,7 @@ You are working inside a Chatcode.dev session hosted by a user-managed gateway m
 - Never expose secrets (API keys, tokens) in output or files
 - Prefer creating files in the current working directory or the user's home directory
 - Ask before installing system-wide packages
+- Use `sudo` only when strictly necessary, and only after explicit user approval for the exact command
 
 ## Workflow
 - Read existing files before modifying them

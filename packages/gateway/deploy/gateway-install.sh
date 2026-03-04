@@ -14,6 +14,8 @@ LINUX_SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
 LINUX_CONFIG_DIR="/etc/chatcode"
 LINUX_BINARY_PATH_DEFAULT="/usr/local/bin/chatcode-gateway"
 LINUX_SUDOERS_FILE="/etc/sudoers.d/vibe"
+LINUX_SUDO_LOG_DIR="/var/log/chatcode"
+LINUX_SUDO_LOG_FILE="${LINUX_SUDO_LOG_DIR}/sudo-vibe.log"
 
 # macOS paths/ids (current user model).
 DARWIN_LABEL="dev.chatcode.gateway"
@@ -265,7 +267,6 @@ ExecStart=${BINARY_PATH}
 EnvironmentFile=${ENV_FILE}
 Restart=on-failure
 RestartSec=5s
-NoNewPrivileges=true
 ProtectSystem=strict
 ReadWritePaths=${TARGET_HOME} /tmp/chatcode
 StandardOutput=journal
@@ -384,8 +385,24 @@ prepare_linux_user() {
   install -d -m 755 -o "${TARGET_USER}" -g "${TARGET_USER}" "${TARGET_HOME}/workspace"
   install -d -m 700 -o "${TARGET_USER}" -g "${TARGET_USER}" /tmp/chatcode
 
-  echo "${TARGET_USER} ALL=(ALL) NOPASSWD:ALL" > "${SUDOERS_FILE}"
+  # Root-owned sudo command log, readable by vibe for user review.
+  install -d -m 750 -o root -g "${TARGET_USER}" "${LINUX_SUDO_LOG_DIR}"
+  touch "${LINUX_SUDO_LOG_FILE}"
+  chown root:"${TARGET_USER}" "${LINUX_SUDO_LOG_FILE}"
+  chmod 640 "${LINUX_SUDO_LOG_FILE}"
+  if command -v chattr >/dev/null 2>&1; then
+    chattr +a "${LINUX_SUDO_LOG_FILE}" >/dev/null 2>&1 || true
+  fi
+
+  cat > "${SUDOERS_FILE}" <<EOF
+Defaults:${TARGET_USER} use_pty
+Defaults:${TARGET_USER} logfile="${LINUX_SUDO_LOG_FILE}"
+${TARGET_USER} ALL=(ALL) NOPASSWD:ALL
+EOF
   chmod 0440 "${SUDOERS_FILE}"
+  if command -v visudo >/dev/null 2>&1; then
+    visudo -cf "${SUDOERS_FILE}" >/dev/null
+  fi
 }
 
 prepare_darwin_user() {

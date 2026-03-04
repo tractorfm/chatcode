@@ -43,7 +43,14 @@ Linux mode:
 - prepares `~vibe/.ssh/authorized_keys` and `~/workspace`
 - installs binary to `/usr/local/bin/chatcode-gateway`
 - writes `/etc/chatcode/gateway.env`
+- configures sudo logging for `vibe` at `/var/log/chatcode/sudo-vibe.log`
 - installs `chatcode-gateway.service` and starts it
+
+Sudo logging details (Linux):
+- `vibe` has passwordless sudo for operational workflows
+- every `sudo` command from `vibe` is logged to `/var/log/chatcode/sudo-vibe.log`
+- log file is root-owned and read-only for `vibe` (`root:vibe`, mode `0640`)
+- if supported, installer sets append-only flag (`chattr +a`) on the log file
 
 macOS mode:
 - uses the current user (no `vibe` user creation)
@@ -75,6 +82,7 @@ Linux cleanup (default) removes:
 - `/etc/chatcode`
 - `/tmp/chatcode` and `/opt/chatcode`
 - `vibe` sudoers entry
+- `/var/log/chatcode/sudo-vibe.log`
 - `vibe` user and home directory
 
 macOS cleanup removes:

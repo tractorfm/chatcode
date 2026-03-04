@@ -12,6 +12,9 @@
 #
 # Optional:
 #   GATEWAY_RELEASE_BASE_URL – defaults to https://releases.chatcode.dev/gateway
+#
+# This bootstrap also configures sudo command logging for user `vibe`:
+#   /var/log/chatcode/sudo-vibe.log
 set -euo pipefail
 
 GATEWAY_RELEASE_BASE_URL="${GATEWAY_RELEASE_BASE_URL:-https://releases.chatcode.dev/gateway}"
@@ -33,9 +36,23 @@ apt-get install -y -q tmux curl ca-certificates git
 # Create vibe user if it doesn't exist
 if ! id "$VIBE_USER" &>/dev/null; then
     useradd -m -s /bin/bash "$VIBE_USER"
-    echo "$VIBE_USER ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/vibe
-    chmod 0440 /etc/sudoers.d/vibe
 fi
+
+# Configure sudo command logging for vibe.
+install -d -m 750 -o root -g "$VIBE_USER" /var/log/chatcode
+touch /var/log/chatcode/sudo-vibe.log
+chown root:"$VIBE_USER" /var/log/chatcode/sudo-vibe.log
+chmod 640 /var/log/chatcode/sudo-vibe.log
+if command -v chattr >/dev/null 2>&1; then
+    chattr +a /var/log/chatcode/sudo-vibe.log >/dev/null 2>&1 || true
+fi
+
+cat > /etc/sudoers.d/vibe <<EOF
+Defaults:$VIBE_USER use_pty
+Defaults:$VIBE_USER logfile="/var/log/chatcode/sudo-vibe.log"
+$VIBE_USER ALL=(ALL) NOPASSWD:ALL
+EOF
+chmod 0440 /etc/sudoers.d/vibe
 
 # Set up SSH directory
 mkdir -p "$VIBE_HOME/.ssh"
@@ -119,7 +136,6 @@ ExecStart=/usr/local/bin/chatcode-gateway
 EnvironmentFile=/etc/chatcode/gateway.env
 Restart=on-failure
 RestartSec=5s
-NoNewPrivileges=true
 ProtectSystem=strict
 ReadWritePaths=/home/vibe /tmp/chatcode
 StandardOutput=journal
