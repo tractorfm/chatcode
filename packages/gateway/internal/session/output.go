@@ -83,16 +83,16 @@ func (c *outputCapturer) pollLoop(ctx context.Context) {
 				continue
 			}
 
-			delta, _ := diff(c.lastContent, content)
+			delta, redraw := diff(c.lastContent, content)
 			c.lastContent = content
 
 			if len(delta) == 0 {
 				continue
 			}
-			// Always finish a frame by restoring tmux cursor position. This keeps
-			// cursor placement stable when diff mode switches between append and redraw.
-			if cursorX, cursorY, err := c.captureCursor(); err == nil {
-				delta += fmt.Sprintf("\x1b[%d;%dH", cursorY+1, cursorX+1)
+			if redraw {
+				if cursorX, cursorY, err := c.captureCursor(); err == nil {
+					delta += fmt.Sprintf("\x1b[%d;%dH", cursorY+1, cursorX+1)
+				}
 			}
 
 			atomic.StoreInt64(c.lastAct, time.Now().UnixNano())
@@ -178,37 +178,7 @@ func diff(old, new string) (string, bool) {
 		return new[len(old):], false
 	}
 
-	// Sliding window case: viewport scrolled; keep only unseen tail.
-	overlap := longestSuffixPrefixOverlap(old, new)
-	if overlap > 0 {
-		return new[overlap:], false
-	}
-
-	// In-place updates (e.g. progress bars) cannot be represented as a suffix
-	// diff from capture-pane snapshots, so redraw the visible pane content.
-	// This assumes a VT-compatible terminal consumer (xterm.js in MVP).
+	// Any non-append change is treated as in-place update and rendered as full
+	// viewport redraw. This avoids duplicated/misaligned output for dynamic UIs.
 	return "\x1b[H\x1b[2J" + new, true
-}
-
-func longestSuffixPrefixOverlap(old, new string) int {
-	// O(n): longest prefix(new) that is also suffix(old).
-	// Build KMP prefix function for: new + \x00 + old.
-	sep := "\x00"
-	combined := new + sep + old
-	pi := make([]int, len(combined))
-	for i := 1; i < len(combined); i++ {
-		j := pi[i-1]
-		for j > 0 && combined[i] != combined[j] {
-			j = pi[j-1]
-		}
-		if combined[i] == combined[j] {
-			j++
-		}
-		pi[i] = j
-	}
-	overlap := pi[len(combined)-1]
-	if overlap > len(new) {
-		return len(new)
-	}
-	return overlap
 }

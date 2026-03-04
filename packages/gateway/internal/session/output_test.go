@@ -43,12 +43,13 @@ func TestDiffAppend(t *testing.T) {
 func TestDiffSlidingWindow(t *testing.T) {
 	old := "line1\nline2\nline3\n"
 	newVal := "line2\nline3\nline4\n"
+	want := "\x1b[H\x1b[2J" + newVal
 	got, redraw := diff(old, newVal)
-	if got != "line4\n" {
-		t.Fatalf("diff sliding window = %q, want %q", got, "line4\n")
+	if got != want {
+		t.Fatalf("diff sliding window = %q, want %q", got, want)
 	}
-	if redraw {
-		t.Fatalf("diff sliding window unexpectedly requested redraw")
+	if !redraw {
+		t.Fatalf("diff sliding window should request redraw")
 	}
 }
 

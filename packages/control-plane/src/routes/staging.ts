@@ -269,6 +269,8 @@ function htmlPage(): string {
     let termSocket = null;
     let termInputDisposable = null;
     let termKeepaliveTimer = null;
+    let awaitingInitialSnapshot = false;
+    let initialSnapshotTimer = null;
     let lastResizeCols = 0;
     let lastResizeRows = 0;
     const terminalMinHeightPx = 720;
@@ -424,6 +426,11 @@ function htmlPage(): string {
         clearInterval(termKeepaliveTimer);
         termKeepaliveTimer = null;
       }
+      if (initialSnapshotTimer) {
+        clearTimeout(initialSnapshotTimer);
+        initialSnapshotTimer = null;
+      }
+      awaitingInitialSnapshot = false;
       if (termSocket) {
         try { termSocket.close(1000, "user disconnect"); } catch {}
       }
@@ -677,6 +684,15 @@ function htmlPage(): string {
         }, 20000);
 
         // Force a clean initial render and cursor sync on first connect.
+        awaitingInitialSnapshot = true;
+        if (initialSnapshotTimer) {
+          clearTimeout(initialSnapshotTimer);
+          initialSnapshotTimer = null;
+        }
+        initialSnapshotTimer = setTimeout(() => {
+          initialSnapshotTimer = null;
+          awaitingInitialSnapshot = false;
+        }, 1500);
         sendSocketJSON({
           type: "session.snapshot",
           schema_version: "1",
@@ -715,6 +731,11 @@ function htmlPage(): string {
               const row = Math.max(0, Math.floor(msg.cursor_y)) + 1;
               term.write("\\x1b[" + row + ";" + col + "H");
             }
+            awaitingInitialSnapshot = false;
+            if (initialSnapshotTimer) {
+              clearTimeout(initialSnapshotTimer);
+              initialSnapshotTimer = null;
+            }
             return;
           }
 
@@ -735,9 +756,8 @@ function htmlPage(): string {
           const frame = decodeTerminalFrame(event.data);
           if (!frame || frame.kind !== 0x01) return;
           if (frame.sessionId !== activeSessionId) return;
-          const text = new TextDecoder().decode(frame.payload);
-          term.write(text);
-          if (socket.readyState === WebSocket.OPEN) {
+          const sendAck = () => {
+            if (socket.readyState !== WebSocket.OPEN) return;
             const ackMsg = {
               type: "session.ack",
               schema_version: "1",
@@ -746,7 +766,14 @@ function htmlPage(): string {
               seq: frame.seq,
             };
             try { socket.send(JSON.stringify(ackMsg)); } catch {}
+          };
+          if (awaitingInitialSnapshot) {
+            sendAck();
+            return;
           }
+          const text = new TextDecoder().decode(frame.payload);
+          term.write(text);
+          sendAck();
         }
       });
 
