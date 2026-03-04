@@ -18,7 +18,7 @@ RestartSec=5s
 
 # Harden the service (allow privilege escalation tools like sudo when explicitly requested)
 ProtectSystem=strict
-ReadWritePaths=/home/vibe /tmp/chatcode
+ReadWritePaths=/home/vibe /tmp/chatcode /var/log/chatcode
 PrivateTmp=false
 
 # Logging

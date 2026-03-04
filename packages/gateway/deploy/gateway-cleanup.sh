@@ -25,6 +25,7 @@ LINUX_USER="vibe"
 LINUX_SUDOERS_FILE="/etc/sudoers.d/vibe"
 LINUX_SUDO_LOG_DIR="/var/log/chatcode"
 LINUX_SUDO_LOG_FILE="${LINUX_SUDO_LOG_DIR}/sudo-vibe.log"
+LINUX_LOGROTATE_FILE="/etc/logrotate.d/chatcode-sudo-vibe"
 
 DARWIN_LABEL="dev.chatcode.gateway"
 
@@ -165,6 +166,7 @@ case "${OS_NAME}" in
 
     safe_rm_file "${LINUX_BINARY_PATH}"
     safe_rm_file "${LINUX_SUDOERS_FILE}"
+    safe_rm_file "${LINUX_LOGROTATE_FILE}"
     if command -v chattr >/dev/null 2>&1; then
       chattr -a "${LINUX_SUDO_LOG_FILE}" >/dev/null 2>&1 || true
     fi

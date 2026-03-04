@@ -16,6 +16,7 @@ LINUX_BINARY_PATH_DEFAULT="/usr/local/bin/chatcode-gateway"
 LINUX_SUDOERS_FILE="/etc/sudoers.d/vibe"
 LINUX_SUDO_LOG_DIR="/var/log/chatcode"
 LINUX_SUDO_LOG_FILE="${LINUX_SUDO_LOG_DIR}/sudo-vibe.log"
+LINUX_LOGROTATE_FILE="/etc/logrotate.d/chatcode-sudo-vibe"
 
 # macOS paths/ids (current user model).
 DARWIN_LABEL="dev.chatcode.gateway"
@@ -268,7 +269,7 @@ EnvironmentFile=${ENV_FILE}
 Restart=on-failure
 RestartSec=5s
 ProtectSystem=strict
-ReadWritePaths=${TARGET_HOME} /tmp/chatcode
+ReadWritePaths=${TARGET_HOME} /tmp/chatcode ${LINUX_SUDO_LOG_DIR}
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=chatcode-gateway
@@ -403,6 +404,34 @@ EOF
   if command -v visudo >/dev/null 2>&1; then
     visudo -cf "${SUDOERS_FILE}" >/dev/null
   fi
+  if ! command -v logrotate >/dev/null 2>&1; then
+    log "warning: logrotate not found; install it to enable sudo log rotation"
+  fi
+}
+
+write_linux_logrotate() {
+  cat > "${LINUX_LOGROTATE_FILE}" <<EOF
+${LINUX_SUDO_LOG_FILE} {
+    daily
+    rotate 14
+    compress
+    missingok
+    notifempty
+    create 0640 root ${TARGET_USER}
+    sharedscripts
+    prerotate
+        if command -v chattr >/dev/null 2>&1; then
+            chattr -a ${LINUX_SUDO_LOG_FILE} >/dev/null 2>&1 || true
+        fi
+    endscript
+    postrotate
+        if command -v chattr >/dev/null 2>&1; then
+            chattr +a ${LINUX_SUDO_LOG_FILE} >/dev/null 2>&1 || true
+        fi
+    endscript
+}
+EOF
+  chmod 0644 "${LINUX_LOGROTATE_FILE}"
 }
 
 prepare_darwin_user() {
@@ -562,6 +591,7 @@ fi
 
 if [[ "${OS_NAME}" == "Linux" ]]; then
   prepare_linux_user
+  write_linux_logrotate
 else
   prepare_darwin_user
 fi

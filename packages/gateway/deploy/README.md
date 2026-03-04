@@ -44,6 +44,7 @@ Linux mode:
 - installs binary to `/usr/local/bin/chatcode-gateway`
 - writes `/etc/chatcode/gateway.env`
 - configures sudo logging for `vibe` at `/var/log/chatcode/sudo-vibe.log`
+- installs log rotation policy at `/etc/logrotate.d/chatcode-sudo-vibe`
 - installs `chatcode-gateway.service` and starts it
 
 Sudo logging details (Linux):
@@ -51,6 +52,9 @@ Sudo logging details (Linux):
 - every `sudo` command from `vibe` is logged to `/var/log/chatcode/sudo-vibe.log`
 - log file is root-owned and read-only for `vibe` (`root:vibe`, mode `0640`)
 - if supported, installer sets append-only flag (`chattr +a`) on the log file
+- logrotate temporarily removes append-only, rotates, and restores append-only
+- service sandbox includes `/var/log/chatcode` in `ReadWritePaths` so sudo logging works from gateway sessions
+- cloud-init bootstrap installs `logrotate`; manual installs should ensure `logrotate` is present
 
 macOS mode:
 - uses the current user (no `vibe` user creation)
@@ -82,6 +86,7 @@ Linux cleanup (default) removes:
 - `/etc/chatcode`
 - `/tmp/chatcode` and `/opt/chatcode`
 - `vibe` sudoers entry
+- `/etc/logrotate.d/chatcode-sudo-vibe`
 - `/var/log/chatcode/sudo-vibe.log`
 - `vibe` user and home directory
 

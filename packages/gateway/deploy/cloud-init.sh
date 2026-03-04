@@ -15,6 +15,7 @@
 #
 # This bootstrap also configures sudo command logging for user `vibe`:
 #   /var/log/chatcode/sudo-vibe.log
+#   /etc/logrotate.d/chatcode-sudo-vibe (handles append-only rotate)
 set -euo pipefail
 
 GATEWAY_RELEASE_BASE_URL="${GATEWAY_RELEASE_BASE_URL:-https://releases.chatcode.dev/gateway}"
@@ -31,7 +32,7 @@ echo "[cloud-init] Chatcode.dev gateway bootstrap starting..."
 # Update and install dependencies
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -q
-apt-get install -y -q tmux curl ca-certificates git
+apt-get install -y -q tmux curl ca-certificates git logrotate
 
 # Create vibe user if it doesn't exist
 if ! id "$VIBE_USER" &>/dev/null; then
@@ -53,6 +54,29 @@ Defaults:$VIBE_USER logfile="/var/log/chatcode/sudo-vibe.log"
 $VIBE_USER ALL=(ALL) NOPASSWD:ALL
 EOF
 chmod 0440 /etc/sudoers.d/vibe
+
+cat > /etc/logrotate.d/chatcode-sudo-vibe <<'EOF'
+/var/log/chatcode/sudo-vibe.log {
+    daily
+    rotate 14
+    compress
+    missingok
+    notifempty
+    create 0640 root vibe
+    sharedscripts
+    prerotate
+        if command -v chattr >/dev/null 2>&1; then
+            chattr -a /var/log/chatcode/sudo-vibe.log >/dev/null 2>&1 || true
+        fi
+    endscript
+    postrotate
+        if command -v chattr >/dev/null 2>&1; then
+            chattr +a /var/log/chatcode/sudo-vibe.log >/dev/null 2>&1 || true
+        fi
+    endscript
+}
+EOF
+chmod 0644 /etc/logrotate.d/chatcode-sudo-vibe
 
 # Set up SSH directory
 mkdir -p "$VIBE_HOME/.ssh"
@@ -137,7 +161,7 @@ EnvironmentFile=/etc/chatcode/gateway.env
 Restart=on-failure
 RestartSec=5s
 ProtectSystem=strict
-ReadWritePaths=/home/vibe /tmp/chatcode
+ReadWritePaths=/home/vibe /tmp/chatcode /var/log/chatcode
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=chatcode-gateway
