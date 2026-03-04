@@ -682,8 +682,13 @@ function htmlPage(): string {
             const snapshotTail = contentLines.slice(-rowsHint).join("\\n");
             term.reset();
             // capture-pane lines are LF-separated; normalize to CRLF so each line
-            // starts at column 0 even with convertEol disabled.
+            // starts at column 0 consistently.
             term.write(snapshotTail.replace(/\\r?\\n/g, "\\r\\n"));
+            if (Number.isFinite(msg.cursor_x) && Number.isFinite(msg.cursor_y)) {
+              const col = Math.max(0, Math.floor(msg.cursor_x)) + 1;
+              const row = Math.max(0, Math.floor(msg.cursor_y)) + 1;
+              term.write("\\x1b[" + row + ";" + col + "H");
+            }
             return;
           }
 

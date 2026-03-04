@@ -220,6 +220,8 @@ export interface SessionSnapshotEvent extends BaseEvent {
   content: string;
   cols?: number;
   rows?: number;
+  cursor_x?: number;
+  cursor_y?: number;
 }
 
 export interface SSHKey {

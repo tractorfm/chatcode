@@ -322,6 +322,8 @@ type SessionSnapshotEvent struct {
 	Content       string    `json:"content"`
 	Cols          int       `json:"cols,omitempty"`
 	Rows          int       `json:"rows,omitempty"`
+	CursorX       int       `json:"cursor_x,omitempty"`
+	CursorY       int       `json:"cursor_y,omitempty"`
 }
 
 // SSHKey describes an entry in authorized_keys.

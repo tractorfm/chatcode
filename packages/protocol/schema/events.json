@@ -123,7 +123,15 @@
           "description": "Terminal content from tmux capture-pane -p"
         },
         "cols": { "type": "integer" },
-        "rows": { "type": "integer" }
+        "rows": { "type": "integer" },
+        "cursor_x": {
+          "type": "integer",
+          "description": "0-based cursor column in current visible pane"
+        },
+        "cursor_y": {
+          "type": "integer",
+          "description": "0-based cursor row in current visible pane"
+        }
       },
       "required": ["type", "session_id", "content"]
     },

@@ -255,12 +255,15 @@ func TestSnapshot(t *testing.T) {
 	s.Input([]byte("echo snap_test\n"))
 	time.Sleep(500 * time.Millisecond)
 
-	content, cols, rows, err := s.Snapshot()
+	content, cols, rows, cursorX, cursorY, err := s.Snapshot()
 	if err != nil {
 		t.Fatalf("Snapshot: %v", err)
 	}
 	if cols <= 0 || rows <= 0 {
 		t.Errorf("bad dimensions: %dx%d", cols, rows)
+	}
+	if cursorX < 0 || cursorY < 0 {
+		t.Errorf("bad cursor position: %d,%d", cursorX, cursorY)
 	}
 	if !contains(content, "snap_test") {
 		t.Errorf("expected 'snap_test' in snapshot:\n%s", content)
@@ -298,7 +301,7 @@ func TestSnapshotIncludesScrollbackAndANSI(t *testing.T) {
 	}
 	time.Sleep(1200 * time.Millisecond)
 
-	content, _, _, err := s.Snapshot()
+	content, _, _, _, _, err := s.Snapshot()
 	if err != nil {
 		t.Fatalf("Snapshot: %v", err)
 	}
