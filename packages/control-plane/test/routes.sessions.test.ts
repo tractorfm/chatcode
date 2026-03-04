@@ -48,29 +48,27 @@ describe("routes/sessions", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.getVPS.mockResolvedValue({ id: "vps-1", user_id: "usr-1", status: "active" });
-    mocks.getGatewayByVPS.mockResolvedValue({ id: "gw-1", connected: 1 });
+    mocks.getGatewayByVPS.mockResolvedValue({
+      id: "gw-1",
+      connected: 1,
+      last_seen_at: Math.floor(Date.now() / 1000),
+    });
     mocks.getSession.mockResolvedValue({ id: "ses-1", vps_id: "vps-1" });
   });
 
   it("returns snapshot payload from GatewayHub command path", async () => {
     const { env, stubFetch } = makeEnv(
-      [
-        new Response(JSON.stringify({ connected: true }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
+      new Response(
+        JSON.stringify({
+          type: "session.snapshot",
+          schema_version: "1",
+          session_id: "ses-1",
+          content: "hello snapshot",
+          cols: 100,
+          rows: 30,
         }),
-        new Response(
-          JSON.stringify({
-            type: "session.snapshot",
-            schema_version: "1",
-            session_id: "ses-1",
-            content: "hello snapshot",
-            cols: 100,
-            rows: 30,
-          }),
-          { status: 200, headers: { "Content-Type": "application/json" } },
-        ),
-      ],
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
     );
 
     const res = await handleSessionSnapshot(
@@ -87,7 +85,7 @@ describe("routes/sessions", () => {
       session_id: "ses-1",
       content: "hello snapshot",
     });
-    expect(stubFetch).toHaveBeenCalledTimes(2);
+    expect(stubFetch).toHaveBeenCalledTimes(1);
   });
 
   it("returns 404 when snapshot session does not belong to vps", async () => {
@@ -110,13 +108,7 @@ describe("routes/sessions", () => {
   });
 
   it("marks session as error when session.create command fails", async () => {
-    const { env } = makeEnv([
-      new Response(JSON.stringify({ connected: true }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      }),
-      new Response("gateway failed", { status: 502 }),
-    ]);
+    const { env } = makeEnv(new Response("gateway failed", { status: 502 }));
 
     const req = new Request("https://cp.example.test/vps/vps-1/sessions", {
       method: "POST",
@@ -154,6 +146,11 @@ describe("routes/sessions", () => {
   });
 
   it("returns 503 and clears DB connected when GatewayHub reports disconnected", async () => {
+    mocks.getGatewayByVPS.mockResolvedValue({
+      id: "gw-1",
+      connected: 1,
+      last_seen_at: 0,
+    });
     const { env } = makeEnv(
       new Response(JSON.stringify({ connected: false }), {
         status: 200,

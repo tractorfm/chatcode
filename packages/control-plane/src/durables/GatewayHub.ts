@@ -36,6 +36,7 @@ const MAX_TEXT_PAYLOAD = 1024 * 1024; // 1 MB
 const COMMAND_TIMEOUT_MS = 10_000;
 const IDLE_TIMEOUT_MS = 600_000; // 10 minutes
 const GRACE_PERIOD_MS = 30_000; // 30s reconnect grace
+const SESSION_RECONCILE_END_GRACE_MS = 90_000; // avoid ending sessions right after reconnect
 
 interface PendingEntry {
   resolve: (result: GatewayCommandResult) => void;
@@ -53,6 +54,8 @@ interface SocketAttachment {
   role: "gateway" | "browser";
   sessionId?: string;
   expectedGatewayId?: string;
+  gatewayId?: string;
+  vpsId?: string;
 }
 
 type GatewayEvent =
@@ -100,6 +103,7 @@ export class GatewayHub {
 
   // Grace period timer for gateway reconnect
   private graceTimer: ReturnType<typeof setTimeout> | null = null;
+  private sessionEndReconcileNotBeforeMs = 0;
 
   constructor(state: DurableObjectState, env: Env) {
     this.state = state;
@@ -148,6 +152,7 @@ export class GatewayHub {
       if (typeof message === "string") {
         void this.onGatewayText(message, ws).catch((err) => {
           console.warn("gateway ws text handler failed", err);
+          safeClose(ws, 1011, "gateway event handler failure");
         });
       } else {
         this.onGatewayBinary(new Uint8Array(message));
@@ -210,6 +215,8 @@ export class GatewayHub {
       server.serializeAttachment({
         role: "gateway",
         expectedGatewayId: this.expectedGatewayId ?? undefined,
+        gatewayId: this.expectedGatewayId ?? undefined,
+        vpsId: this.vpsId ?? undefined,
       } satisfies SocketAttachment);
     } catch {
       // ignore; attachment is optional fallback metadata
@@ -299,6 +306,7 @@ export class GatewayHub {
 
     const gatewayId = expectedGatewayId ?? msg.gateway_id;
     this.gatewayId = gatewayId;
+    this.sessionEndReconcileNotBeforeMs = Date.now() + SESSION_RECONCILE_END_GRACE_MS;
 
     // Update D1
     await updateGatewayVersion(this.env.DB, gatewayId, msg.version);
@@ -321,6 +329,7 @@ export class GatewayHub {
         .bind(Math.floor(Date.now() / 1000), gw.vps_id)
         .run();
     }
+    this.persistGatewayAttachment(ws ?? this.gatewaySocket);
   }
 
   private async onGatewayHealth(msg: GatewayHealth): Promise<void> {
@@ -412,7 +421,12 @@ export class GatewayHub {
       .all<{ id: string; status: string }>();
 
     for (const row of result.results ?? []) {
-      const nextStatus = activeIDs.has(row.id) ? "running" : "ended";
+      const shouldBeRunning = activeIDs.has(row.id);
+      if (!shouldBeRunning && Date.now() < this.sessionEndReconcileNotBeforeMs) {
+        continue;
+      }
+
+      const nextStatus = shouldBeRunning ? "running" : "ended";
       if (row.status !== nextStatus) {
         await updateSessionStatus(this.env.DB, row.id, nextStatus);
       }
@@ -433,6 +447,7 @@ export class GatewayHub {
     }
 
     this.vpsId = row.vps_id;
+    this.persistGatewayAttachment(this.gatewaySocket);
     return row.vps_id;
   }
 
@@ -494,6 +509,7 @@ export class GatewayHub {
     }
 
     this.gatewaySocket = null;
+    this.sessionEndReconcileNotBeforeMs = 0;
 
     // Reject all pending
     for (const [id, entry] of this.pending) {
@@ -744,6 +760,12 @@ export class GatewayHub {
       if (meta.role === "gateway") {
         if (!claimedGateway) {
           this.gatewaySocket = ws;
+          if (meta.gatewayId) {
+            this.gatewayId = meta.gatewayId;
+          }
+          if (meta.vpsId) {
+            this.vpsId = meta.vpsId;
+          }
           if (meta.expectedGatewayId) {
             this.expectedGatewayId = meta.expectedGatewayId;
           }
@@ -778,6 +800,20 @@ export class GatewayHub {
     }
   }
 
+  private persistGatewayAttachment(ws: WebSocket | null): void {
+    if (!ws) return;
+    try {
+      ws.serializeAttachment({
+        role: "gateway",
+        expectedGatewayId: this.expectedGatewayId ?? undefined,
+        gatewayId: this.gatewayId ?? undefined,
+        vpsId: this.vpsId ?? undefined,
+      } satisfies SocketAttachment);
+    } catch {
+      // ignore
+    }
+  }
+
   private readAttachment(ws: WebSocket): SocketAttachment | null {
     const withAttachment = ws as WebSocket & {
       deserializeAttachment?: () => unknown;
@@ -797,10 +833,14 @@ export class GatewayHub {
       }
       const sessionId = (raw as { sessionId?: unknown }).sessionId;
       const expectedGatewayId = (raw as { expectedGatewayId?: unknown }).expectedGatewayId;
+      const gatewayId = (raw as { gatewayId?: unknown }).gatewayId;
+      const vpsId = (raw as { vpsId?: unknown }).vpsId;
       return {
         role,
         sessionId: typeof sessionId === "string" ? sessionId : undefined,
         expectedGatewayId: typeof expectedGatewayId === "string" ? expectedGatewayId : undefined,
+        gatewayId: typeof gatewayId === "string" ? gatewayId : undefined,
+        vpsId: typeof vpsId === "string" ? vpsId : undefined,
       };
     } catch {
       return null;
@@ -816,17 +856,6 @@ export class GatewayHub {
       safeClose(ws, 1001, "shutdown requested");
     }
     this.gatewaySocket = null;
-
-    // Close all browser sockets
-    for (const [sessionId, subs] of this.subscribers) {
-      for (const ws of subs) {
-        try {
-          ws.close(1001, "VPS shutting down");
-        } catch {
-          // ignore
-        }
-      }
-    }
     this.subscribers.clear();
     this.lastActivity.clear();
     this.browserSessionMap.clear();

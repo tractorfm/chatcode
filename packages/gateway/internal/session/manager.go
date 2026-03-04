@@ -118,9 +118,6 @@ func (m *Manager) Recover(outputCh chan OutputChunk) ([]string, error) {
 		if _, exists := m.sessions[sessionID]; exists {
 			continue
 		}
-		if len(m.sessions) >= m.maxCount {
-			break
-		}
 
 		s := m.newRecoveredSession(sessionID, outputCh)
 		m.sessions[sessionID] = s
@@ -171,7 +168,6 @@ func newRecoveredSession(sessionID string, outputCh chan OutputChunk) *Session {
 		},
 		tmuxName: "vibe-" + sessionID,
 	}
-	_ = exec.Command("tmux", setHistoryLimitArgs(s.tmuxName)...).Run()
 	s.capturer = newOutputCapturer(s.tmuxName, s.opts.SessionID, &s.seq, &s.lastActivityAt, s.opts.OutputCh)
 	s.capturer.start()
 	atomic.StoreInt64(&s.lastActivityAt, time.Now().UnixNano())

@@ -109,7 +109,7 @@ func TestManagerRecoverAddsDiscoveredSessions(t *testing.T) {
 	}
 }
 
-func TestManagerRecoverRespectsLimit(t *testing.T) {
+func TestManagerRecoverIgnoresCreateLimit(t *testing.T) {
 	m := NewManager(2)
 	m.checkInterval = time.Hour
 	m.isAlive = func(_ *Session) bool { return true }
@@ -126,11 +126,11 @@ func TestManagerRecoverRespectsLimit(t *testing.T) {
 		t.Fatalf("Recover returned error: %v", err)
 	}
 
-	if len(recovered) != 1 {
-		t.Fatalf("expected 1 recovered session, got %d", len(recovered))
+	if len(recovered) != 2 {
+		t.Fatalf("expected 2 recovered sessions, got %d", len(recovered))
 	}
-	if m.Get("ses-a") == nil && m.Get("ses-b") == nil {
-		t.Fatal("expected one recovered session to be tracked")
+	if m.Get("ses-a") == nil || m.Get("ses-b") == nil {
+		t.Fatal("expected recovered sessions to be tracked")
 	}
 }
 

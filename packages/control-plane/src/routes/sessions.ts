@@ -14,6 +14,8 @@ import {
 } from "../db/schema.js";
 import { newSessionId } from "../lib/ids.js";
 
+const GATEWAY_LAST_SEEN_FRESH_SECONDS = 90;
+
 /**
  * GET /vps/:id/sessions – List sessions for a VPS.
  */
@@ -53,7 +55,7 @@ export async function handleSessionCreate(
   if (!gateway || !gateway.connected) {
     return jsonResponse({ error: "gateway not connected" }, 503);
   }
-  if (!(await isGatewayLive(env, gateway.id))) {
+  if (!(await isGatewayLive(env, gateway.id, gateway.last_seen_at))) {
     await updateGatewayConnected(env.DB, gateway.id, false);
     return jsonResponse({ error: "gateway not connected" }, 503);
   }
@@ -188,7 +190,7 @@ export async function handleSessionSnapshot(
   if (!gateway?.connected) {
     return jsonResponse({ error: "gateway not connected" }, 503);
   }
-  if (!(await isGatewayLive(env, gateway.id))) {
+  if (!(await isGatewayLive(env, gateway.id, gateway.last_seen_at))) {
     await updateGatewayConnected(env.DB, gateway.id, false);
     return jsonResponse({ error: "gateway not connected" }, 503);
   }
@@ -256,7 +258,7 @@ export async function handleTerminalUpgrade(
   if (!gateway.connected) {
     return jsonResponse({ error: "gateway not connected" }, 503);
   }
-  if (!(await isGatewayLive(env, gateway.id))) {
+  if (!(await isGatewayLive(env, gateway.id, gateway.last_seen_at))) {
     await updateGatewayConnected(env.DB, gateway.id, false);
     return jsonResponse({ error: "gateway not connected" }, 503);
   }
@@ -285,7 +287,16 @@ function jsonResponse(data: unknown, status = 200): Response {
   });
 }
 
-async function isGatewayLive(env: Env, gatewayId: string): Promise<boolean> {
+async function isGatewayLive(
+  env: Env,
+  gatewayId: string,
+  lastSeenAt: number | null | undefined,
+): Promise<boolean> {
+  const now = Math.floor(Date.now() / 1000);
+  if (typeof lastSeenAt === "number" && now - lastSeenAt <= GATEWAY_LAST_SEEN_FRESH_SECONDS) {
+    return true;
+  }
+
   try {
     const doId = env.GATEWAY_HUB.idFromName(gatewayId);
     const stub = env.GATEWAY_HUB.get(doId);

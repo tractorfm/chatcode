@@ -247,4 +247,57 @@ describe("GatewayHub", () => {
     );
     expect(mocks.updateSessionStatus).toHaveBeenCalledTimes(2);
   });
+
+  it("does not end missing sessions immediately after gateway.hello", async () => {
+    const hub = makeHub("vps-1", [
+      { id: "ses-keep-running", status: "running" },
+      { id: "ses-active-starting", status: "starting" },
+    ]);
+
+    await (
+      hub as unknown as {
+        onGatewayHello: (msg: Record<string, unknown>) => Promise<void>;
+      }
+    ).onGatewayHello({
+      type: "gateway.hello",
+      schema_version: "1",
+      gateway_id: "gw-1",
+      version: "0.1.0",
+      hostname: "test-host",
+      system_info: {
+        os: "linux",
+        arch: "amd64",
+        cpus: 4,
+        ram_total_bytes: 1024,
+        disk_total_bytes: 1024,
+      },
+    });
+
+    mocks.updateSessionStatus.mockClear();
+
+    await (
+      hub as unknown as {
+        onGatewayHealth: (msg: Record<string, unknown>) => Promise<void>;
+      }
+    ).onGatewayHealth({
+      type: "gateway.health",
+      schema_version: "1",
+      gateway_id: "gw-1",
+      timestamp: "2026-03-04T00:00:00.000Z",
+      active_sessions: [
+        { session_id: "ses-active-starting", last_activity_at: "2026-03-04T00:00:01.000Z" },
+      ],
+    });
+
+    expect(mocks.updateSessionStatus).toHaveBeenCalledWith(
+      expect.anything(),
+      "ses-active-starting",
+      "running",
+    );
+    expect(mocks.updateSessionStatus).not.toHaveBeenCalledWith(
+      expect.anything(),
+      "ses-keep-running",
+      "ended",
+    );
+  });
 });
