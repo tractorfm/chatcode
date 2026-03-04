@@ -10,6 +10,7 @@ import {
   getSession,
   listSessionsByVPS,
   updateSessionStatus,
+  updateGatewayConnected,
 } from "../db/schema.js";
 import { newSessionId } from "../lib/ids.js";
 
@@ -50,6 +51,10 @@ export async function handleSessionCreate(
 
   const gateway = await getGatewayByVPS(env.DB, vpsId);
   if (!gateway || !gateway.connected) {
+    return jsonResponse({ error: "gateway not connected" }, 503);
+  }
+  if (!(await isGatewayLive(env, gateway.id))) {
+    await updateGatewayConnected(env.DB, gateway.id, false);
     return jsonResponse({ error: "gateway not connected" }, 503);
   }
 
@@ -183,6 +188,10 @@ export async function handleSessionSnapshot(
   if (!gateway?.connected) {
     return jsonResponse({ error: "gateway not connected" }, 503);
   }
+  if (!(await isGatewayLive(env, gateway.id))) {
+    await updateGatewayConnected(env.DB, gateway.id, false);
+    return jsonResponse({ error: "gateway not connected" }, 503);
+  }
 
   const doId = env.GATEWAY_HUB.idFromName(gateway.id);
   const stub = env.GATEWAY_HUB.get(doId);
@@ -244,6 +253,13 @@ export async function handleTerminalUpgrade(
   if (!gateway) {
     return jsonResponse({ error: "gateway not found" }, 404);
   }
+  if (!gateway.connected) {
+    return jsonResponse({ error: "gateway not connected" }, 503);
+  }
+  if (!(await isGatewayLive(env, gateway.id))) {
+    await updateGatewayConnected(env.DB, gateway.id, false);
+    return jsonResponse({ error: "gateway not connected" }, 503);
+  }
 
   // Forward the WebSocket upgrade to the GatewayHub DO
   const doId = env.GATEWAY_HUB.idFromName(gateway.id);
@@ -267,4 +283,17 @@ function jsonResponse(data: unknown, status = 200): Response {
     status,
     headers: { "Content-Type": "application/json" },
   });
+}
+
+async function isGatewayLive(env: Env, gatewayId: string): Promise<boolean> {
+  try {
+    const doId = env.GATEWAY_HUB.idFromName(gatewayId);
+    const stub = env.GATEWAY_HUB.get(doId);
+    const statusResp = await stub.fetch(new Request("http://do/status"));
+    if (!statusResp.ok) return false;
+    const status = await statusResp.json<{ connected?: unknown }>();
+    return Boolean(status.connected);
+  } catch {
+    return false;
+  }
 }

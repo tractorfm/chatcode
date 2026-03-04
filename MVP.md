@@ -433,6 +433,11 @@ Planned flow for connecting any user-owned machine (Linux or macOS):
 ## 14) Deferred / Roadmap
 - **Bring Your Own Server (BYO)**: connect any Linux/macOS machine via install script (10b). Architecture and data model prepared.
 - **macOS gateway support**: cross-compile + launchd + gopsutil. ~90% code shared with Linux.
+- **Transport resilience and cost controls**:
+  - Durable Object WebSocket hibernation for long-lived gateway/browser sockets.
+  - Optional output replay buffer + resume-by-seq (beyond snapshot-only reconnect).
+  - Offline notification queue for async agents (critical for Telegram UX).
+  - Explicit connection lifecycle policy (idle close thresholds and wake conditions per client type).
 - Git subsystem UI (repo creation, deploy keys, templates).
 - R2-backed file storage (expected evolution for larger files/high load).
 - Multi-server UI (multiple VPS/machines per user).

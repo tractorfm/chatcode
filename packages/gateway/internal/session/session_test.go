@@ -3,6 +3,7 @@ package session
 import (
 	"errors"
 	"os/exec"
+	"strconv"
 	"testing"
 	"time"
 )
@@ -84,6 +85,55 @@ func TestManagerEndRemovesSessionOnSuccess(t *testing.T) {
 	}
 }
 
+func TestManagerRecoverAddsDiscoveredSessions(t *testing.T) {
+	m := NewManager(5)
+	m.checkInterval = time.Hour
+	m.isAlive = func(_ *Session) bool { return true }
+	m.listRecoverableSessionIDs = func() ([]string, error) {
+		return []string{"ses-a", "ses-b"}, nil
+	}
+	m.newRecoveredSession = func(sessionID string, _ chan OutputChunk) *Session {
+		return &Session{opts: Options{SessionID: sessionID}}
+	}
+
+	recovered, err := m.Recover(make(chan OutputChunk, 8))
+	if err != nil {
+		t.Fatalf("Recover returned error: %v", err)
+	}
+
+	if len(recovered) != 2 {
+		t.Fatalf("expected 2 recovered sessions, got %d", len(recovered))
+	}
+	if m.Get("ses-a") == nil || m.Get("ses-b") == nil {
+		t.Fatal("expected recovered sessions to be tracked")
+	}
+}
+
+func TestManagerRecoverRespectsLimit(t *testing.T) {
+	m := NewManager(2)
+	m.checkInterval = time.Hour
+	m.isAlive = func(_ *Session) bool { return true }
+	m.sessions["existing"] = &Session{}
+	m.listRecoverableSessionIDs = func() ([]string, error) {
+		return []string{"ses-a", "ses-b"}, nil
+	}
+	m.newRecoveredSession = func(sessionID string, _ chan OutputChunk) *Session {
+		return &Session{opts: Options{SessionID: sessionID}}
+	}
+
+	recovered, err := m.Recover(make(chan OutputChunk, 8))
+	if err != nil {
+		t.Fatalf("Recover returned error: %v", err)
+	}
+
+	if len(recovered) != 1 {
+		t.Fatalf("expected 1 recovered session, got %d", len(recovered))
+	}
+	if m.Get("ses-a") == nil && m.Get("ses-b") == nil {
+		t.Fatal("expected one recovered session to be tracked")
+	}
+}
+
 func TestBuildEnvIncludesHostAndSessionVars(t *testing.T) {
 	t.Setenv("VIBECODE_TEST_ENV", "from-host")
 
@@ -101,6 +151,36 @@ func TestBuildEnvIncludesHostAndSessionVars(t *testing.T) {
 	}
 	if !containsEnv(env, "VIBECODE_SESSION_ENV=from-session") {
 		t.Fatal("expected session env variable to be set")
+	}
+}
+
+func TestSetHistoryLimitArgs(t *testing.T) {
+	args := setHistoryLimitArgs("vibe-ses-test")
+	if len(args) != 5 {
+		t.Fatalf("unexpected args length: %d", len(args))
+	}
+	if args[0] != "set-option" || args[1] != "-t" || args[2] != "vibe-ses-test" {
+		t.Fatalf("unexpected args prefix: %v", args[:3])
+	}
+	if args[3] != "history-limit" {
+		t.Fatalf("expected history-limit option, got %q", args[3])
+	}
+	gotLimit, err := strconv.Atoi(args[4])
+	if err != nil || gotLimit != tmuxHistoryLimitLines {
+		t.Fatalf("unexpected history limit arg: %q", args[4])
+	}
+}
+
+func TestSnapshotCaptureArgs(t *testing.T) {
+	args := snapshotCaptureArgs("vibe-ses-test")
+	want := []string{"capture-pane", "-e", "-S", "-" + strconv.Itoa(snapshotHistoryLines), "-t", "vibe-ses-test", "-p"}
+	if len(args) != len(want) {
+		t.Fatalf("args len = %d, want %d", len(args), len(want))
+	}
+	for i := range want {
+		if args[i] != want[i] {
+			t.Fatalf("args[%d] = %q, want %q", i, args[i], want[i])
+		}
 	}
 }
 
@@ -184,6 +264,49 @@ func TestSnapshot(t *testing.T) {
 	}
 	if !contains(content, "snap_test") {
 		t.Errorf("expected 'snap_test' in snapshot:\n%s", content)
+	}
+}
+
+func TestSnapshotIncludesScrollbackAndANSI(t *testing.T) {
+	if !hasTmux() {
+		t.Skip("tmux not available")
+	}
+
+	m := NewManager(5)
+	outCh := make(chan OutputChunk, 64)
+	s, err := m.Create(Options{
+		SessionID: "hist-" + time.Now().Format("150405"),
+		Name:      "hist",
+		Workdir:   t.TempDir(),
+		Agent:     "none",
+		OutputCh:  outCh,
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	defer m.End(s.opts.SessionID)
+
+	time.Sleep(300 * time.Millisecond)
+	if err := s.Input([]byte("printf '\\033[31mred_test\\033[0m\\n'\n")); err != nil {
+		t.Fatalf("Input ANSI: %v", err)
+	}
+	for i := 0; i < 140; i++ {
+		line := "echo scroll_line_" + strconv.Itoa(i) + "\n"
+		if err := s.Input([]byte(line)); err != nil {
+			t.Fatalf("Input scroll line %d: %v", i, err)
+		}
+	}
+	time.Sleep(1200 * time.Millisecond)
+
+	content, _, _, err := s.Snapshot()
+	if err != nil {
+		t.Fatalf("Snapshot: %v", err)
+	}
+	if !contains(content, "scroll_line_0") {
+		t.Fatalf("expected snapshot to include scrollback line, got:\n%s", content)
+	}
+	if !contains(content, "\x1b[31mred_test") {
+		t.Fatalf("expected snapshot to preserve ANSI escapes, got:\n%s", content)
 	}
 }
 

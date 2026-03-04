@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   handleSessionCreate,
   handleSessionSnapshot,
+  handleTerminalUpgrade,
 } from "../src/routes/sessions";
 
 const mocks = vi.hoisted(() => ({
@@ -11,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   getSession: vi.fn(),
   listSessionsByVPS: vi.fn(async () => []),
   updateSessionStatus: vi.fn(async () => {}),
+  updateGatewayConnected: vi.fn(async () => {}),
   newSessionId: vi.fn(() => "ses-test-1"),
 }));
 
@@ -21,14 +23,16 @@ vi.mock("../src/db/schema.js", () => ({
   getSession: mocks.getSession,
   listSessionsByVPS: mocks.listSessionsByVPS,
   updateSessionStatus: mocks.updateSessionStatus,
+  updateGatewayConnected: mocks.updateGatewayConnected,
 }));
 
 vi.mock("../src/lib/ids.js", () => ({
   newSessionId: mocks.newSessionId,
 }));
 
-function makeEnv(doResponse: Response) {
-  const stubFetch = vi.fn(async () => doResponse);
+function makeEnv(doResponse: Response | Response[]) {
+  const responses = Array.isArray(doResponse) ? doResponse.slice() : [doResponse];
+  const stubFetch = vi.fn(async () => responses.shift() || new Response("{}", { status: 200 }));
   const stub = { fetch: stubFetch };
   const env = {
     DB: {} as D1Database,
@@ -50,17 +54,23 @@ describe("routes/sessions", () => {
 
   it("returns snapshot payload from GatewayHub command path", async () => {
     const { env, stubFetch } = makeEnv(
-      new Response(
-        JSON.stringify({
-          type: "session.snapshot",
-          schema_version: "1",
-          session_id: "ses-1",
-          content: "hello snapshot",
-          cols: 100,
-          rows: 30,
+      [
+        new Response(JSON.stringify({ connected: true }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
         }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
-      ),
+        new Response(
+          JSON.stringify({
+            type: "session.snapshot",
+            schema_version: "1",
+            session_id: "ses-1",
+            content: "hello snapshot",
+            cols: 100,
+            rows: 30,
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      ],
     );
 
     const res = await handleSessionSnapshot(
@@ -77,7 +87,7 @@ describe("routes/sessions", () => {
       session_id: "ses-1",
       content: "hello snapshot",
     });
-    expect(stubFetch).toHaveBeenCalledOnce();
+    expect(stubFetch).toHaveBeenCalledTimes(2);
   });
 
   it("returns 404 when snapshot session does not belong to vps", async () => {
@@ -100,7 +110,13 @@ describe("routes/sessions", () => {
   });
 
   it("marks session as error when session.create command fails", async () => {
-    const { env } = makeEnv(new Response("gateway failed", { status: 502 }));
+    const { env } = makeEnv([
+      new Response(JSON.stringify({ connected: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+      new Response("gateway failed", { status: 502 }),
+    ]);
 
     const req = new Request("https://cp.example.test/vps/vps-1/sessions", {
       method: "POST",
@@ -121,5 +137,38 @@ describe("routes/sessions", () => {
       "ses-test-1",
       "error",
     );
+  });
+
+  it("returns 503 for terminal upgrade when gateway is disconnected", async () => {
+    mocks.getGatewayByVPS.mockResolvedValue({ id: "gw-1", connected: 0 });
+    const { env } = makeEnv(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+
+    const req = new Request("https://cp.example.test/vps/vps-1/terminal?session_id=ses-1", {
+      headers: { Upgrade: "websocket" },
+    });
+
+    const res = await handleTerminalUpgrade(req, env, { userId: "usr-1" }, "vps-1");
+
+    expect(res.status).toBe(503);
+    await expect(res.json()).resolves.toMatchObject({ error: "gateway not connected" });
+  });
+
+  it("returns 503 and clears DB connected when GatewayHub reports disconnected", async () => {
+    const { env } = makeEnv(
+      new Response(JSON.stringify({ connected: false }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    const req = new Request("https://cp.example.test/vps/vps-1/terminal?session_id=ses-1", {
+      headers: { Upgrade: "websocket" },
+    });
+
+    const res = await handleTerminalUpgrade(req, env, { userId: "usr-1" }, "vps-1");
+
+    expect(res.status).toBe(503);
+    await expect(res.json()).resolves.toMatchObject({ error: "gateway not connected" });
+    expect(mocks.updateGatewayConnected).toHaveBeenCalledWith(env.DB, "gw-1", false);
   });
 });

@@ -225,6 +225,7 @@ function htmlPage(): string {
   <pre id="out">{}</pre>
 
   <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@6.0.0/lib/xterm.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.js"></script>
   <script>
     const out = document.getElementById("out");
     const meEl = document.getElementById("me");
@@ -252,8 +253,12 @@ function htmlPage(): string {
     let activeSessionId = "";
 
     let term = null;
+    let fitAddon = null;
+    let termResizeObserver = null;
+    let fitTimer = null;
     let termSocket = null;
     let termInputDisposable = null;
+    let termKeepaliveTimer = null;
     let lastResizeCols = 0;
     let lastResizeRows = 0;
 
@@ -319,19 +324,53 @@ function htmlPage(): string {
           cursorBlink: true,
           convertEol: true,
           fontSize: 13,
-          scrollback: 5000,
+          fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace',
+          scrollback: 50000,
           theme: { background: "#111", foreground: "#ddd" },
         });
-        term.open(document.getElementById("terminal"));
+        if (window.FitAddon && typeof window.FitAddon.FitAddon === "function") {
+          fitAddon = new window.FitAddon.FitAddon();
+          term.loadAddon(fitAddon);
+        }
+
+        const terminalNode = document.getElementById("terminal");
+        term.open(terminalNode);
+        scheduleTerminalFit();
+        setTimeout(scheduleTerminalFit, 120);
+
         term.onResize(({ cols, rows }) => {
           sendSessionResize(cols, rows);
         });
         window.addEventListener("resize", () => {
           if (!term) return;
-          sendSessionResize(term.cols || 80, term.rows || 24);
+          scheduleTerminalFit();
         });
+        if (window.ResizeObserver) {
+          termResizeObserver = new window.ResizeObserver(() => scheduleTerminalFit());
+          termResizeObserver.observe(terminalNode);
+        }
       }
       return true;
+    }
+
+    function scheduleTerminalFit() {
+      if (!term) return;
+      if (fitTimer) clearTimeout(fitTimer);
+      fitTimer = setTimeout(() => {
+        fitTimer = null;
+        if (!term) return;
+        if (fitAddon && typeof fitAddon.fit === "function") {
+          try { fitAddon.fit(); } catch {}
+        }
+        sendSessionResize(term.cols || 80, term.rows || 24);
+      }, 16);
+    }
+
+    function normalizeSnapshotContent(content) {
+      // tmux capture-pane includes full viewport and often trailing empty lines/newline.
+      // Trimming tail whitespace keeps cursor on the actual prompt line in staging UI.
+      const normalized = String(content || "").replace(/[ \\t\\r\\n]+$/, "");
+      return normalized.length > 0 ? normalized : String(content || "");
     }
 
     function setTerminalStatus(text) {
@@ -349,6 +388,14 @@ function htmlPage(): string {
       if (termInputDisposable) {
         termInputDisposable.dispose();
         termInputDisposable = null;
+      }
+      if (fitTimer) {
+        clearTimeout(fitTimer);
+        fitTimer = null;
+      }
+      if (termKeepaliveTimer) {
+        clearInterval(termKeepaliveTimer);
+        termKeepaliveTimer = null;
       }
       if (termSocket) {
         try { termSocket.close(1000, "user disconnect"); } catch {}
@@ -452,6 +499,7 @@ function htmlPage(): string {
         terminalWrap.style.display = "block";
         schemaWrap.style.display = "block";
         meEl.textContent = JSON.stringify(body, null, 2);
+        scheduleTerminalFit();
         await listVPS();
       } else {
         unauth.style.display = "block";
@@ -558,6 +606,8 @@ function htmlPage(): string {
 
       term.clear();
       term.writeln("Connecting to " + sessionId + " ...");
+      scheduleTerminalFit();
+      term.focus();
 
       const path = "/vps/" + encodeURIComponent(vpsId) + "/terminal?session_id=" + encodeURIComponent(sessionId);
       termSocket = new WebSocket(wsUrl(path));
@@ -565,7 +615,8 @@ function htmlPage(): string {
 
       termSocket.addEventListener("open", () => {
         setTerminalStatus("connected: " + sessionId);
-        sendSessionResize(term.cols || 80, term.rows || 24);
+        scheduleTerminalFit();
+        term.focus();
 
         termInputDisposable = term.onData((data) => {
           if (!termSocket || termSocket.readyState !== WebSocket.OPEN) return;
@@ -580,6 +631,11 @@ function htmlPage(): string {
             termSocket.send(JSON.stringify(inputMsg));
           } catch {}
         });
+
+        termKeepaliveTimer = setInterval(() => {
+          if (!termSocket || termSocket.readyState !== WebSocket.OPEN) return;
+          try { termSocket.send(JSON.stringify({ type: "ping" })); } catch {}
+        }, 20000);
       });
 
       termSocket.addEventListener("message", (event) => {
@@ -587,9 +643,15 @@ function htmlPage(): string {
           let msg;
           try { msg = JSON.parse(event.data); } catch { return; }
 
+          if (msg.type === "ack" && msg.ok === false) {
+            const errText = msg.error || "gateway command failed";
+            term.writeln("\\r\\n[ack error] " + errText);
+            return;
+          }
+
           if (msg.type === "session.snapshot" && msg.session_id === activeSessionId && typeof msg.content === "string") {
             term.clear();
-            term.write(msg.content);
+            term.write(normalizeSnapshotContent(msg.content));
             return;
           }
 
@@ -625,12 +687,19 @@ function htmlPage(): string {
         }
       });
 
-      termSocket.addEventListener("close", () => {
+      termSocket.addEventListener("close", (ev) => {
         if (termInputDisposable) {
           termInputDisposable.dispose();
           termInputDisposable = null;
         }
-        if (term) term.writeln("\\r\\n[terminal socket closed]");
+        if (termKeepaliveTimer) {
+          clearInterval(termKeepaliveTimer);
+          termKeepaliveTimer = null;
+        }
+        if (term) {
+          const reason = ev && ev.reason ? " reason=" + ev.reason : "";
+          term.writeln("\\r\\n[terminal socket closed code=" + ev.code + reason + "]");
+        }
         termSocket = null;
         setTerminalStatus("disconnected");
       });

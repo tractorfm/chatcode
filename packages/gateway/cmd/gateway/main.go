@@ -17,6 +17,7 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"unicode/utf8"
 
 	"github.com/tractorfm/chatcode/packages/gateway/internal/agents"
 	"github.com/tractorfm/chatcode/packages/gateway/internal/config"
@@ -37,6 +38,7 @@ var (
 const schemaVersion = "1"
 
 const maxCommandFrameBytes = 1 << 20 // 1 MiB
+const maxSnapshotBytes = 900 * 1024  // bounded below 1 MiB payload ceiling
 
 var requestIDRegexp = regexp.MustCompile(`"request_id"\s*:\s*"([^"]+)"`)
 
@@ -67,6 +69,15 @@ func main() {
 
 	// Output channel: session output chunks → WS sender goroutine
 	g.outputCh = make(chan session.OutputChunk, 256)
+
+	// Recover existing tmux sessions after daemon restart so contexts survive.
+	// These are session IDs previously created by control-plane (vibe-ses-*).
+	recovered, err := g.sessions.Recover(g.outputCh)
+	if err != nil {
+		g.log.Warn("session recovery failed", "err", err)
+	} else if len(recovered) > 0 {
+		g.log.Info("recovered sessions", "count", len(recovered))
+	}
 
 	// Start SSH expiry watcher
 	sshkeys.StartExpiryWatcher(ctx, g.sshMgr, 5*time.Minute, log)
@@ -140,6 +151,7 @@ func (g *gateway) runWSWithHello(ctx context.Context) {
 				now := g.wsClient.Connected()
 				if now && !wasConnected {
 					g.sendHello(ctx)
+					g.sendHealth(ctx)
 					g.sendSnapshots(ctx)
 				}
 				wasConnected = now
@@ -193,6 +205,7 @@ func (g *gateway) sendSnapshots(ctx context.Context) {
 		if err != nil {
 			continue
 		}
+		content = trimSnapshotTail(content, maxSnapshotBytes)
 		g.sendEvent(ctx, map[string]any{
 			"type":       "session.snapshot",
 			"session_id": s.SessionID,
@@ -428,6 +441,7 @@ func (g *gateway) handleSessionSnapshot(ctx context.Context, raw json.RawMessage
 	if err != nil {
 		return err
 	}
+	content = trimSnapshotTail(content, maxSnapshotBytes)
 	g.sendEvent(ctx, map[string]any{
 		"type":       "session.snapshot",
 		"request_id": cmd.RequestID,
@@ -731,6 +745,19 @@ func extractRequestID(raw []byte) string {
 		return ""
 	}
 	return string(matches[1])
+}
+
+func trimSnapshotTail(content string, maxBytes int) string {
+	if maxBytes <= 0 || len(content) <= maxBytes {
+		return content
+	}
+
+	tail := []byte(content[len(content)-maxBytes:])
+	for len(tail) > 0 && !utf8.Valid(tail) {
+		tail = tail[1:]
+	}
+	const prefix = "[snapshot truncated to recent output]\n"
+	return prefix + string(tail)
 }
 
 // ----- Helpers -----

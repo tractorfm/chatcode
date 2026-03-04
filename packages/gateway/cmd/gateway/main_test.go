@@ -86,3 +86,22 @@ func TestExtractRequestID(t *testing.T) {
 		})
 	}
 }
+
+func TestTrimSnapshotTailNoTrim(t *testing.T) {
+	in := "hello"
+	got := trimSnapshotTail(in, 64)
+	if got != in {
+		t.Fatalf("trimSnapshotTail() changed short content: %q", got)
+	}
+}
+
+func TestTrimSnapshotTailKeepsRecentOutput(t *testing.T) {
+	in := "0123456789abcdefghijklmnopqrstuvwxyz"
+	got := trimSnapshotTail(in, 10)
+	if got == in {
+		t.Fatal("expected content to be trimmed")
+	}
+	if got[len(got)-10:] != "qrstuvwxyz" {
+		t.Fatalf("expected tail to be preserved, got: %q", got)
+	}
+}

@@ -126,7 +126,7 @@ func enqueueLatest(outCh chan OutputChunk, payload OutputChunk) {
 }
 
 func (c *outputCapturer) capturePane() (string, error) {
-	out, err := exec.Command("tmux", "capture-pane", "-t", c.tmuxName, "-p").Output()
+	out, err := exec.Command("tmux", "capture-pane", "-e", "-t", c.tmuxName, "-p").Output()
 	if err != nil {
 		return "", err
 	}

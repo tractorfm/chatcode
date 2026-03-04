@@ -6,8 +6,6 @@ const mocks = vi.hoisted(() => ({
   updateGatewayVersion: vi.fn(async () => {}),
   updateGatewayLastSeen: vi.fn(async () => {}),
   updateSessionStatus: vi.fn(async () => {}),
-  updateVPSStatus: vi.fn(async () => {}),
-  getGatewayByVPS: vi.fn(async () => null),
 }));
 
 vi.mock("../src/db/schema.js", () => ({
@@ -15,26 +13,26 @@ vi.mock("../src/db/schema.js", () => ({
   updateGatewayVersion: mocks.updateGatewayVersion,
   updateGatewayLastSeen: mocks.updateGatewayLastSeen,
   updateSessionStatus: mocks.updateSessionStatus,
-  updateVPSStatus: mocks.updateVPSStatus,
-  getGatewayByVPS: mocks.getGatewayByVPS,
 }));
 
 const createdHubs: GatewayHub[] = [];
 
 afterEach(() => {
-  for (const hub of createdHubs) {
-    const interval = (hub as unknown as { idleCleanupInterval: number | null }).idleCleanupInterval;
-    if (interval) clearInterval(interval);
-  }
   createdHubs.length = 0;
   vi.clearAllMocks();
 });
 
-function makeHub(vpsId: string | null = "vps-1"): GatewayHub {
-  const first = vi.fn(async () => (vpsId ? { vps_id: vpsId } : null));
-  const run = vi.fn(async () => ({}));
-  const bind = vi.fn(() => ({ first, run }));
-  const prepare = vi.fn(() => ({ bind }));
+function makeHub(
+  vpsId: string | null = "vps-1",
+  runningSessions: Array<{ id: string; status: string }> = [],
+): GatewayHub {
+  const prepare = vi.fn((sql: string) => ({
+    bind: vi.fn(() => ({
+      first: vi.fn(async () => (sql.includes("SELECT vps_id FROM gateways") ? (vpsId ? { vps_id: vpsId } : null) : null)),
+      all: vi.fn(async () => (sql.includes("SELECT id, status") ? { results: runningSessions } : { results: [] })),
+      run: vi.fn(async () => ({})),
+    })),
+  }));
 
   const env = {
     DB: { prepare },
@@ -169,5 +167,84 @@ describe("GatewayHub", () => {
 
     expect(sourceSend).toHaveBeenCalledOnce();
     expect(sourceSend.mock.calls[0][0]).toContain("\"type\":\"ssh.keys\"");
+  });
+
+  it("forwards realtime ack to browser waiter when not in pending command map", () => {
+    const hub = makeHub();
+    const browserSend = vi.fn();
+    const browserSocket = {
+      readyState: WebSocket.OPEN,
+      send: browserSend,
+      close: vi.fn(),
+    } as unknown as WebSocket;
+    const timeout = setTimeout(() => {}, 30_000);
+
+    (
+      hub as unknown as {
+        browserAckWaiters: Map<string, { ws: WebSocket; timeout: ReturnType<typeof setTimeout> }>;
+      }
+    ).browserAckWaiters.set("req-realtime-1", {
+      ws: browserSocket,
+      timeout,
+    });
+    (
+      hub as unknown as {
+        browserAckBySocket: Map<WebSocket, Set<string>>;
+      }
+    ).browserAckBySocket.set(browserSocket, new Set(["req-realtime-1"]));
+
+    (
+      hub as unknown as {
+        onAck: (msg: Record<string, unknown>) => void;
+      }
+    ).onAck({
+      type: "ack",
+      schema_version: "1",
+      request_id: "req-realtime-1",
+      ok: false,
+      error: "session not found",
+    });
+
+    expect(browserSend).toHaveBeenCalledOnce();
+    expect(browserSend.mock.calls[0][0]).toContain("\"type\":\"ack\"");
+    expect(
+      (hub as unknown as { browserAckWaiters: Map<string, unknown> }).browserAckWaiters.size,
+    ).toBe(0);
+  });
+
+  it("reconciles active sessions from gateway.health", async () => {
+    const hub = makeHub("vps-1", [
+      { id: "ses-active-running", status: "running" },
+      { id: "ses-active-starting", status: "starting" },
+      { id: "ses-stale-running", status: "running" },
+    ]);
+
+    await (
+      hub as unknown as {
+        onGatewayHealth: (msg: Record<string, unknown>) => Promise<void>;
+      }
+    ).onGatewayHealth({
+      type: "gateway.health",
+      schema_version: "1",
+      gateway_id: "gw-1",
+      timestamp: "2026-03-04T00:00:00.000Z",
+      active_sessions: [
+        { session_id: "ses-active-running", last_activity_at: "2026-03-04T00:00:00.000Z" },
+        { session_id: "ses-active-starting", last_activity_at: "2026-03-04T00:00:01.000Z" },
+      ],
+    });
+
+    expect(mocks.updateGatewayLastSeen).toHaveBeenCalledWith(expect.anything(), "gw-1");
+    expect(mocks.updateSessionStatus).toHaveBeenCalledWith(
+      expect.anything(),
+      "ses-active-starting",
+      "running",
+    );
+    expect(mocks.updateSessionStatus).toHaveBeenCalledWith(
+      expect.anything(),
+      "ses-stale-running",
+      "ended",
+    );
+    expect(mocks.updateSessionStatus).toHaveBeenCalledTimes(2);
   });
 });

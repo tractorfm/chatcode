@@ -98,6 +98,11 @@
    - fire-and-forget routing for input/resize,
    - subscriber cleanup on close.
    - Reference pattern: `vibetunnel/web/src/server/services/ws-v3-hub.test.ts:138`.
+8. Add DO hibernation-friendly socket lifecycle:
+   - keep gateway socket persistent,
+   - allow browser/bot sockets to sleep + reconnect,
+   - restore state from socket attachments on DO wake.
+9. Add optional terminal replay buffer keyed by output sequence number, so reconnect clients can catch up without full snapshot redraw.
 
 ## Not Very Relevant To Chatcode
 

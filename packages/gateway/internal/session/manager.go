@@ -3,7 +3,10 @@ package session
 
 import (
 	"fmt"
+	"os/exec"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -13,9 +16,11 @@ type Manager struct {
 	sessions map[string]*Session
 	maxCount int
 
-	checkInterval time.Duration
-	isAlive       func(*Session) bool
-	endSession    func(*Session) error
+	checkInterval             time.Duration
+	isAlive                   func(*Session) bool
+	endSession                func(*Session) error
+	listRecoverableSessionIDs func() ([]string, error)
+	newRecoveredSession       func(string, chan OutputChunk) *Session
 }
 
 // NewManager creates a Manager with the given session limit.
@@ -30,6 +35,8 @@ func NewManager(maxSessions int) *Manager {
 		endSession: func(s *Session) error {
 			return s.kill()
 		},
+		listRecoverableSessionIDs: listRecoverableSessionIDs,
+		newRecoveredSession:       newRecoveredSession,
 	}
 }
 
@@ -95,6 +102,35 @@ func (m *Manager) List() []Summary {
 	return out
 }
 
+// Recover discovers existing tmux-backed sessions and re-attaches them to the in-memory manager.
+// This is used on gateway process restart so user sessions survive daemon restarts.
+func (m *Manager) Recover(outputCh chan OutputChunk) ([]string, error) {
+	sessionIDs, err := m.listRecoverableSessionIDs()
+	if err != nil {
+		return nil, err
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	recovered := make([]string, 0, len(sessionIDs))
+	for _, sessionID := range sessionIDs {
+		if _, exists := m.sessions[sessionID]; exists {
+			continue
+		}
+		if len(m.sessions) >= m.maxCount {
+			break
+		}
+
+		s := m.newRecoveredSession(sessionID, outputCh)
+		m.sessions[sessionID] = s
+		recovered = append(recovered, sessionID)
+		go m.watchSession(sessionID, s)
+	}
+
+	return recovered, nil
+}
+
 // Remove is called internally when a session exits on its own.
 func (m *Manager) remove(sessionID string) {
 	m.mu.Lock()
@@ -124,4 +160,47 @@ func (m *Manager) watchSession(sessionID string, s *Session) {
 			return
 		}
 	}
+}
+
+func newRecoveredSession(sessionID string, outputCh chan OutputChunk) *Session {
+	s := &Session{
+		opts: Options{
+			SessionID: sessionID,
+			Name:      sessionID,
+			OutputCh:  outputCh,
+		},
+		tmuxName: "vibe-" + sessionID,
+	}
+	_ = exec.Command("tmux", setHistoryLimitArgs(s.tmuxName)...).Run()
+	s.capturer = newOutputCapturer(s.tmuxName, s.opts.SessionID, &s.seq, &s.lastActivityAt, s.opts.OutputCh)
+	s.capturer.start()
+	atomic.StoreInt64(&s.lastActivityAt, time.Now().UnixNano())
+	return s
+}
+
+func listRecoverableSessionIDs() ([]string, error) {
+	out, err := exec.Command("tmux", "list-sessions", "-F", "#{session_name}").CombinedOutput()
+	if err != nil {
+		// No tmux server means no running sessions to recover.
+		lowOut := strings.ToLower(string(out))
+		if strings.Contains(lowOut, "no server running") || strings.Contains(lowOut, "failed to connect to server") {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("list tmux sessions: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	ids := make([]string, 0, len(lines))
+	for _, line := range lines {
+		name := strings.TrimSpace(line)
+		if !strings.HasPrefix(name, "vibe-ses-") {
+			continue
+		}
+		id := strings.TrimPrefix(name, "vibe-")
+		if id == "" {
+			continue
+		}
+		ids = append(ids, id)
+	}
+	return ids, nil
 }

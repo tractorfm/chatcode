@@ -4,7 +4,7 @@
  * Core of M2: WS terminus for both gateway and browser clients.
  * Routes commands, fans out terminal output, tracks pending acks.
  *
- * Uses standard DO WebSocket API (not hibernation) for M2.
+ * Uses DO WebSocket hibernation API so long-lived sockets do not pin CPU.
  */
 
 import type { Env } from "../types.js";
@@ -29,15 +29,12 @@ import {
   updateGatewayVersion,
   updateGatewayLastSeen,
   updateSessionStatus,
-  updateVPSStatus,
-  getGatewayByVPS,
 } from "../db/schema.js";
 
 const MAX_BINARY_PAYLOAD = 64 * 1024; // 64 KB
-const MAX_TEXT_PAYLOAD = 256 * 1024; // 256 KB
+const MAX_TEXT_PAYLOAD = 1024 * 1024; // 1 MB
 const COMMAND_TIMEOUT_MS = 10_000;
 const IDLE_TIMEOUT_MS = 600_000; // 10 minutes
-const IDLE_CHECK_INTERVAL_MS = 60_000; // 1 minute
 const GRACE_PERIOD_MS = 30_000; // 30s reconnect grace
 
 interface PendingEntry {
@@ -45,6 +42,17 @@ interface PendingEntry {
   reject: (err: Error) => void;
   startedAt: number;
   sourceSocket: WebSocket | null;
+}
+
+interface BrowserAckEntry {
+  ws: WebSocket;
+  timeout: ReturnType<typeof setTimeout>;
+}
+
+interface SocketAttachment {
+  role: "gateway" | "browser";
+  sessionId?: string;
+  expectedGatewayId?: string;
 }
 
 type GatewayEvent =
@@ -80,14 +88,15 @@ export class GatewayHub {
   // Pending commands awaiting gateway ack: request_id → resolver
   private pending = new Map<string, PendingEntry>();
 
+  // Browser realtime ack routing: request_id -> browser socket
+  private browserAckWaiters = new Map<string, BrowserAckEntry>();
+  private browserAckBySocket = new Map<WebSocket, Set<string>>();
+
   // Last heartbeat per browser WS (ms timestamp)
   private lastActivity = new Map<WebSocket, number>();
 
   // Session ID per browser WS (for cleanup)
   private browserSessionMap = new Map<WebSocket, string>();
-
-  // Idle cleanup interval
-  private idleCleanupInterval: ReturnType<typeof setInterval> | null = null;
 
   // Grace period timer for gateway reconnect
   private graceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -95,9 +104,7 @@ export class GatewayHub {
   constructor(state: DurableObjectState, env: Env) {
     this.state = state;
     this.env = env;
-
-    // Start idle cleanup interval
-    this.idleCleanupInterval = setInterval(() => this.cleanupIdleSockets(), IDLE_CHECK_INTERVAL_MS);
+    this.restoreHibernatedSockets();
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -120,11 +127,65 @@ export class GatewayHub {
       return this.handleCommand(request);
     }
 
+    if (path === "/status" && request.method === "GET") {
+      return this.handleStatus();
+    }
+
     if (path === "/shutdown" && request.method === "POST") {
       return this.handleShutdown();
     }
 
     return new Response("not found", { status: 404 });
+  }
+
+  webSocketMessage(ws: WebSocket, message: string | ArrayBuffer): void {
+    const meta = this.readAttachment(ws);
+    if (!meta) {
+      return;
+    }
+
+    if (meta.role === "gateway") {
+      if (typeof message === "string") {
+        void this.onGatewayText(message, ws).catch((err) => {
+          console.warn("gateway ws text handler failed", err);
+        });
+      } else {
+        this.onGatewayBinary(new Uint8Array(message));
+      }
+      return;
+    }
+
+    if (meta.role === "browser") {
+      if (typeof message !== "string") {
+        return;
+      }
+      const sessionId = meta.sessionId ?? this.browserSessionMap.get(ws);
+      if (!sessionId) {
+        return;
+      }
+      this.onBrowserText(ws, sessionId, message);
+    }
+  }
+
+  webSocketClose(ws: WebSocket): void {
+    const meta = this.readAttachment(ws);
+    if (meta?.role === "gateway") {
+      void this.onGatewayClose(ws);
+      return;
+    }
+    if (meta?.role === "browser" && meta.sessionId) {
+      this.removeBrowserSocket(ws, meta.sessionId);
+      return;
+    }
+
+    const sessionId = this.browserSessionMap.get(ws);
+    if (sessionId) {
+      this.removeBrowserSocket(ws, sessionId);
+    }
+  }
+
+  webSocketError(ws: WebSocket): void {
+    this.webSocketClose(ws);
   }
 
   // ---------------------------------------------------------------------------
@@ -135,46 +196,30 @@ export class GatewayHub {
     const pair = new WebSocketPair();
     const [client, server] = [pair[0], pair[1]];
 
-    server.accept();
-
     // Clear grace timer if reconnecting
     if (this.graceTimer) {
       clearTimeout(this.graceTimer);
       this.graceTimer = null;
     }
 
-    // Close existing gateway socket if any
-    if (this.gatewaySocket) {
-      try {
-        this.gatewaySocket.close(1000, "replaced by new connection");
-      } catch {
-        // ignore
-      }
-    }
-
-    this.gatewaySocket = server;
     this.expectedGatewayId = request.headers.get("X-Gateway-Id");
+    this.closeTaggedSockets("gateway", "replaced by new connection");
 
-    server.addEventListener("message", (event) => {
-      if (typeof event.data === "string") {
-        this.onGatewayText(event.data);
-      } else if (event.data instanceof ArrayBuffer) {
-        this.onGatewayBinary(new Uint8Array(event.data));
-      }
-    });
-
-    server.addEventListener("close", () => {
-      this.onGatewayClose();
-    });
-
-    server.addEventListener("error", () => {
-      this.onGatewayClose();
-    });
+    this.state.acceptWebSocket(server, ["gateway"]);
+    try {
+      server.serializeAttachment({
+        role: "gateway",
+        expectedGatewayId: this.expectedGatewayId ?? undefined,
+      } satisfies SocketAttachment);
+    } catch {
+      // ignore; attachment is optional fallback metadata
+    }
+    this.gatewaySocket = server;
 
     return new Response(null, { status: 101, webSocket: client });
   }
 
-  private async onGatewayText(data: string): Promise<void> {
+  private async onGatewayText(data: string, ws?: WebSocket): Promise<void> {
     if (data.length > MAX_TEXT_PAYLOAD) {
       console.warn("oversized gateway text frame, ignoring");
       return;
@@ -190,7 +235,7 @@ export class GatewayHub {
 
     switch (msg.type) {
       case "gateway.hello":
-        await this.onGatewayHello(msg as GatewayHello);
+        await this.onGatewayHello(msg as GatewayHello, ws);
         break;
 
       case "gateway.health":
@@ -236,20 +281,23 @@ export class GatewayHub {
     }
   }
 
-  private async onGatewayHello(msg: GatewayHello): Promise<void> {
-    if (this.expectedGatewayId && msg.gateway_id !== this.expectedGatewayId) {
+  private async onGatewayHello(msg: GatewayHello, ws?: WebSocket): Promise<void> {
+    const wsExpected = ws ? this.readAttachment(ws)?.expectedGatewayId : null;
+    const expectedGatewayId = wsExpected ?? this.expectedGatewayId;
+
+    if (expectedGatewayId && msg.gateway_id !== expectedGatewayId) {
       console.warn(
-        `gateway_id mismatch: expected ${this.expectedGatewayId}, got ${msg.gateway_id}`,
+        `gateway_id mismatch: expected ${expectedGatewayId}, got ${msg.gateway_id}`,
       );
       try {
-        this.gatewaySocket?.close(1008, "gateway_id mismatch");
+        (ws ?? this.gatewaySocket)?.close(1008, "gateway_id mismatch");
       } catch {
         // ignore
       }
       return;
     }
 
-    const gatewayId = this.expectedGatewayId ?? msg.gateway_id;
+    const gatewayId = expectedGatewayId ?? msg.gateway_id;
     this.gatewayId = gatewayId;
 
     // Update D1
@@ -276,25 +324,40 @@ export class GatewayHub {
   }
 
   private async onGatewayHealth(msg: GatewayHealth): Promise<void> {
-    if (msg.gateway_id) {
-      await updateGatewayLastSeen(this.env.DB, msg.gateway_id);
+    this.cleanupIdleSockets();
+
+    const gatewayId = msg.gateway_id || this.gatewayId;
+    if (!gatewayId) return;
+
+    if (!this.gatewayId) {
+      this.gatewayId = gatewayId;
     }
+
+    await updateGatewayLastSeen(this.env.DB, gatewayId);
+    await this.reconcileSessionsFromHealth(gatewayId, msg.active_sessions);
   }
 
   private onAck(msg: Ack): void {
     const entry = this.pending.get(msg.request_id);
-    if (!entry) return;
+    if (entry) {
+      this.pending.delete(msg.request_id);
 
-    this.pending.delete(msg.request_id);
+      if (entry.sourceSocket) {
+        safeSend(entry.sourceSocket, JSON.stringify(msg));
+      }
 
-    if (entry.sourceSocket) {
-      safeSend(entry.sourceSocket, JSON.stringify(msg));
+      if (msg.ok) {
+        entry.resolve(msg);
+      } else {
+        entry.reject(new Error(msg.error || "command failed"));
+      }
+      return;
     }
 
-    if (msg.ok) {
-      entry.resolve(msg);
-    } else {
-      entry.reject(new Error(msg.error || "command failed"));
+    const browserAck = this.browserAckWaiters.get(msg.request_id);
+    if (browserAck) {
+      this.clearBrowserAck(msg.request_id);
+      safeSend(browserAck.ws, JSON.stringify(msg));
     }
   }
 
@@ -320,6 +383,57 @@ export class GatewayHub {
   private async onSessionError(msg: SessionError): Promise<void> {
     await updateSessionStatus(this.env.DB, msg.session_id, "error");
     this.fanOutText(msg.session_id, JSON.stringify(msg));
+  }
+
+  private async reconcileSessionsFromHealth(
+    gatewayId: string,
+    activeSessions: GatewayHealth["active_sessions"],
+  ): Promise<void> {
+    const vpsId = await this.resolveVPSId(gatewayId);
+    if (!vpsId) {
+      return;
+    }
+
+    const activeIDs = new Set<string>();
+    for (const session of activeSessions ?? []) {
+      if (session?.session_id) {
+        activeIDs.add(session.session_id);
+      }
+    }
+
+    const result = await this.env.DB
+      .prepare(
+        `SELECT id, status
+         FROM sessions
+         WHERE vps_id = ?
+           AND status IN ('starting', 'running')`,
+      )
+      .bind(vpsId)
+      .all<{ id: string; status: string }>();
+
+    for (const row of result.results ?? []) {
+      const nextStatus = activeIDs.has(row.id) ? "running" : "ended";
+      if (row.status !== nextStatus) {
+        await updateSessionStatus(this.env.DB, row.id, nextStatus);
+      }
+    }
+  }
+
+  private async resolveVPSId(gatewayId: string): Promise<string | null> {
+    if (this.vpsId) {
+      return this.vpsId;
+    }
+
+    const row = await this.env.DB
+      .prepare("SELECT vps_id FROM gateways WHERE id = ?")
+      .bind(gatewayId)
+      .first<{ vps_id: string }>();
+    if (!row?.vps_id) {
+      return null;
+    }
+
+    this.vpsId = row.vps_id;
+    return row.vps_id;
   }
 
   private onSessionSnapshot(msg: SessionSnapshotEvent): void {
@@ -374,7 +488,11 @@ export class GatewayHub {
     }
   }
 
-  private async onGatewayClose(): Promise<void> {
+  private async onGatewayClose(ws?: WebSocket): Promise<void> {
+    if (ws && this.gatewaySocket && ws !== this.gatewaySocket) {
+      return;
+    }
+
     this.gatewaySocket = null;
 
     // Reject all pending
@@ -404,42 +522,37 @@ export class GatewayHub {
   private handleBrowserWS(request: Request, sessionId: string): Response {
     const pair = new WebSocketPair();
     const [client, server] = [pair[0], pair[1]];
-
-    server.accept();
-
-    // Add to subscribers
-    if (!this.subscribers.has(sessionId)) {
-      this.subscribers.set(sessionId, new Set());
+    this.state.acceptWebSocket(server, ["browser", `session:${sessionId}`]);
+    try {
+      server.serializeAttachment({ role: "browser", sessionId } satisfies SocketAttachment);
+    } catch {
+      // ignore
     }
-    this.subscribers.get(sessionId)!.add(server);
-    this.lastActivity.set(server, Date.now());
-    this.browserSessionMap.set(server, sessionId);
+    this.upsertBrowserSocket(server, sessionId, Date.now());
+    this.cleanupIdleSockets();
 
     // Request snapshot from gateway
     if (this.gatewaySocket) {
+      const requestId = `snap-init-${sessionId}-${Date.now()}`;
+      this.trackBrowserAck(requestId, server);
       const snapshotCmd = JSON.stringify({
         type: "session.snapshot",
         schema_version: "1",
-        request_id: `snap-init-${sessionId}-${Date.now()}`,
+        request_id: requestId,
         session_id: sessionId,
       });
       safeSend(this.gatewaySocket, snapshotCmd);
+    } else {
+      safeSend(
+        server,
+        JSON.stringify({
+          type: "session.error",
+          schema_version: "1",
+          session_id: sessionId,
+          error: "gateway not connected",
+        }),
+      );
     }
-
-    server.addEventListener("message", (event) => {
-      if (typeof event.data === "string") {
-        this.onBrowserText(server, sessionId, event.data);
-      }
-      // Binary from browser not expected in M2
-    });
-
-    server.addEventListener("close", () => {
-      this.removeBrowserSocket(server, sessionId);
-    });
-
-    server.addEventListener("error", () => {
-      this.removeBrowserSocket(server, sessionId);
-    });
 
     return new Response(null, { status: 101, webSocket: client });
   }
@@ -480,12 +593,16 @@ export class GatewayHub {
     }
 
     this.lastActivity.set(ws, Date.now());
+    this.cleanupIdleSockets();
 
     // Realtime relay (fire-and-forget)
     switch (msg.type) {
       case "session.input":
       case "session.resize":
       case "session.ack":
+        if (typeof msg.request_id === "string" && msg.request_id.length > 0) {
+          this.trackBrowserAck(msg.request_id, ws);
+        }
         this.sendRealtime(data);
         break;
 
@@ -505,6 +622,15 @@ export class GatewayHub {
     }
   }
 
+  private upsertBrowserSocket(ws: WebSocket, sessionId: string, lastSeenMs: number): void {
+    if (!this.subscribers.has(sessionId)) {
+      this.subscribers.set(sessionId, new Set());
+    }
+    this.subscribers.get(sessionId)!.add(ws);
+    this.lastActivity.set(ws, lastSeenMs);
+    this.browserSessionMap.set(ws, sessionId);
+  }
+
   private removeBrowserSocket(ws: WebSocket, sessionId: string): void {
     const subs = this.subscribers.get(sessionId);
     if (subs) {
@@ -515,6 +641,14 @@ export class GatewayHub {
     }
     this.lastActivity.delete(ws);
     this.browserSessionMap.delete(ws);
+
+    const requestIds = this.browserAckBySocket.get(ws);
+    if (requestIds) {
+      for (const requestId of requestIds) {
+        this.clearBrowserAck(requestId);
+      }
+      this.browserAckBySocket.delete(ws);
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -583,19 +717,105 @@ export class GatewayHub {
     }
   }
 
+  private handleStatus(): Response {
+    return new Response(
+      JSON.stringify({
+        connected: this.gatewaySocket !== null,
+        gateway_id: this.gatewayId,
+        vps_id: this.vpsId,
+      }),
+      {
+        headers: { "Content-Type": "application/json" },
+      },
+    );
+  }
+
+  private restoreHibernatedSockets(): void {
+    const sockets = this.getWebSockets();
+    let claimedGateway = false;
+    const now = Date.now();
+
+    for (const ws of sockets) {
+      const meta = this.readAttachment(ws);
+      if (!meta) {
+        continue;
+      }
+
+      if (meta.role === "gateway") {
+        if (!claimedGateway) {
+          this.gatewaySocket = ws;
+          if (meta.expectedGatewayId) {
+            this.expectedGatewayId = meta.expectedGatewayId;
+          }
+          claimedGateway = true;
+        } else {
+          safeClose(ws, 1000, "superseded gateway socket");
+        }
+        continue;
+      }
+
+      if (meta.role === "browser" && meta.sessionId) {
+        this.upsertBrowserSocket(ws, meta.sessionId, now);
+      } else {
+        safeClose(ws, 1008, "invalid browser attachment");
+      }
+    }
+  }
+
+  private getWebSockets(tag?: string): WebSocket[] {
+    const state = this.state as DurableObjectState & {
+      getWebSockets?: (tag?: string) => WebSocket[];
+    };
+    if (typeof state.getWebSockets !== "function") {
+      return [];
+    }
+    return state.getWebSockets(tag);
+  }
+
+  private closeTaggedSockets(tag: string, reason: string): void {
+    for (const ws of this.getWebSockets(tag)) {
+      safeClose(ws, 1000, reason);
+    }
+  }
+
+  private readAttachment(ws: WebSocket): SocketAttachment | null {
+    const withAttachment = ws as WebSocket & {
+      deserializeAttachment?: () => unknown;
+    };
+    if (typeof withAttachment.deserializeAttachment !== "function") {
+      return null;
+    }
+
+    try {
+      const raw = withAttachment.deserializeAttachment();
+      if (!raw || typeof raw !== "object") {
+        return null;
+      }
+      const role = (raw as { role?: unknown }).role;
+      if (role !== "gateway" && role !== "browser") {
+        return null;
+      }
+      const sessionId = (raw as { sessionId?: unknown }).sessionId;
+      const expectedGatewayId = (raw as { expectedGatewayId?: unknown }).expectedGatewayId;
+      return {
+        role,
+        sessionId: typeof sessionId === "string" ? sessionId : undefined,
+        expectedGatewayId: typeof expectedGatewayId === "string" ? expectedGatewayId : undefined,
+      };
+    } catch {
+      return null;
+    }
+  }
+
   // ---------------------------------------------------------------------------
   // Shutdown
   // ---------------------------------------------------------------------------
 
   private handleShutdown(): Response {
-    if (this.gatewaySocket) {
-      try {
-        this.gatewaySocket.close(1000, "shutdown requested");
-      } catch {
-        // ignore
-      }
-      this.gatewaySocket = null;
+    for (const ws of this.getWebSockets()) {
+      safeClose(ws, 1001, "shutdown requested");
     }
+    this.gatewaySocket = null;
 
     // Close all browser sockets
     for (const [sessionId, subs] of this.subscribers) {
@@ -610,17 +830,16 @@ export class GatewayHub {
     this.subscribers.clear();
     this.lastActivity.clear();
     this.browserSessionMap.clear();
+    for (const requestId of this.browserAckWaiters.keys()) {
+      this.clearBrowserAck(requestId);
+    }
+    this.browserAckBySocket.clear();
 
     // Reject pending
     for (const [, entry] of this.pending) {
       entry.reject(new Error("shutdown"));
     }
     this.pending.clear();
-
-    if (this.idleCleanupInterval) {
-      clearInterval(this.idleCleanupInterval);
-      this.idleCleanupInterval = null;
-    }
 
     return new Response("ok");
   }
@@ -660,6 +879,31 @@ export class GatewayHub {
       }
     }
   }
+
+  private trackBrowserAck(requestId: string, ws: WebSocket): void {
+    this.clearBrowserAck(requestId);
+    if (!this.browserAckBySocket.has(ws)) {
+      this.browserAckBySocket.set(ws, new Set());
+    }
+    this.browserAckBySocket.get(ws)!.add(requestId);
+    const timeout = setTimeout(() => {
+      this.clearBrowserAck(requestId);
+    }, COMMAND_TIMEOUT_MS);
+    this.browserAckWaiters.set(requestId, { ws, timeout });
+  }
+
+  private clearBrowserAck(requestId: string): void {
+    const entry = this.browserAckWaiters.get(requestId);
+    if (!entry) return;
+    clearTimeout(entry.timeout);
+    this.browserAckWaiters.delete(requestId);
+    const requestIds = this.browserAckBySocket.get(entry.ws);
+    if (!requestIds) return;
+    requestIds.delete(requestId);
+    if (requestIds.size === 0) {
+      this.browserAckBySocket.delete(entry.ws);
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -681,5 +925,13 @@ function safeSendBinary(ws: WebSocket, data: Uint8Array): void {
     ws.send(data);
   } catch (err) {
     console.warn("ws binary send failed", err);
+  }
+}
+
+function safeClose(ws: WebSocket, code: number, reason: string): void {
+  try {
+    ws.close(code, reason);
+  } catch {
+    // ignore
   }
 }

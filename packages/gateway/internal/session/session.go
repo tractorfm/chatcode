@@ -15,6 +15,8 @@ const (
 	terminationPollInterval = 500 * time.Millisecond
 	terminationTimeout      = 3 * time.Second
 	forceKillWait           = 500 * time.Millisecond
+	tmuxHistoryLimitLines   = 200000
+	snapshotHistoryLines    = 50000
 )
 
 // Options configures a new session.
@@ -80,6 +82,9 @@ func (s *Session) start() error {
 	cmd := s.buildTmuxNewSessionCmd()
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("tmux new-session: %w: %s", err, out)
+	}
+	if err := s.ensureHistoryLimit(); err != nil {
+		return err
 	}
 
 	s.capturer = newOutputCapturer(s.tmuxName, s.opts.SessionID, &s.seq, &s.lastActivityAt, s.opts.OutputCh)
@@ -155,8 +160,8 @@ func (s *Session) Resize(cols, rows int) error {
 
 // Snapshot returns the current terminal content via tmux capture-pane.
 func (s *Session) Snapshot() (string, int, int, error) {
-	// Get content
-	out, err := exec.Command("tmux", "capture-pane", "-t", s.tmuxName, "-p").Output()
+	// Capture recent pane history with ANSI escapes to preserve color output.
+	out, err := exec.Command("tmux", snapshotCaptureArgs(s.tmuxName)...).Output()
 	if err != nil {
 		return "", 0, 0, fmt.Errorf("capture-pane: %w", err)
 	}
@@ -171,6 +176,28 @@ func (s *Session) Snapshot() (string, int, int, error) {
 	}
 
 	return string(out), cols, rows, nil
+}
+
+func (s *Session) ensureHistoryLimit() error {
+	cmd := exec.Command("tmux", setHistoryLimitArgs(s.tmuxName)...)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("tmux set history-limit: %w: %s", err, out)
+	}
+	return nil
+}
+
+func setHistoryLimitArgs(tmuxName string) []string {
+	return []string{"set-option", "-t", tmuxName, "history-limit", fmt.Sprintf("%d", tmuxHistoryLimitLines)}
+}
+
+func snapshotCaptureArgs(tmuxName string) []string {
+	return []string{
+		"capture-pane",
+		"-e",
+		"-S", fmt.Sprintf("-%d", snapshotHistoryLines),
+		"-t", tmuxName,
+		"-p",
+	}
 }
 
 // kill terminates the tmux session.
