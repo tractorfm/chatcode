@@ -87,3 +87,21 @@ func TestCursorVisibilityControl(t *testing.T) {
 		t.Fatalf("cursorVisibilityControl(1) = %q", got)
 	}
 }
+
+func TestNormalizeCapturedContentKeepsCursorLineTrailingSpaces(t *testing.T) {
+	content := "a  \nb   \n"
+	got := normalizeCapturedContent(content, 1, 1)
+	want := "a\nb   \n"
+	if got != want {
+		t.Fatalf("normalizeCapturedContent = %q, want %q", got, want)
+	}
+}
+
+func TestNormalizeCapturedContentTrimsAllWhenCursorHidden(t *testing.T) {
+	content := "a  \nb   \n"
+	got := normalizeCapturedContent(content, 1, 0)
+	want := "a\nb\n"
+	if got != want {
+		t.Fatalf("normalizeCapturedContent hidden = %q, want %q", got, want)
+	}
+}

@@ -28,11 +28,12 @@ type outputCapturer struct {
 	buf    []byte
 	ticker *time.Ticker
 
-	lastContent  string
-	lastCursorX  int
-	lastCursorY  int
-	lastCursorV  int
-	lastCursorAt time.Time
+	lastRawContent string
+	lastContent    string
+	lastCursorX    int
+	lastCursorY    int
+	lastCursorV    int
+	lastCursorAt   time.Time
 }
 
 func newOutputCapturer(
@@ -63,14 +64,16 @@ func (c *outputCapturer) start() {
 
 	// Seed initial content so browser's initial snapshot is not duplicated
 	// by the first capture tick after websocket connect/reconnect.
-	if content, err := c.capturePane(); err == nil {
-		c.lastContent = content
+	if rawContent, err := c.capturePane(); err == nil {
+		c.lastRawContent = rawContent
+		c.lastContent = rawContent
 	}
 	if cursorX, cursorY, cursorV, err := c.captureCursor(); err == nil {
 		c.lastCursorX = cursorX
 		c.lastCursorY = cursorY
 		c.lastCursorV = cursorV
 		c.lastCursorAt = time.Now()
+		c.lastContent = normalizeCapturedContent(c.lastContent, cursorY, cursorV)
 	}
 	go c.pollLoop(ctx)
 }
@@ -93,11 +96,11 @@ func (c *outputCapturer) pollLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-c.ticker.C:
-			content, err := c.capturePane()
+			rawContent, err := c.capturePane()
 			if err != nil {
 				continue
 			}
-			if content == c.lastContent {
+			if rawContent == c.lastRawContent {
 				// Some full-screen apps move cursor without changing text content.
 				// Emit cursor-only control sequence so remote terminal stays aligned.
 				if !c.lastCursorAt.IsZero() && time.Since(c.lastCursorAt) < cursorPollInterval {
@@ -124,26 +127,44 @@ func (c *outputCapturer) pollLoop(ctx context.Context) {
 				continue
 			}
 
+			cursorX, cursorY, cursorV, cursorErr := c.captureCursor()
+			if cursorErr == nil {
+				c.lastCursorAt = time.Now()
+			}
+			content := rawContent
+			if cursorErr == nil {
+				content = normalizeCapturedContent(content, cursorY, cursorV)
+			} else {
+				content = normalizeCapturedContent(content, -1, -1)
+			}
 			delta, redraw := diff(c.lastContent, content)
+			c.lastRawContent = rawContent
 			c.lastContent = content
 
 			if len(delta) == 0 {
+				if cursorErr == nil {
+					if visCtrl := c.cursorVisibilityControl(cursorV); visCtrl != "" {
+						c.lastCursorV = cursorV
+						c.emitDelta(visCtrl)
+					}
+				}
 				continue
 			}
 
-			// Only query cursor when needed for full redraw alignment.
-			if redraw {
-				cursorX, cursorY, cursorV, cursorErr := c.captureCursor()
-				if cursorErr == nil {
-					c.lastCursorAt = time.Now()
-					if visCtrl := c.cursorVisibilityControl(cursorV); visCtrl != "" {
+			if cursorErr == nil {
+				if visCtrl := c.cursorVisibilityControl(cursorV); visCtrl != "" {
+					if redraw {
 						delta = visCtrl + delta
-						c.lastCursorV = cursorV
+					} else {
+						delta += visCtrl
 					}
-					c.lastCursorX = cursorX
-					c.lastCursorY = cursorY
-					delta += cursorMove(cursorX, cursorY)
+					c.lastCursorV = cursorV
 				}
+			}
+			if redraw && cursorErr == nil {
+				c.lastCursorX = cursorX
+				c.lastCursorY = cursorY
+				delta += cursorMove(cursorX, cursorY)
 			}
 
 			c.emitDelta(delta)
@@ -234,6 +255,21 @@ func (c *outputCapturer) cursorVisibilityControl(cursorVisible int) string {
 		return "\x1b[?25l"
 	}
 	return "\x1b[?25h"
+}
+
+func normalizeCapturedContent(content string, cursorY int, cursorVisible int) string {
+	lines := strings.Split(content, "\n")
+	keepTrailing := -1
+	if cursorVisible == 1 && cursorY >= 0 && cursorY < len(lines) {
+		keepTrailing = cursorY
+	}
+	for i, line := range lines {
+		if i == keepTrailing {
+			continue
+		}
+		lines[i] = strings.TrimRight(line, " ")
+	}
+	return strings.Join(lines, "\n")
 }
 
 // diff returns the bytes in b that are not a suffix match of a.
