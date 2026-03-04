@@ -189,6 +189,9 @@ Page behavior:
    - `List VPS`
    - `Logout`
 4. Show raw API response JSON in a debug panel for fast smoke testing.
+5. Keep terminal stream UI/logic isolated in a reusable component module:
+   - `packages/control-plane/src/routes/staging-terminal-component.ts`
+   - intended to be reused as the baseline for future session UI work.
 
 ---
 

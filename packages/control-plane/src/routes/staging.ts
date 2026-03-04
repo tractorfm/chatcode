@@ -1,5 +1,10 @@
 import type { Env, AuthContext } from "../types.js";
 import { getGatewayByVPS, getVPS } from "../db/schema.js";
+import {
+  STAGING_TERMINAL_COMPONENT_SCRIPT,
+  STAGING_TERMINAL_SECTION,
+  STAGING_TERMINAL_STYLE,
+} from "./staging-terminal-component.js";
 
 export function handleStagingTestPage(_request: Request, env: Env): Response {
   if (!isStagingEnabled(env)) {
@@ -114,17 +119,7 @@ function htmlPage(): string {
     .section { margin-bottom: 16px; border: 1px solid #ddd; padding: 12px; border-radius: 6px; }
     .row { margin-bottom: 8px; }
     .muted { color: #666; font-size: 12px; }
-    #terminal {
-      width: 100%;
-      min-width: 360px;
-      min-height: 720px;
-      height: 840px;
-      border: 1px solid #222;
-      background: #111;
-      line-height: 1;
-      overflow: hidden;
-      box-sizing: border-box;
-    }
+${STAGING_TERMINAL_STYLE}
     .vps-card, .session-card { padding: 8px; border: 1px solid #ddd; margin-top: 8px; border-radius: 4px; }
     #schema-json { width: 100%; min-height: 150px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
   </style>
@@ -187,19 +182,7 @@ function htmlPage(): string {
     <div id="sessions-list-panel"></div>
   </div>
 
-  <div id="terminal-wrap" class="section" style="display:none">
-    <h2>Terminal Stream (xterm.js)</h2>
-    <div class="row">
-      <label for="terminal-session-id">Session:</label>
-      <input id="terminal-session-id" placeholder="session id" style="min-width: 280px" />
-      <button id="terminal-connect">Connect</button>
-      <button id="terminal-disconnect">Disconnect</button>
-      <button id="terminal-snapshot">Snapshot</button>
-      <button id="terminal-end">End Session</button>
-    </div>
-    <div class="muted" id="terminal-status">disconnected</div>
-    <div id="terminal"></div>
-  </div>
+${STAGING_TERMINAL_SECTION}
 
   <div id="schema-wrap" class="section" style="display:none">
     <h2>Schema Command Tester (staging only)</h2>
@@ -236,6 +219,7 @@ function htmlPage(): string {
 
   <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@6.0.0/lib/xterm.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.11.0/lib/addon-fit.js"></script>
+  <script>${STAGING_TERMINAL_COMPONENT_SCRIPT}</script>
   <script>
     const out = document.getElementById("out");
     const meEl = document.getElementById("me");
@@ -243,13 +227,10 @@ function htmlPage(): string {
     const authed = document.getElementById("auth-authed");
     const vps = document.getElementById("vps");
     const sessions = document.getElementById("sessions");
-    const terminalWrap = document.getElementById("terminal-wrap");
     const schemaWrap = document.getElementById("schema-wrap");
     const vpsListPanel = document.getElementById("vps-list-panel");
     const sessionsListPanel = document.getElementById("sessions-list-panel");
     const vpsSelect = document.getElementById("session-vps-select");
-    const terminalSessionInput = document.getElementById("terminal-session-id");
-    const terminalStatus = document.getElementById("terminal-status");
     const schemaCommandType = document.getElementById("schema-command-type");
     const schemaSessionId = document.getElementById("schema-session-id");
     const schemaInputText = document.getElementById("schema-input-text");
@@ -261,19 +242,6 @@ function htmlPage(): string {
     let vpsRows = [];
     let activeVpsId = "";
     let activeSessionId = "";
-
-    let term = null;
-    let fitAddon = null;
-    let termResizeObserver = null;
-    let fitTimer = null;
-    let termSocket = null;
-    let termInputDisposable = null;
-    let termKeepaliveTimer = null;
-    let awaitingInitialSnapshot = false;
-    let initialSnapshotTimer = null;
-    let lastResizeCols = 0;
-    let lastResizeRows = 0;
-    const terminalMinHeightPx = 720;
 
     function show(obj) {
       out.textContent = typeof obj === "string" ? obj : JSON.stringify(obj, null, 2);
@@ -313,151 +281,26 @@ function htmlPage(): string {
       return btoa(bin);
     }
 
-    function decodeTerminalFrame(data) {
-      const buf = new Uint8Array(data);
-      if (buf.length < 2) return null;
-      const kind = buf[0];
-      const sidLen = buf[1];
-      if (buf.length < 2 + sidLen + 8) return null;
-      const sidBytes = buf.slice(2, 2 + sidLen);
-      const sessionId = new TextDecoder().decode(sidBytes);
-      const view = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
-      const seq = Number(view.getBigUint64(2 + sidLen, false));
-      const payload = buf.slice(2 + sidLen + 8);
-      return { kind, sessionId, seq, payload };
-    }
-
-    function ensureTerminal() {
-      if (!window.Terminal) {
-        terminalStatus.textContent = "xterm failed to load";
-        return false;
-      }
-      if (!term) {
-        term = new window.Terminal({
-          cursorBlink: true,
-          convertEol: true,
-          fontSize: 13,
-          fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace',
-          scrollback: 50000,
-          theme: { background: "#111", foreground: "#ddd" },
-        });
-        if (window.FitAddon && typeof window.FitAddon.FitAddon === "function") {
-          fitAddon = new window.FitAddon.FitAddon();
-          term.loadAddon(fitAddon);
-        }
-
-        const terminalNode = document.getElementById("terminal");
-        term.open(terminalNode);
-        scheduleTerminalFit();
-        setTimeout(scheduleTerminalFit, 120);
-        if (document.fonts && document.fonts.ready && typeof document.fonts.ready.then === "function") {
-          document.fonts.ready.then(() => scheduleTerminalFit()).catch(() => {});
-        }
-
-        term.onResize(({ cols, rows }) => {
-          sendSessionResize(cols, rows);
-        });
-        window.addEventListener("resize", () => {
-          if (!term) return;
-          scheduleTerminalFit();
-        });
-        if (window.ResizeObserver) {
-          termResizeObserver = new window.ResizeObserver(() => scheduleTerminalFit());
-          termResizeObserver.observe(terminalNode);
-        }
-      }
-      return true;
-    }
-
-    function applyTerminalHostSize() {
-      const terminalNode = document.getElementById("terminal");
-      if (!terminalNode) return;
-      if (terminalNode.offsetParent === null) return;
-
-      const rect = terminalNode.getBoundingClientRect();
-      const viewportHeight = window.innerHeight || 0;
-      if (viewportHeight <= 0) return;
-
-      const availableHeight = Math.floor(viewportHeight - rect.top - 20);
-      const targetHeight = Math.max(terminalMinHeightPx, availableHeight);
-
-      const currentHeight = parseInt(terminalNode.style.height || "0", 10);
-      if (!Number.isFinite(currentHeight) || Math.abs(currentHeight - targetHeight) >= 1) {
-        terminalNode.style.height = targetHeight + "px";
-      }
-      terminalNode.style.width = "100%";
-    }
-
-    function scheduleTerminalFit() {
-      if (!term) return;
-      if (fitTimer) clearTimeout(fitTimer);
-      fitTimer = setTimeout(() => {
-        fitTimer = null;
-        if (!term) return;
-        applyTerminalHostSize();
-        if (fitAddon && typeof fitAddon.fit === "function") {
-          try { fitAddon.fit(); } catch {}
-        }
-        sendSessionResize(term.cols || 80, term.rows || 24);
-      }, 16);
-    }
-
-    function setTerminalStatus(text) {
-      terminalStatus.textContent = text;
-    }
+    let terminalComponent = null;
 
     function syncActiveSession(sessionId) {
       if (!sessionId) return;
       activeSessionId = sessionId;
-      terminalSessionInput.value = sessionId;
       schemaSessionId.value = sessionId;
+      if (terminalComponent) terminalComponent.setSessionId(sessionId);
     }
 
-    function disconnectTerminal() {
-      if (termInputDisposable) {
-        termInputDisposable.dispose();
-        termInputDisposable = null;
-      }
-      if (fitTimer) {
-        clearTimeout(fitTimer);
-        fitTimer = null;
-      }
-      if (termKeepaliveTimer) {
-        clearInterval(termKeepaliveTimer);
-        termKeepaliveTimer = null;
-      }
-      if (initialSnapshotTimer) {
-        clearTimeout(initialSnapshotTimer);
-        initialSnapshotTimer = null;
-      }
-      awaitingInitialSnapshot = false;
-      if (termSocket) {
-        try { termSocket.close(1000, "user disconnect"); } catch {}
-      }
-      termSocket = null;
-      lastResizeCols = 0;
-      lastResizeRows = 0;
-      setTerminalStatus("disconnected");
-    }
-
-    function sendSessionResize(cols, rows) {
-      if (!termSocket || termSocket.readyState !== WebSocket.OPEN) return;
-      if (!activeSessionId) return;
-      if (cols === lastResizeCols && rows === lastResizeRows) return;
-      lastResizeCols = cols;
-      lastResizeRows = rows;
-      const resizeMsg = {
-        type: "session.resize",
-        schema_version: "1",
-        request_id: requestId("resize"),
-        session_id: activeSessionId,
-        cols: cols,
-        rows: rows,
-      };
-      try {
-        termSocket.send(JSON.stringify(resizeMsg));
-      } catch {}
-    }
+    terminalComponent = createStagingTerminalComponent({
+      terminalMinHeightPx: 720,
+      requestId: requestId,
+      wsUrl: wsUrl,
+      utf8ToBase64: utf8ToBase64,
+      onSessionSelected: (sessionId) => {
+        if (!sessionId) return;
+        activeSessionId = sessionId;
+        schemaSessionId.value = sessionId;
+      },
+    });
 
     function buildSchemaPreset() {
       const type = schemaCommandType.value;
@@ -530,17 +373,17 @@ function htmlPage(): string {
         authed.style.display = "block";
         vps.style.display = "block";
         sessions.style.display = "block";
-        terminalWrap.style.display = "block";
+        terminalComponent.setVisible(true);
         schemaWrap.style.display = "block";
         meEl.textContent = JSON.stringify(body, null, 2);
-        scheduleTerminalFit();
+        terminalComponent.scheduleFit();
         await listVPS();
       } else {
         unauth.style.display = "block";
         authed.style.display = "none";
         vps.style.display = "none";
         sessions.style.display = "none";
-        terminalWrap.style.display = "none";
+        terminalComponent.setVisible(false);
         schemaWrap.style.display = "none";
         vpsListPanel.innerHTML = "";
         sessionsListPanel.innerHTML = "";
@@ -630,177 +473,6 @@ function htmlPage(): string {
       return { res, body };
     }
 
-    async function connectTerminal(vpsId, sessionId) {
-      if (!vpsId || !sessionId) return;
-      if (!ensureTerminal()) return;
-
-      disconnectTerminal();
-      activeVpsId = vpsId;
-      syncActiveSession(sessionId);
-
-      term.reset();
-      setTerminalStatus("connecting: " + sessionId);
-      scheduleTerminalFit();
-      term.focus();
-
-      const path = "/vps/" + encodeURIComponent(vpsId) + "/terminal?session_id=" + encodeURIComponent(sessionId);
-      const socket = new WebSocket(wsUrl(path));
-      termSocket = socket;
-      socket.binaryType = "arraybuffer";
-
-      const sendSocketJSON = (payload) => {
-        if (socket !== termSocket) return;
-        if (socket.readyState !== WebSocket.OPEN) return;
-        try { socket.send(JSON.stringify(payload)); } catch {}
-      };
-
-      socket.addEventListener("open", () => {
-        if (socket !== termSocket) return;
-        setTerminalStatus("connected: " + sessionId);
-        scheduleTerminalFit();
-        term.focus();
-
-        if (termInputDisposable) {
-          termInputDisposable.dispose();
-          termInputDisposable = null;
-        }
-        termInputDisposable = term.onData((data) => {
-          const inputMsg = {
-            type: "session.input",
-            schema_version: "1",
-            request_id: requestId("input"),
-            session_id: sessionId,
-            data: utf8ToBase64(data),
-          };
-          sendSocketJSON(inputMsg);
-        });
-
-        if (termKeepaliveTimer) {
-          clearInterval(termKeepaliveTimer);
-          termKeepaliveTimer = null;
-        }
-        termKeepaliveTimer = setInterval(() => {
-          sendSocketJSON({ type: "ping" });
-        }, 20000);
-
-        // Force a clean initial render and cursor sync on first connect.
-        awaitingInitialSnapshot = true;
-        if (initialSnapshotTimer) {
-          clearTimeout(initialSnapshotTimer);
-          initialSnapshotTimer = null;
-        }
-        initialSnapshotTimer = setTimeout(() => {
-          initialSnapshotTimer = null;
-          awaitingInitialSnapshot = false;
-        }, 1500);
-        sendSocketJSON({
-          type: "session.snapshot",
-          schema_version: "1",
-          request_id: requestId("snapshot"),
-          session_id: sessionId,
-        });
-        sendSessionResize(term.cols || 80, term.rows || 24);
-      });
-
-      socket.addEventListener("message", (event) => {
-        if (socket !== termSocket) return;
-        if (typeof event.data === "string") {
-          let msg;
-          try { msg = JSON.parse(event.data); } catch { return; }
-
-          if (msg.type === "ack" && msg.ok === false) {
-            const errText = msg.error || "gateway command failed";
-            term.writeln("\\r\\n[ack error] " + errText);
-            return;
-          }
-
-          if (msg.type === "session.snapshot" && msg.session_id === activeSessionId && typeof msg.content === "string") {
-            const rowsHint = Number.isFinite(msg.rows) && msg.rows > 0 ? msg.rows : 80;
-            const normalizedContent = String(msg.content).replace(/\\r\\n/g, "\\n").replace(/\\r/g, "\\n");
-            const contentLines = normalizedContent.split("\\n");
-            // capture-pane usually ends with a trailing newline, which creates an
-            // extra empty split item and shifts viewport rows by one if not removed.
-            if (contentLines.length > 0 && contentLines[contentLines.length - 1] === "") {
-              contentLines.pop();
-            }
-            const snapshotTail = contentLines.slice(-rowsHint).join("\\r\\n");
-            term.reset();
-            term.write(snapshotTail);
-            if (Number.isFinite(msg.cursor_x) && Number.isFinite(msg.cursor_y)) {
-              const col = Math.max(0, Math.floor(msg.cursor_x)) + 1;
-              const row = Math.max(0, Math.floor(msg.cursor_y)) + 1;
-              term.write("\\x1b[" + row + ";" + col + "H");
-            }
-            awaitingInitialSnapshot = false;
-            if (initialSnapshotTimer) {
-              clearTimeout(initialSnapshotTimer);
-              initialSnapshotTimer = null;
-            }
-            return;
-          }
-
-          if (msg.type === "session.error" && msg.session_id === activeSessionId) {
-            term.writeln("\\r\\n[session.error] " + (msg.error || "unknown"));
-            return;
-          }
-
-          if (msg.type === "session.ended" && msg.session_id === activeSessionId) {
-            term.writeln("\\r\\n[session ended]");
-            return;
-          }
-
-          return;
-        }
-
-        if (event.data instanceof ArrayBuffer) {
-          const frame = decodeTerminalFrame(event.data);
-          if (!frame || frame.kind !== 0x01) return;
-          if (frame.sessionId !== activeSessionId) return;
-          const sendAck = () => {
-            if (socket.readyState !== WebSocket.OPEN) return;
-            const ackMsg = {
-              type: "session.ack",
-              schema_version: "1",
-              request_id: requestId("ack"),
-              session_id: frame.sessionId,
-              seq: frame.seq,
-            };
-            try { socket.send(JSON.stringify(ackMsg)); } catch {}
-          };
-          if (awaitingInitialSnapshot) {
-            sendAck();
-            return;
-          }
-          const text = new TextDecoder().decode(frame.payload);
-          term.write(text);
-          sendAck();
-        }
-      });
-
-      socket.addEventListener("close", (ev) => {
-        if (socket !== termSocket) return;
-        if (termInputDisposable) {
-          termInputDisposable.dispose();
-          termInputDisposable = null;
-        }
-        if (termKeepaliveTimer) {
-          clearInterval(termKeepaliveTimer);
-          termKeepaliveTimer = null;
-        }
-        if (term) {
-          const reason = ev && ev.reason ? " reason=" + ev.reason : "";
-          term.writeln("\\r\\n[terminal socket closed code=" + ev.code + reason + "]");
-        }
-        termSocket = null;
-        setTerminalStatus("disconnected");
-      });
-
-      socket.addEventListener("error", () => {
-        if (socket !== termSocket) return;
-        if (term) term.writeln("\\r\\n[terminal socket error]");
-      });
-    }
-
     document.getElementById("email-form").addEventListener("submit", async (e) => {
       e.preventDefault();
       const email = document.getElementById("email").value;
@@ -824,7 +496,7 @@ function htmlPage(): string {
     });
 
     document.getElementById("logout").addEventListener("click", async () => {
-      disconnectTerminal();
+      terminalComponent.disconnect();
       await call("/auth/logout", { method: "POST" });
       await refreshMe();
     });
@@ -947,7 +619,7 @@ function htmlPage(): string {
 
       if (target.classList.contains("connect-session")) {
         syncActiveSession(sessionId);
-        await connectTerminal(vpsId, sessionId);
+        await terminalComponent.connect(vpsId, sessionId);
         return;
       }
 
@@ -964,26 +636,26 @@ function htmlPage(): string {
 
     document.getElementById("terminal-connect").addEventListener("click", async () => {
       const vpsId = vpsSelect.value || activeVpsId;
-      const sessionId = terminalSessionInput.value.trim();
+      const sessionId = terminalComponent.getSessionId().trim();
       if (!vpsId || !sessionId) return;
       syncActiveSession(sessionId);
-      await connectTerminal(vpsId, sessionId);
+      await terminalComponent.connect(vpsId, sessionId);
     });
 
     document.getElementById("terminal-disconnect").addEventListener("click", () => {
-      disconnectTerminal();
+      terminalComponent.disconnect();
     });
 
     document.getElementById("terminal-snapshot").addEventListener("click", async () => {
       const vpsId = vpsSelect.value || activeVpsId;
-      const sessionId = terminalSessionInput.value.trim();
+      const sessionId = terminalComponent.getSessionId().trim();
       if (!vpsId || !sessionId) return;
       await call("/vps/" + encodeURIComponent(vpsId) + "/sessions/" + encodeURIComponent(sessionId) + "/snapshot", { method: "GET" });
     });
 
     document.getElementById("terminal-end").addEventListener("click", async () => {
       const vpsId = vpsSelect.value || activeVpsId;
-      const sessionId = terminalSessionInput.value.trim();
+      const sessionId = terminalComponent.getSessionId().trim();
       if (!vpsId || !sessionId) return;
       await call("/vps/" + encodeURIComponent(vpsId) + "/sessions/" + encodeURIComponent(sessionId), { method: "DELETE" });
       await listSessions(vpsId);
