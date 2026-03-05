@@ -24,3 +24,6 @@ packages/*/dist/
 
 # Local developer secrets
 .dev-secrets.env
+
+# Local tooling state
+.playwright-cli/
