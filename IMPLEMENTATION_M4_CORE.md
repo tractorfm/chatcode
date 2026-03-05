@@ -218,3 +218,6 @@ These are intentional MVP decisions with follow-up items tracked for post-M4 har
 7. Release publishing operations:
    - Current: manual R2 publish fallback exists when tag workflow misses.
    - Deferred: make tag-trigger path deterministic and add release smoke gate.
+8. Agent install error UX:
+   - Current: `agents.install` is acked immediately; failures are logged on gateway.
+   - Deferred: schema-defined `agent.install_failed` event and client handling.

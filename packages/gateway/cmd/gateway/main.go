@@ -651,6 +651,8 @@ func (g *gateway) handleAgentsInstall(ctx context.Context, raw json.RawMessage) 
 	go func() {
 		version, err := agents.Install(agents.AgentName(cmd.Agent))
 		if err != nil {
+			// TODO: emit a schema-defined agent.install_failed event so clients can
+			// surface async install failures without relying on gateway logs.
 			g.log.Error("agent install failed", "agent", cmd.Agent, "request_id", cmd.RequestID, "err", err)
 			return
 		}

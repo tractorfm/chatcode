@@ -36,6 +36,9 @@ func ListStatus() []Status {
 }
 
 func shouldProbeVersion(agent AgentName) bool {
+	// Intentionally allow-list only fast version probes so agents.list stays
+	// responsive on low-memory VPSes. New agents default to "installed" without
+	// a version string until explicitly opted in here.
 	switch agent {
 	case AgentClaudeCode, AgentCodex:
 		return true
