@@ -554,7 +554,7 @@ ${STAGING_TERMINAL_SECTION}
       const ip = vps && typeof vps.ipv4 === "string" ? vps.ipv4.trim() : "";
       if (!ip) return "";
       const tmuxName = "vibe-" + sessionId;
-      return "ssh root@" + ip + " -t 'sudo -u vibe tmux attach -t " + tmuxName + "'";
+      return "ssh root@" + ip + " -t 'sudo -u vibe env TMUX_TMPDIR=/tmp/chatcode tmux attach -t " + tmuxName + "'";
     }
 
     async function copyToClipboard(text) {
