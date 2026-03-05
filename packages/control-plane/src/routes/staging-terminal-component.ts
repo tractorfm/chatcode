@@ -236,6 +236,24 @@ export const STAGING_TERMINAL_COMPONENT_SCRIPT = `
           termResizeObserver = new window.ResizeObserver(() => scheduleFit());
           termResizeObserver.observe(terminalNode);
         }
+        // We stream snapshots/diffs instead of full PTY mode negotiation.
+        // Force tmux-256color arrow sequences so curses apps (htop/nano) get
+        // navigation keys even when xterm.js application-cursor mode is stale.
+        term.attachCustomKeyEventHandler((event) => {
+          if (event.type !== "keydown") return true;
+          if (event.altKey || event.ctrlKey || event.metaKey) return true;
+          if (!termSocket || termSocket.readyState !== WebSocket.OPEN || !activeSessionId) return true;
+          const appArrowMap = {
+            ArrowUp: "\x1bOA",
+            ArrowDown: "\x1bOB",
+            ArrowRight: "\x1bOC",
+            ArrowLeft: "\x1bOD",
+          };
+          const seq = appArrowMap[event.key];
+          if (!seq) return true;
+          sendInputData(seq);
+          return false;
+        });
         applyTheme(initialThemeName, true);
       }
       return true;
@@ -275,6 +293,21 @@ export const STAGING_TERMINAL_COMPONENT_SCRIPT = `
       };
       try {
         termSocket.send(JSON.stringify(resizeMsg));
+      } catch {}
+    }
+
+    function sendInputData(data) {
+      if (!termSocket || termSocket.readyState !== WebSocket.OPEN) return;
+      if (!activeSessionId || !data) return;
+      const inputMsg = {
+        type: "session.input",
+        schema_version: "1",
+        request_id: config.requestId("input"),
+        session_id: activeSessionId,
+        data: config.utf8ToBase64(data),
+      };
+      try {
+        termSocket.send(JSON.stringify(inputMsg));
       } catch {}
     }
 
@@ -362,14 +395,7 @@ export const STAGING_TERMINAL_COMPONENT_SCRIPT = `
           termInputDisposable = null;
         }
         termInputDisposable = term.onData((data) => {
-          const inputMsg = {
-            type: "session.input",
-            schema_version: "1",
-            request_id: config.requestId("input"),
-            session_id: sessionId,
-            data: config.utf8ToBase64(data),
-          };
-          sendSocketJSON(inputMsg);
+          sendInputData(data);
         });
 
         if (termKeepaliveTimer) {
