@@ -58,7 +58,7 @@ This document is intentionally UI-agnostic. Frontend work is tracked separately 
    - payload encoding rules
 3. Explicit ack/replay contract with sequence guarantees.
 4. Versioned schema updates + generated/shared types.
-4. Protocol documentation page with examples and failure cases (gap/replay_missed/read_only).
+5. Protocol documentation page with examples and failure cases (gap/replay_missed/read_only).
 
 ### Exit Criteria
 1. Schema and types merged.

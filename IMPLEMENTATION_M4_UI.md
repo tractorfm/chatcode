@@ -55,13 +55,13 @@ UI contract dependencies:
    - keep a thin compatibility wrapper so staging can use the same core module during migration
 2. Extract terminal component from staging page into reusable module for `packages/web`.
 3. Support theme profiles (`default`, `iterm2`, others) via config.
-3. Keep terminal API surface small:
+4. Keep terminal API surface small:
    - `connect`
    - `disconnect`
    - `setReadOnly`
    - `fit`
    - `dispose`
-4. Keep newline handling aligned with core transport:
+5. Keep newline handling aligned with core transport:
    - terminal input/output remains `capture-pane` based for M4
    - keep `convertEol` behavior consistent with this transport
 
