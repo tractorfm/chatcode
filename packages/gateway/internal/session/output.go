@@ -14,6 +14,7 @@ const (
 	cursorPollInterval = 150 * time.Millisecond
 	bufferCapacity     = 64
 	maxPayload         = 16 * 1024 // 16KB per frame
+	fullRedrawPrefix   = "\x1b[0m\x1b[H\x1b[2J"
 )
 
 // outputCapturer reads tmux pipe-pane output and batches it into OutputChunks.
@@ -291,5 +292,5 @@ func diff(old, new string) (string, bool) {
 
 	// Any non-append change is treated as in-place update and rendered as full
 	// viewport redraw. This avoids duplicated/misaligned output for dynamic UIs.
-	return "\x1b[H\x1b[2J" + new, true
+	return fullRedrawPrefix + new, true
 }

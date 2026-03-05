@@ -171,6 +171,62 @@ func TestSetHistoryLimitArgs(t *testing.T) {
 	}
 }
 
+func TestSetDefaultTerminalArgs(t *testing.T) {
+	args := setDefaultTerminalArgs("tmux-256color")
+	want := []string{"set-option", "-g", "default-terminal", "tmux-256color"}
+	if len(args) != len(want) {
+		t.Fatalf("args len = %d, want %d", len(args), len(want))
+	}
+	for i := range want {
+		if args[i] != want[i] {
+			t.Fatalf("args[%d] = %q, want %q", i, args[i], want[i])
+		}
+	}
+}
+
+func TestSelectTmuxDefaultTerminal(t *testing.T) {
+	tests := []struct {
+		name     string
+		canProbe bool
+		exists   map[string]bool
+		want     string
+	}{
+		{
+			name:     "prefer tmux-256color",
+			canProbe: true,
+			exists:   map[string]bool{"tmux-256color": true, "screen-256color": true, "screen": true},
+			want:     "tmux-256color",
+		},
+		{
+			name:     "fallback to screen-256color",
+			canProbe: true,
+			exists:   map[string]bool{"tmux-256color": false, "screen-256color": true, "screen": true},
+			want:     "screen-256color",
+		},
+		{
+			name:     "fallback to screen",
+			canProbe: true,
+			exists:   map[string]bool{"tmux-256color": false, "screen-256color": false, "screen": true},
+			want:     "screen",
+		},
+		{
+			name:     "no probe keeps preferred",
+			canProbe: false,
+			exists:   map[string]bool{},
+			want:     "tmux-256color",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := selectTmuxDefaultTerminal(func(term string) bool { return tt.exists[term] }, tt.canProbe)
+			if got != tt.want {
+				t.Fatalf("selectTmuxDefaultTerminal = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestSnapshotCaptureArgs(t *testing.T) {
 	args := snapshotCaptureArgs("vibe-ses-test")
 	want := []string{"capture-pane", "-e", "-N", "-S", "-" + strconv.Itoa(snapshotHistoryLines), "-t", "vibe-ses-test", "-p"}

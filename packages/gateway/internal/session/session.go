@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -17,6 +18,14 @@ const (
 	forceKillWait           = 500 * time.Millisecond
 	tmuxHistoryLimitLines   = 200000
 	snapshotHistoryLines    = 50000
+	preferredTmuxTerminal   = "tmux-256color"
+	fallbackTmuxTerminal    = "screen-256color"
+	legacyTmuxTerminal      = "screen"
+)
+
+var (
+	detectedTmuxTerminal string
+	detectTmuxTermOnce   sync.Once
 )
 
 // Options configures a new session.
@@ -86,6 +95,9 @@ func (s *Session) start() error {
 	if err := s.ensureHistoryLimit(); err != nil {
 		return err
 	}
+	if err := s.ensureDefaultTerminal(); err != nil {
+		return err
+	}
 
 	s.capturer = newOutputCapturer(s.tmuxName, s.opts.SessionID, &s.seq, &s.lastActivityAt, s.opts.OutputCh)
 	s.capturer.start()
@@ -96,7 +108,7 @@ func (s *Session) start() error {
 
 // buildTmuxNewSessionCmd returns the exec.Cmd to start the tmux session.
 func (s *Session) buildTmuxNewSessionCmd() *exec.Cmd {
-	shellCmd := s.agentCommand()
+	shellCmd := fmt.Sprintf("TERM=%s %s", detectTmuxDefaultTerminal(), s.agentCommand())
 
 	args := []string{
 		"new-session",
@@ -190,8 +202,47 @@ func (s *Session) ensureHistoryLimit() error {
 	return nil
 }
 
+func (s *Session) ensureDefaultTerminal() error {
+	cmd := exec.Command("tmux", setDefaultTerminalArgs(detectTmuxDefaultTerminal())...)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("tmux set default-terminal: %w: %s", err, out)
+	}
+	return nil
+}
+
 func setHistoryLimitArgs(tmuxName string) []string {
 	return []string{"set-option", "-t", tmuxName, "history-limit", fmt.Sprintf("%d", tmuxHistoryLimitLines)}
+}
+
+func setDefaultTerminalArgs(term string) []string {
+	return []string{"set-option", "-g", "default-terminal", term}
+}
+
+func detectTmuxDefaultTerminal() string {
+	detectTmuxTermOnce.Do(func() {
+		infocmpPath, err := exec.LookPath("infocmp")
+		if err != nil {
+			detectedTmuxTerminal = preferredTmuxTerminal
+			return
+		}
+		detectedTmuxTerminal = selectTmuxDefaultTerminal(func(term string) bool {
+			return exec.Command(infocmpPath, term).Run() == nil
+		}, true)
+	})
+	return detectedTmuxTerminal
+}
+
+func selectTmuxDefaultTerminal(termExists func(string) bool, canProbe bool) string {
+	if !canProbe {
+		return preferredTmuxTerminal
+	}
+	candidates := []string{preferredTmuxTerminal, fallbackTmuxTerminal, legacyTmuxTerminal}
+	for _, term := range candidates {
+		if termExists(term) {
+			return term
+		}
+	}
+	return legacyTmuxTerminal
 }
 
 func snapshotCaptureArgs(tmuxName string) []string {

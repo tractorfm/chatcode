@@ -43,7 +43,7 @@ func TestDiffAppend(t *testing.T) {
 func TestDiffSlidingWindow(t *testing.T) {
 	old := "line1\nline2\nline3\n"
 	newVal := "line2\nline3\nline4\n"
-	want := "\x1b[H\x1b[2J" + newVal
+	want := fullRedrawPrefix + newVal
 	got, redraw := diff(old, newVal)
 	if got != want {
 		t.Fatalf("diff sliding window = %q, want %q", got, want)
@@ -56,7 +56,7 @@ func TestDiffSlidingWindow(t *testing.T) {
 func TestDiffInPlaceLineUpdate(t *testing.T) {
 	old := "progress 10%\n"
 	newVal := "progress 11%\n"
-	want := "\x1b[H\x1b[2J" + newVal
+	want := fullRedrawPrefix + newVal
 	got, redraw := diff(old, newVal)
 	if got != want {
 		t.Fatalf("diff in-place update = %q, want %q", got, want)
