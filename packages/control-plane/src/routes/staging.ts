@@ -124,6 +124,7 @@ ${STAGING_TERMINAL_STYLE}
     .session-card { padding: 6px 8px; }
     .session-line { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 4px; }
     .session-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+    .session-cmd { display: inline-block; background: #f7f7f7; border: 1px solid #ddd; border-radius: 4px; padding: 2px 6px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
     .session-tabs { display: flex; gap: 6px; margin-bottom: 8px; }
     .session-tab { border: 1px solid #bbb; background: #f6f6f6; border-radius: 4px; padding: 4px 8px; cursor: pointer; }
     .session-tab.active { background: #1a73e8; border-color: #1a73e8; color: #fff; }
@@ -510,15 +511,27 @@ ${STAGING_TERMINAL_SECTION}
       }
 
       const html = filteredRows.map((row) => {
-        const sid = escapeHtml(row.id);
+        const sidRaw = String(row.id || "");
+        const sid = escapeHtml(sidRaw);
         const status = escapeHtml(row.status || "unknown");
         const title = escapeHtml(row.title || "");
         const agent = escapeHtml(row.agent_type || "");
         const wd = escapeHtml(row.workdir || "");
+        const attachCmd = buildSessionAttachCommand(vpsId, sidRaw);
+        const attachLine = attachCmd
+          ? (
+            "<div class='session-line muted'>" +
+            "<span>SSH attach:</span>" +
+            "<code class='session-cmd'>" + escapeHtml(attachCmd) + "</code>" +
+            "<button data-cmd='" + escapeHtml(attachCmd) + "' class='copy-session-ssh'>Copy</button>" +
+            "</div>"
+          )
+          : "<div class='session-line muted'>SSH attach: waiting for VPS IPv4</div>";
         return (
           "<div class='session-card'>" +
           "<div class='session-line'><strong>" + sid + "</strong><span>[" + status + "]</span><span>" + title + "</span><span>" + agent + "</span></div>" +
           "<div class='session-line muted'>Workdir: " + wd + "</div>" +
+          attachLine +
           "<div class='session-actions'>" +
           "<button data-vps='" + escapeHtml(vpsId) + "' data-sid='" + sid + "' class='connect-session'>Connect</button>" +
           "<button data-vps='" + escapeHtml(vpsId) + "' data-sid='" + sid + "' class='snapshot-session'>Snapshot</button>" +
@@ -529,6 +542,37 @@ ${STAGING_TERMINAL_SECTION}
       }).join("");
 
       sessionsListPanel.innerHTML = html;
+    }
+
+    function findVPS(vpsId) {
+      return vpsRows.find((row) => row && row.id === vpsId) || null;
+    }
+
+    function buildSessionAttachCommand(vpsId, sessionId) {
+      if (!vpsId || !sessionId) return "";
+      const vps = findVPS(vpsId);
+      const ip = vps && typeof vps.ipv4 === "string" ? vps.ipv4.trim() : "";
+      if (!ip) return "";
+      const tmuxName = "vibe-" + sessionId;
+      return "ssh root@" + ip + " -t 'sudo -u vibe tmux attach -t " + tmuxName + "'";
+    }
+
+    async function copyToClipboard(text) {
+      if (!text) return false;
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(text);
+        return true;
+      }
+      const area = document.createElement("textarea");
+      area.value = text;
+      document.body.appendChild(area);
+      area.focus();
+      area.select();
+      try {
+        return document.execCommand("copy");
+      } finally {
+        document.body.removeChild(area);
+      }
     }
 
     async function listSessions(vpsId) {
@@ -712,6 +756,18 @@ ${STAGING_TERMINAL_SECTION}
     sessionsListPanel.addEventListener("click", async (event) => {
       const target = event.target;
       if (!target || !target.classList) return;
+
+      if (target.classList.contains("copy-session-ssh")) {
+        const cmd = target.dataset.cmd || "";
+        if (!cmd) return;
+        try {
+          const ok = await copyToClipboard(cmd);
+          show(ok ? "Copied: " + cmd : "Copy failed");
+        } catch (err) {
+          show("Copy failed: " + (err instanceof Error ? err.message : "unknown"));
+        }
+        return;
+      }
 
       const vpsId = target.dataset.vps;
       const sessionId = target.dataset.sid;
