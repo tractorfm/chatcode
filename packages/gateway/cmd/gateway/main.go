@@ -201,7 +201,7 @@ func (g *gateway) sendSnapshots(ctx context.Context) {
 		if sess == nil {
 			continue
 		}
-		content, cols, rows, cursorX, cursorY, err := sess.Snapshot()
+		content, cols, rows, cursorX, cursorY, cursorVisible, err := sess.Snapshot()
 		if err != nil {
 			continue
 		}
@@ -218,6 +218,11 @@ func (g *gateway) sendSnapshots(ctx context.Context) {
 		}
 		if cursorY >= 0 {
 			evt["cursor_y"] = cursorY
+		}
+		if cursorVisible == 0 {
+			evt["cursor_visible"] = false
+		} else if cursorVisible == 1 {
+			evt["cursor_visible"] = true
 		}
 		g.sendEvent(ctx, evt)
 	}
@@ -446,7 +451,7 @@ func (g *gateway) handleSessionSnapshot(ctx context.Context, raw json.RawMessage
 	if s == nil {
 		return fmt.Errorf("session %q not found", cmd.SessionID)
 	}
-	content, cols, rows, cursorX, cursorY, err := s.Snapshot()
+	content, cols, rows, cursorX, cursorY, cursorVisible, err := s.Snapshot()
 	if err != nil {
 		return err
 	}
@@ -464,6 +469,11 @@ func (g *gateway) handleSessionSnapshot(ctx context.Context, raw json.RawMessage
 	}
 	if cursorY >= 0 {
 		evt["cursor_y"] = cursorY
+	}
+	if cursorVisible == 0 {
+		evt["cursor_visible"] = false
+	} else if cursorVisible == 1 {
+		evt["cursor_visible"] = true
 	}
 	g.sendEvent(ctx, evt)
 	g.sendAck(ctx, cmd.RequestID, true, "")

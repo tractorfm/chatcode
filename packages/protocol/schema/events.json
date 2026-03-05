@@ -131,6 +131,10 @@
         "cursor_y": {
           "type": "integer",
           "description": "0-based cursor row in current visible pane"
+        },
+        "cursor_visible": {
+          "type": "boolean",
+          "description": "True when cursor should be visible; false hides cursor"
         }
       },
       "required": ["type", "session_id", "content"]

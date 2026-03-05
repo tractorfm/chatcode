@@ -227,6 +227,7 @@ export interface SessionSnapshotEvent extends BaseEvent {
   rows?: number;
   cursor_x?: number;
   cursor_y?: number;
+  cursor_visible?: boolean;
 }
 
 export interface SSHKey {

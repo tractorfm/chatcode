@@ -451,6 +451,11 @@ export const STAGING_TERMINAL_COMPONENT_SCRIPT = `
               const row = Math.max(0, Math.floor(msg.cursor_y)) + 1;
               term.write("\\x1b[" + row + ";" + col + "H");
             }
+            if (msg.cursor_visible === false) {
+              term.write("\\x1b[?25l");
+            } else if (msg.cursor_visible === true) {
+              term.write("\\x1b[?25h");
+            }
             awaitingInitialSnapshot = false;
             if (initialSnapshotTimer) {
               clearTimeout(initialSnapshotTimer);
