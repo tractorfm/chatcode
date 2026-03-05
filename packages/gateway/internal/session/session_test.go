@@ -210,10 +210,10 @@ func TestSelectTmuxDefaultTerminal(t *testing.T) {
 			want:     "screen",
 		},
 		{
-			name:     "no probe keeps preferred",
+			name:     "no probe uses legacy",
 			canProbe: false,
 			exists:   map[string]bool{},
-			want:     "tmux-256color",
+			want:     "screen",
 		},
 	}
 

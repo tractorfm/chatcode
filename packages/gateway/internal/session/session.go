@@ -222,7 +222,9 @@ func detectTmuxDefaultTerminal() string {
 	detectTmuxTermOnce.Do(func() {
 		infocmpPath, err := exec.LookPath("infocmp")
 		if err != nil {
-			detectedTmuxTerminal = preferredTmuxTerminal
+			// If we cannot probe terminfo availability, use the most compatible
+			// term name to avoid unknown-terminal failures in ncurses apps.
+			detectedTmuxTerminal = legacyTmuxTerminal
 			return
 		}
 		detectedTmuxTerminal = selectTmuxDefaultTerminal(func(term string) bool {
@@ -234,7 +236,7 @@ func detectTmuxDefaultTerminal() string {
 
 func selectTmuxDefaultTerminal(termExists func(string) bool, canProbe bool) string {
 	if !canProbe {
-		return preferredTmuxTerminal
+		return legacyTmuxTerminal
 	}
 	candidates := []string{preferredTmuxTerminal, fallbackTmuxTerminal, legacyTmuxTerminal}
 	for _, term := range candidates {
