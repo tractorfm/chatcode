@@ -3,6 +3,19 @@ main = "src/index.ts"
 compatibility_date = "2024-09-23"
 compatibility_flags = ["nodejs_compat"]
 
+[observability]
+enabled = true
+head_sampling_rate = 1
+
+[observability.logs]
+enabled = true
+invocation_logs = true
+head_sampling_rate = 1
+
+[observability.traces]
+enabled = true
+head_sampling_rate = 1
+
 [[d1_databases]]
 binding = "DB"
 database_name = "chatcode"
@@ -41,6 +54,19 @@ AUTH_MODE = "dev"
 name = "chatcode-cp-staging"
 workers_dev = true
 routes = [{ pattern = "cp.staging.chatcode.dev/*", zone_name = "chatcode.dev" }]
+
+[env.staging.observability]
+enabled = true
+head_sampling_rate = 1
+
+[env.staging.observability.logs]
+enabled = true
+invocation_logs = true
+head_sampling_rate = 1
+
+[env.staging.observability.traces]
+enabled = true
+head_sampling_rate = 1
 
 [[env.staging.durable_objects.bindings]]
 name = "GATEWAY_HUB"
