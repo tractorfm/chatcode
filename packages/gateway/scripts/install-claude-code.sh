@@ -46,8 +46,23 @@ ensure_node() {
 
 ensure_node
 
+npm_global_install() {
+    local pkg="$1"
+    local os
+    os="$(uname -s)"
+    if [ "${os}" = "Linux" ] && [ "${EUID:-$(id -u)}" -ne 0 ]; then
+        if command -v sudo >/dev/null 2>&1; then
+            sudo -n npm install -g "${pkg}"
+            return 0
+        fi
+        echo "[vibecode] ERROR: sudo is required for global npm install on Linux" >&2
+        exit 1
+    fi
+    npm install -g "${pkg}"
+}
+
 # Install/upgrade Claude Code globally
-npm install -g @anthropic-ai/claude-code@latest
+npm_global_install "@anthropic-ai/claude-code@latest"
 
 # Verify installation
 if ! command -v claude &>/dev/null; then
