@@ -499,6 +499,11 @@ prepare_linux_user() {
 
   # Root-owned sudo command log, readable by vibe for user review.
   install -d -m 750 -o root -g "${TARGET_USER}" "${LINUX_SUDO_LOG_DIR}"
+  if command -v chattr >/dev/null 2>&1; then
+    # Re-installs/upgrades may encounter an existing append-only log file.
+    # Temporarily drop +a so ownership/permission updates cannot fail.
+    chattr -a "${LINUX_SUDO_LOG_FILE}" >/dev/null 2>&1 || true
+  fi
   touch "${LINUX_SUDO_LOG_FILE}"
   chown root:"${TARGET_USER}" "${LINUX_SUDO_LOG_FILE}"
   chmod 640 "${LINUX_SUDO_LOG_FILE}"
