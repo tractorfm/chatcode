@@ -64,17 +64,46 @@ func Install(agent AgentName) (version string, err error) {
 }
 
 func agentScript(agent AgentName) (script, binaryName string, err error) {
+	binaryName, err = binaryForAgent(agent)
+	if err != nil {
+		return "", "", err
+	}
+
 	switch agent {
 	case AgentClaudeCode:
-		return gw.InstallClaudeCodeScript, "claude", nil
+		return gw.InstallClaudeCodeScript, binaryName, nil
 	case AgentCodex:
-		return gw.InstallCodexScript, "codex", nil
+		return gw.InstallCodexScript, binaryName, nil
 	case AgentGemini:
-		return gw.InstallGeminiScript, "gemini", nil
+		return gw.InstallGeminiScript, binaryName, nil
 	case AgentOpenCode:
-		return gw.InstallOpenCodeScript, "opencode", nil
+		return gw.InstallOpenCodeScript, binaryName, nil
 	default:
 		return "", "", fmt.Errorf("unknown agent: %q", agent)
+	}
+}
+
+func binaryForAgent(agent AgentName) (string, error) {
+	switch agent {
+	case AgentClaudeCode:
+		return "claude", nil
+	case AgentCodex:
+		return "codex", nil
+	case AgentGemini:
+		return "gemini", nil
+	case AgentOpenCode:
+		return "opencode", nil
+	default:
+		return "", fmt.Errorf("unknown agent: %q", agent)
+	}
+}
+
+func supportedAgents() []AgentName {
+	return []AgentName{
+		AgentClaudeCode,
+		AgentCodex,
+		AgentGemini,
+		AgentOpenCode,
 	}
 }
 

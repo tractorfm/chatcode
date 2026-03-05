@@ -17,6 +17,7 @@ import type {
   SessionError,
   SessionSnapshotEvent,
   SSHKeyList,
+  AgentsStatus,
   FileContentBegin,
   FileContentChunk,
   FileContentEnd,
@@ -73,13 +74,14 @@ type GatewayEvent =
   | SessionError
   | SessionSnapshotEvent
   | SSHKeyList
+  | AgentsStatus
   | FileContentBegin
   | FileContentChunk
   | FileContentEnd
   | AgentInstalled
   | GatewayUpdated;
 
-type GatewayCommandResult = Ack | SessionSnapshotEvent;
+type GatewayCommandResult = Ack | SessionSnapshotEvent | AgentsStatus;
 
 export class GatewayHub {
   private state: DurableObjectState;
@@ -280,10 +282,11 @@ export class GatewayHub {
         break;
 
       case "ssh.keys":
+      case "agents.status":
       case "agent.installed":
       case "gateway.updated":
         // Forward to pending entry's sourceSocket
-        this.forwardToPending(msg);
+        this.onCommandEvent(msg as { request_id: string });
         break;
 
       case "file.content.begin":
@@ -480,15 +483,19 @@ export class GatewayHub {
     }
   }
 
-  private forwardToPending(msg: { request_id: string }): void {
+  private onCommandEvent(msg: { request_id: string }): void {
     const requestId = msg.request_id;
 
     const entry = this.pending.get(requestId);
     if (!entry) return;
 
+    this.pending.delete(requestId);
+
     if (entry.sourceSocket) {
       safeSend(entry.sourceSocket, JSON.stringify(msg));
     }
+
+    entry.resolve(msg as GatewayCommandResult);
   }
 
   private onGatewayBinary(data: Uint8Array): void {

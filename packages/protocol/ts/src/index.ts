@@ -129,6 +129,10 @@ export interface AgentsInstall extends BaseCommand {
   agent: "claude-code" | "codex" | "gemini" | "opencode";
 }
 
+export interface AgentsList extends BaseCommand {
+  type: "agents.list";
+}
+
 export interface GatewayUpdate extends BaseCommand {
   type: "gateway.update";
   url: string;
@@ -152,6 +156,7 @@ export type Command =
   | FileDownload
   | FileCancel
   | AgentsInstall
+  | AgentsList
   | GatewayUpdate;
 
 // ---------------------------------------------------------------------------
@@ -238,6 +243,19 @@ export interface SSHKeyList extends BaseEvent {
   keys: SSHKey[];
 }
 
+export interface AgentStatus {
+  agent: "claude-code" | "codex" | "gemini" | "opencode";
+  binary: string;
+  installed: boolean;
+  version?: string;
+}
+
+export interface AgentsStatus extends BaseEvent {
+  type: "agents.status";
+  request_id: string;
+  agents: AgentStatus[];
+}
+
 export interface FileContentBegin extends BaseEvent {
   type: "file.content.begin";
   transfer_id: string;
@@ -281,6 +299,7 @@ export type Event =
   | SessionError
   | SessionSnapshotEvent
   | SSHKeyList
+  | AgentsStatus
   | FileContentBegin
   | FileContentChunk
   | FileContentEnd

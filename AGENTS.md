@@ -11,7 +11,8 @@ Ship a reliable MVP path:
 
 - M1 complete (protocol + gateway core).
 - M2 complete + hardening (control-plane, D1 helpers, routes, DO, scheduler).
-- Active: staging validation and M3 auth/session UX.
+- M3 auth/session UX validated in staging.
+- Active: M4 core terminal reliability + M4 UI extraction.
 - Keep scope narrow: reliability before broader UX.
 
 ## Architecture Rules

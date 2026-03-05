@@ -187,6 +187,7 @@ Evolution note (expected, not emergency):
 - `file.download {schema_version, request_id, transfer_id, path}`
 - `file.cancel {schema_version, request_id, transfer_id}`
 - `agents.install {schema_version, request_id, agent}`
+- `agents.list {schema_version, request_id}`
 - `gateway.update {schema_version, request_id, url, sha256, version}`
 
 ### Events (gateway → cloud) – JSON
@@ -207,6 +208,7 @@ Evolution note (expected, not emergency):
 - `file.content.end {schema_version, transfer_id}`
 - `file.error {schema_version, session_id, error}`
 - `agent.installed {schema_version, request_id, agent, version?}`
+- `agents.status {schema_version, request_id, agents:[{agent,binary,installed,version?}]}`
 - `gateway.updated {schema_version, request_id, version}`
 
 Note: file transfer is chunked to avoid large frame limits.

@@ -239,9 +239,10 @@ describe("GatewayHub", () => {
     expect(gatewaySend).toHaveBeenCalledOnce();
   });
 
-  it("forwards request-scoped events to pending source socket", async () => {
+  it("forwards request-scoped events to pending source socket and resolves pending command", async () => {
     const hub = makeHub();
     const sourceSend = vi.fn();
+    const resolve = vi.fn();
 
     const sourceSocket = {
       readyState: WebSocket.OPEN,
@@ -254,7 +255,7 @@ describe("GatewayHub", () => {
         pending: Map<string, { resolve: () => void; reject: () => void; startedAt: number; sourceSocket: WebSocket | null }>;
       }
     ).pending.set("req-keys-1", {
-      resolve: vi.fn(),
+      resolve,
       reject: vi.fn(),
       startedAt: Date.now(),
       sourceSocket,
@@ -275,6 +276,16 @@ describe("GatewayHub", () => {
 
     expect(sourceSend).toHaveBeenCalledOnce();
     expect(sourceSend.mock.calls[0][0]).toContain("\"type\":\"ssh.keys\"");
+    expect(resolve).toHaveBeenCalledOnce();
+    expect(resolve).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "ssh.keys",
+        request_id: "req-keys-1",
+      }),
+    );
+    expect(
+      (hub as unknown as { pending: Map<string, unknown> }).pending.has("req-keys-1"),
+    ).toBe(false);
   });
 
   it("forwards realtime ack to browser waiter when not in pending command map", () => {

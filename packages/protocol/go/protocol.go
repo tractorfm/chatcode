@@ -38,6 +38,7 @@ const (
 	CmdFileDownload    CommandType = "file.download"
 	CmdFileCancel      CommandType = "file.cancel"
 	CmdAgentsInstall   CommandType = "agents.install"
+	CmdAgentsList      CommandType = "agents.list"
 	CmdGatewayUpdate   CommandType = "gateway.update"
 
 	// Events (gateway → CP)
@@ -53,6 +54,7 @@ const (
 	EvtFileContentChunk EventType = "file.content.chunk"
 	EvtFileContentEnd   EventType = "file.content.end"
 	EvtAgentInstalled   EventType = "agent.installed"
+	EvtAgentsStatus     EventType = "agents.status"
 	EvtGatewayUpdated   EventType = "gateway.updated"
 )
 
@@ -232,6 +234,13 @@ type AgentsInstall struct {
 	Agent         AgentType   `json:"agent"`
 }
 
+// AgentsList requests currently detected agent availability.
+type AgentsList struct {
+	Type          CommandType `json:"type"`
+	SchemaVersion string      `json:"schema_version,omitempty"`
+	RequestID     string      `json:"request_id"`
+}
+
 // GatewayUpdateCmd triggers a self-update.
 type GatewayUpdateCmd struct {
 	Type          CommandType `json:"type"`
@@ -377,6 +386,22 @@ type AgentInstalled struct {
 	RequestID     string    `json:"request_id"`
 	Agent         string    `json:"agent"`
 	Version       string    `json:"version,omitempty"`
+}
+
+// AgentStatus describes one supported agent binary on the gateway host.
+type AgentStatus struct {
+	Agent     AgentType `json:"agent"`
+	Binary    string    `json:"binary"`
+	Installed bool      `json:"installed"`
+	Version   string    `json:"version,omitempty"`
+}
+
+// AgentsStatus reports installed/not-installed state for all supported agents.
+type AgentsStatus struct {
+	Type          EventType     `json:"type"`
+	SchemaVersion string        `json:"schema_version,omitempty"`
+	RequestID     string        `json:"request_id"`
+	Agents        []AgentStatus `json:"agents"`
 }
 
 // GatewayUpdated confirms a self-update completed.

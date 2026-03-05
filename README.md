@@ -19,7 +19,8 @@ Current status:
 
 - `M1` complete (protocol + gateway core).
 - `M2` complete and hardened (control plane + reconciliation).
-- Active work: staging validation and session UX (M3).
+- `M3` auth/session staging flows validated.
+- Active work: `M4` terminal reliability and reusable UI components.
 
 ## Architecture (MVP)
 

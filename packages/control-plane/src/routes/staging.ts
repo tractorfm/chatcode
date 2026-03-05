@@ -172,7 +172,9 @@ ${STAGING_TERMINAL_STYLE}
       <label for="session-vps-select">VPS:</label>
       <select id="session-vps-select"></select>
       <button id="sessions-list">List Sessions</button>
+      <button id="agents-list">List Agents</button>
     </div>
+    <pre id="agents-list-panel" class="muted"></pre>
     <div class="row">
       <input id="session-title" value="staging-session" placeholder="title" />
       <select id="session-agent">
@@ -201,6 +203,7 @@ ${STAGING_TERMINAL_SECTION}
         <option value="session.input">session.input</option>
         <option value="session.end">session.end</option>
         <option value="ssh.list">ssh.list</option>
+        <option value="agents.list">agents.list</option>
         <option value="agents.install">agents.install</option>
       </select>
       <input id="schema-session-id" placeholder="session_id" style="min-width: 240px" />
@@ -236,6 +239,7 @@ ${STAGING_TERMINAL_SECTION}
     const sessions = document.getElementById("sessions");
     const schemaWrap = document.getElementById("schema-wrap");
     const vpsListPanel = document.getElementById("vps-list-panel");
+    const agentsListPanel = document.getElementById("agents-list-panel");
     const sessionsListPanel = document.getElementById("sessions-list-panel");
     const sessionsTabs = document.getElementById("sessions-tabs");
     const vpsSelect = document.getElementById("session-vps-select");
@@ -396,6 +400,7 @@ ${STAGING_TERMINAL_SECTION}
         terminalComponent.setVisible(false);
         schemaWrap.style.display = "none";
         vpsListPanel.innerHTML = "";
+        agentsListPanel.textContent = "";
         sessionsTabs.innerHTML = "";
         sessionsListPanel.innerHTML = "";
       }
@@ -536,6 +541,15 @@ ${STAGING_TERMINAL_SECTION}
       return { res, body };
     }
 
+    async function listAgents(vpsId) {
+      if (!vpsId) return;
+      const { res, body } = await call("/vps/" + encodeURIComponent(vpsId) + "/agents", { method: "GET" });
+      if (res.ok && body && Array.isArray(body.agents)) {
+        agentsListPanel.textContent = JSON.stringify(body.agents, null, 2);
+      }
+      return { res, body };
+    }
+
     document.getElementById("email-form").addEventListener("submit", async (e) => {
       e.preventDefault();
       const email = document.getElementById("email").value;
@@ -646,6 +660,13 @@ ${STAGING_TERMINAL_SECTION}
       if (!vpsId) return;
       activeVpsId = vpsId;
       await listSessions(vpsId);
+    });
+
+    document.getElementById("agents-list").addEventListener("click", async () => {
+      const vpsId = vpsSelect.value || activeVpsId;
+      if (!vpsId) return;
+      activeVpsId = vpsId;
+      await listAgents(vpsId);
     });
 
     sessionsTabs.addEventListener("click", (event) => {

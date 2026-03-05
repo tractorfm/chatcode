@@ -37,7 +37,14 @@ import {
   handleVPSPowerOn,
   handleVPSManualCreate,
 } from "./routes/vps.js";
-import { handleSessionList, handleSessionCreate, handleSessionDelete, handleSessionSnapshot, handleTerminalUpgrade } from "./routes/sessions.js";
+import {
+  handleSessionList,
+  handleAgentList,
+  handleSessionCreate,
+  handleSessionDelete,
+  handleSessionSnapshot,
+  handleTerminalUpgrade,
+} from "./routes/sessions.js";
 import { handleStagingCommand, handleStagingTestPage } from "./routes/staging.js";
 
 export { GatewayHub } from "./durables/GatewayHub.js";
@@ -146,6 +153,11 @@ export default {
         const vpsId = sessionsMatch[1];
         if (method === "GET") return withCORS(await handleSessionList(request, env, auth, vpsId));
         if (method === "POST") return withCORS(await handleSessionCreate(request, env, auth, vpsId));
+      }
+
+      const agentsMatch = path.match(/^\/vps\/([a-zA-Z0-9_-]+)\/agents$/);
+      if (agentsMatch && method === "GET") {
+        return withCORS(await handleAgentList(request, env, auth, agentsMatch[1]));
       }
 
       const sessionDeleteMatch = path.match(

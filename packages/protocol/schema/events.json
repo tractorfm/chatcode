@@ -209,6 +209,28 @@
       "required": ["type", "request_id", "agent"]
     },
 
+    "AgentsStatus": {
+      "allOf": [{ "$ref": "#/definitions/BaseEvent" }],
+      "properties": {
+        "type": { "const": "agents.status" },
+        "request_id": { "type": "string" },
+        "agents": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "agent": { "type": "string" },
+              "binary": { "type": "string" },
+              "installed": { "type": "boolean" },
+              "version": { "type": "string" }
+            },
+            "required": ["agent", "binary", "installed"]
+          }
+        }
+      },
+      "required": ["type", "request_id", "agents"]
+    },
+
     "GatewayUpdated": {
       "allOf": [{ "$ref": "#/definitions/BaseEvent" }],
       "properties": {
@@ -233,6 +255,7 @@
     { "$ref": "#/definitions/FileContentChunk" },
     { "$ref": "#/definitions/FileContentEnd" },
     { "$ref": "#/definitions/AgentInstalled" },
+    { "$ref": "#/definitions/AgentsStatus" },
     { "$ref": "#/definitions/GatewayUpdated" }
   ]
 }

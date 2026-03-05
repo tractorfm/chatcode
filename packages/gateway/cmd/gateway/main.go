@@ -277,6 +277,8 @@ func (g *gateway) onTextFrame(ctx context.Context, raw json.RawMessage) {
 		err = g.handleFileCancel(ctx, raw)
 	case "agents.install":
 		err = g.handleAgentsInstall(ctx, raw)
+	case "agents.list":
+		err = g.handleAgentsList(ctx, raw)
 	case "gateway.update":
 		err = g.handleGatewayUpdate(ctx, raw)
 	default:
@@ -641,6 +643,37 @@ func (g *gateway) handleAgentsInstall(ctx context.Context, raw json.RawMessage) 
 		})
 		g.sendAck(ctx, cmd.RequestID, true, "")
 	}()
+	return nil
+}
+
+func (g *gateway) handleAgentsList(ctx context.Context, raw json.RawMessage) error {
+	var cmd struct {
+		RequestID string `json:"request_id"`
+	}
+	if err := json.Unmarshal(raw, &cmd); err != nil {
+		return err
+	}
+
+	statuses := agents.ListStatus()
+	items := make([]map[string]any, 0, len(statuses))
+	for _, s := range statuses {
+		item := map[string]any{
+			"agent":     string(s.Agent),
+			"binary":    s.Binary,
+			"installed": s.Installed,
+		}
+		if s.Version != "" {
+			item["version"] = s.Version
+		}
+		items = append(items, item)
+	}
+
+	g.sendEvent(ctx, map[string]any{
+		"type":       "agents.status",
+		"request_id": cmd.RequestID,
+		"agents":     items,
+	})
+	g.sendAck(ctx, cmd.RequestID, true, "")
 	return nil
 }
 

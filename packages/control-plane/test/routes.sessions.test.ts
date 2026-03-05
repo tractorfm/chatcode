@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  handleAgentList,
   handleSessionCreate,
   handleSessionSnapshot,
   handleTerminalUpgrade,
@@ -88,6 +89,39 @@ describe("routes/sessions", () => {
     expect(stubFetch).toHaveBeenCalledTimes(1);
   });
 
+  it("returns installed agent status from gateway command path", async () => {
+    const { env, stubFetch } = makeEnv(
+      new Response(
+        JSON.stringify({
+          type: "agents.status",
+          schema_version: "1",
+          request_id: "agents-1",
+          agents: [
+            { agent: "claude-code", binary: "claude", installed: true, version: "1.0.0" },
+            { agent: "codex", binary: "codex", installed: false },
+          ],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+
+    const res = await handleAgentList(
+      new Request("https://cp.example.test/vps/vps-1/agents"),
+      env,
+      { userId: "usr-1" },
+      "vps-1",
+    );
+
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toMatchObject({
+      agents: [
+        { agent: "claude-code", binary: "claude", installed: true, version: "1.0.0" },
+        { agent: "codex", binary: "codex", installed: false },
+      ],
+    });
+    expect(stubFetch).toHaveBeenCalledTimes(1);
+  });
+
   it("returns 404 when snapshot session does not belong to vps", async () => {
     mocks.getSession.mockResolvedValue(null);
     const { env, stubFetch } = makeEnv(
@@ -108,7 +142,18 @@ describe("routes/sessions", () => {
   });
 
   it("marks session as error when session.create command fails", async () => {
-    const { env } = makeEnv(new Response("gateway failed", { status: 502 }));
+    const { env } = makeEnv([
+      new Response(
+        JSON.stringify({
+          type: "agents.status",
+          schema_version: "1",
+          request_id: "agents-1",
+          agents: [{ agent: "claude-code", binary: "claude", installed: true, version: "1.0.0" }],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+      new Response("gateway failed", { status: 502 }),
+    ]);
 
     const req = new Request("https://cp.example.test/vps/vps-1/sessions", {
       method: "POST",
@@ -129,6 +174,38 @@ describe("routes/sessions", () => {
       "ses-test-1",
       "error",
     );
+  });
+
+  it("returns 409 when selected managed agent is not installed", async () => {
+    const { env } = makeEnv(
+      new Response(
+        JSON.stringify({
+          type: "agents.status",
+          schema_version: "1",
+          request_id: "agents-1",
+          agents: [{ agent: "claude-code", binary: "claude", installed: false }],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+
+    const req = new Request("https://cp.example.test/vps/vps-1/sessions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: "Test Session",
+        agent_type: "claude-code",
+        workdir: "/home/vibe",
+      }),
+    });
+
+    const res = await handleSessionCreate(req, env, { userId: "usr-1" }, "vps-1");
+    expect(res.status).toBe(409);
+    await expect(res.json()).resolves.toMatchObject({
+      code: "agent_not_installed",
+      agent: "claude-code",
+    });
+    expect(mocks.createSession).not.toHaveBeenCalled();
   });
 
   it("returns 503 for terminal upgrade when gateway is disconnected", async () => {

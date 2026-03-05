@@ -15,6 +15,14 @@ import {
 import { newSessionId } from "../lib/ids.js";
 
 const GATEWAY_LAST_SEEN_FRESH_SECONDS = 90;
+const MANAGED_AGENT_TYPES = new Set(["claude-code", "codex", "gemini", "opencode"]);
+
+interface GatewayAgentStatus {
+  agent: string;
+  binary: string;
+  installed: boolean;
+  version?: string;
+}
 
 /**
  * GET /vps/:id/sessions – List sessions for a VPS.
@@ -32,6 +40,38 @@ export async function handleSessionList(
 
   const sessions = await listSessionsByVPS(env.DB, vpsId);
   return jsonResponse({ sessions });
+}
+
+/**
+ * GET /vps/:id/agents – query gateway for installed agent CLIs.
+ */
+export async function handleAgentList(
+  _request: Request,
+  env: Env,
+  auth: AuthContext,
+  vpsId: string,
+): Promise<Response> {
+  const vps = await getVPS(env.DB, vpsId);
+  if (!vps || vps.user_id !== auth.userId) {
+    return jsonResponse({ error: "not found" }, 404);
+  }
+
+  const gateway = await getGatewayByVPS(env.DB, vpsId);
+  if (!gateway?.connected) {
+    return jsonResponse({ error: "gateway not connected" }, 503);
+  }
+  if (!(await isGatewayLive(env, gateway.id, gateway.last_seen_at))) {
+    await updateGatewayConnected(env.DB, gateway.id, false);
+    return jsonResponse({ error: "gateway not connected" }, 503);
+  }
+
+  const doId = env.GATEWAY_HUB.idFromName(gateway.id);
+  const agents = await fetchGatewayAgents(env, doId);
+  if (!agents) {
+    return jsonResponse({ error: "agents.list failed" }, 502);
+  }
+
+  return jsonResponse({ agents });
 }
 
 /**
@@ -65,6 +105,26 @@ export async function handleSessionCreate(
     agent_type?: string;
     workdir?: string;
   };
+  const agentType = body.agent_type || "claude-code";
+
+  if (MANAGED_AGENT_TYPES.has(agentType)) {
+    const doId = env.GATEWAY_HUB.idFromName(gateway.id);
+    const agents = await fetchGatewayAgents(env, doId);
+    if (!agents) {
+      return jsonResponse({ error: "agents.list failed" }, 502);
+    }
+    const target = agents.find((item) => item.agent === agentType);
+    if (!target?.installed) {
+      return jsonResponse(
+        {
+          error: `${agentType} is not installed. Run agents.install first.`,
+          code: "agent_not_installed",
+          agent: agentType,
+        },
+        409,
+      );
+    }
+  }
 
   const sessionId = newSessionId();
   const now = Math.floor(Date.now() / 1000);
@@ -75,7 +135,7 @@ export async function handleSessionCreate(
     user_id: auth.userId,
     vps_id: vpsId,
     title: body.title || "New Session",
-    agent_type: body.agent_type || "claude-code",
+    agent_type: agentType,
     workdir: body.workdir || "/home/vibe",
     status: "starting",
     created_at: now,
@@ -93,7 +153,7 @@ export async function handleSessionCreate(
     session_id: sessionId,
     name: body.title || "New Session",
     workdir: body.workdir || "/home/vibe",
-    agent: body.agent_type || "claude-code",
+    agent: agentType,
   };
 
   const cmdResp = await stub.fetch(
@@ -307,4 +367,36 @@ async function isGatewayLive(
   } catch {
     return false;
   }
+}
+
+async function fetchGatewayAgents(
+  env: Env,
+  doId: DurableObjectId,
+): Promise<GatewayAgentStatus[] | null> {
+  const stub = env.GATEWAY_HUB.get(doId);
+  const cmd = {
+    type: "agents.list",
+    schema_version: "1",
+    request_id: `agents-${Date.now()}`,
+  };
+
+  const cmdResp = await stub.fetch(
+    new Request("http://do/cmd", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(cmd),
+    }),
+  );
+  if (!cmdResp.ok) {
+    return null;
+  }
+
+  const payload = (await cmdResp.json()) as {
+    type?: string;
+    agents?: GatewayAgentStatus[];
+  };
+  if (payload.type !== "agents.status" || !Array.isArray(payload.agents)) {
+    return null;
+  }
+  return payload.agents;
 }

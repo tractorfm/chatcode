@@ -199,6 +199,14 @@
       "required": ["type", "request_id", "agent"]
     },
 
+    "AgentsList": {
+      "allOf": [{ "$ref": "#/definitions/BaseCommand" }],
+      "properties": {
+        "type": { "const": "agents.list" }
+      },
+      "required": ["type", "request_id"]
+    },
+
     "GatewayUpdate": {
       "allOf": [{ "$ref": "#/definitions/BaseCommand" }],
       "properties": {
@@ -227,6 +235,7 @@
     { "$ref": "#/definitions/FileDownload" },
     { "$ref": "#/definitions/FileCancel" },
     { "$ref": "#/definitions/AgentsInstall" },
+    { "$ref": "#/definitions/AgentsList" },
     { "$ref": "#/definitions/GatewayUpdate" }
   ]
 }

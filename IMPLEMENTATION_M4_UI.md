@@ -76,8 +76,9 @@ UI contract dependencies:
 ### Deliverables
 1. Session list panel with status and last activity.
 2. Create session flow with title/agent/workdir.
-3. Connect/disconnect/end controls.
-4. Clear user feedback for provisioning/gateway offline states.
+3. Agent preflight in UI via `GET /vps/:id/agents` so create flow can warn/install missing CLIs before session start.
+4. Connect/disconnect/end controls.
+5. Clear user feedback for provisioning/gateway offline states.
 
 ### Exit Criteria
 1. Full session lifecycle usable without raw JSON tools.
