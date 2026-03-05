@@ -190,3 +190,31 @@ Required checks before merge:
 3. Session lock behavior stable under parallel clients.
 4. Gateway restart/reconnect does not corrupt session status.
 5. All required tests pass in CI and local smoke checks.
+
+---
+
+## Trade-offs & Deferred Improvements
+
+These are intentional MVP decisions with follow-up items tracked for post-M4 hardening.
+
+1. Terminal transport:
+   - Current: `capture-pane -e` + tmux state polling (durable/simple).
+   - Deferred: raw PTY stream path only if proven necessary by concrete app gaps.
+2. Session create path latency:
+   - Current: managed-agent preflight (`agents.list`) before `session.create`.
+   - Deferred: short TTL cache per-gateway or status piggyback in `gateway.health`.
+3. Trust model:
+   - Current: no end-to-end encryption between browser and gateway.
+   - Deferred: optional E2E mode for terminal payloads.
+4. Gateway self-update safety:
+   - Current: checksum verification + restart, no automatic rollback on bad restart.
+   - Deferred: staged health check + automatic rollback to previous binary.
+5. Multi-client session control:
+   - Current: single active writer lock per session; others are read-only.
+   - Deferred: explicit UX/API for lock take-over policies and telemetry.
+6. Staging auth ergonomics:
+   - Current: `AUTH_MODE=dev` header auth protected by `DEV_AUTH_SECRET`.
+   - Deferred: stricter staging policy parity with production where useful.
+7. Release publishing operations:
+   - Current: manual R2 publish fallback exists when tag workflow misses.
+   - Deferred: make tag-trigger path deterministic and add release smoke gate.

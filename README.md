@@ -91,6 +91,12 @@ Security details, verification checklist, and roadmap:
 
 - [`docs/SECURITY.md`](docs/SECURITY.md)
 
+## Known MVP Trade-offs
+
+Product/runtime trade-offs and deferred hardening items are tracked in:
+
+- [`IMPLEMENTATION_M4_CORE.md`](IMPLEMENTATION_M4_CORE.md) ("Trade-offs & Deferred Improvements")
+
 ## Self-Host in Your Own Cloudflare Account
 
 You can run Chatcode control-plane and release distribution in your own Cloudflare account and domain.
