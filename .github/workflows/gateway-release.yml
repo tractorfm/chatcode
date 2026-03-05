@@ -4,14 +4,49 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Release tag (e.g. v0.0.6). Required when running from a branch ref."
+        required: false
+        type: string
 
 permissions:
   contents: write
 
 jobs:
+  prepare:
+    name: Resolve Release Tag
+    runs-on: ubuntu-latest
+    outputs:
+      release_tag: ${{ steps.resolve.outputs.release_tag }}
+    steps:
+      - name: Resolve tag
+        id: resolve
+        run: |
+          set -euo pipefail
+
+          tag="${{ github.event.inputs.release_tag || '' }}"
+          if [[ -z "${tag}" ]]; then
+            if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+              tag="${GITHUB_REF#refs/tags/}"
+            else
+              echo "::error::release_tag input is required when workflow is not run from a tag ref."
+              exit 1
+            fi
+          fi
+
+          if [[ ! "${tag}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9._-]+)?$ ]]; then
+            echo "::error::invalid release tag: ${tag}"
+            exit 1
+          fi
+
+          echo "release_tag=${tag}" >> "${GITHUB_OUTPUT}"
+
   build:
     name: Build ${{ matrix.goos }}/${{ matrix.goarch }}
     runs-on: ubuntu-latest
+    needs: prepare
     strategy:
       fail-fast: false
       matrix:
@@ -37,7 +72,7 @@ jobs:
         working-directory: packages/gateway
         run: |
           set -euo pipefail
-          VERSION="${GITHUB_REF_NAME}"
+          VERSION="${{ needs.prepare.outputs.release_tag }}"
           BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           DIST_DIR="dist/${VERSION}"
           OUT="${DIST_DIR}/chatcode-gateway-${{ matrix.goos }}-${{ matrix.goarch }}"
@@ -51,12 +86,12 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: gateway-bin-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: packages/gateway/dist/${{ github.ref_name }}/chatcode-gateway-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: packages/gateway/dist/${{ needs.prepare.outputs.release_tag }}/chatcode-gateway-${{ matrix.goos }}-${{ matrix.goarch }}
 
   bundle:
     name: Assemble Release Bundle
     runs-on: ubuntu-latest
-    needs: build
+    needs: [prepare, build]
 
     steps:
       - name: Checkout
@@ -67,13 +102,13 @@ jobs:
         with:
           pattern: gateway-bin-*
           merge-multiple: true
-          path: packages/gateway/dist/${{ github.ref_name }}
+          path: packages/gateway/dist/${{ needs.prepare.outputs.release_tag }}
 
       - name: Assemble scripts + checksums
         working-directory: packages/gateway
         run: |
           set -euo pipefail
-          VERSION="${GITHUB_REF_NAME}"
+          VERSION="${{ needs.prepare.outputs.release_tag }}"
           DIST_DIR="dist/${VERSION}"
 
           : > "${DIST_DIR}/checksums.txt"
@@ -115,19 +150,21 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: gateway-release-bundle
-          path: packages/gateway/dist/${{ github.ref_name }}
+          path: packages/gateway/dist/${{ needs.prepare.outputs.release_tag }}
 
   github-release:
     name: Publish GitHub Release Assets
     runs-on: ubuntu-latest
-    needs: bundle
+    needs: [prepare, bundle]
 
     steps:
       - name: Remove existing release for tag (clean asset set)
         uses: actions/github-script@v7
+        env:
+          RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
         with:
           script: |
-            const tag = context.ref.replace("refs/tags/", "");
+            const tag = process.env.RELEASE_TAG;
             const owner = context.repo.owner;
             const repo = context.repo.repo;
             try {
@@ -144,9 +181,11 @@ jobs:
 
       - name: Remove legacy release assets (if release exists)
         uses: actions/github-script@v7
+        env:
+          RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
         with:
           script: |
-            const tag = context.ref.replace("refs/tags/", "");
+            const tag = process.env.RELEASE_TAG;
             const owner = context.repo.owner;
             const repo = context.repo.repo;
             const legacyNames = new Set(["install.sh", "manual-install.sh"]);
@@ -174,17 +213,18 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: gateway-release-bundle
-          path: dist/${{ github.ref_name }}
+          path: dist/${{ needs.prepare.outputs.release_tag }}
 
       - name: Publish release assets
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/${{ github.ref_name }}/*
+          tag_name: ${{ needs.prepare.outputs.release_tag }}
+          files: dist/${{ needs.prepare.outputs.release_tag }}/*
 
   publish-r2:
     name: Publish Release Bundle to R2
     runs-on: ubuntu-latest
-    needs: bundle
+    needs: [prepare, bundle]
     env:
       R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID || secrets.CF_ACCOUNT_ID }}
       R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
@@ -211,7 +251,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: gateway-release-bundle
-          path: packages/gateway/dist/${{ github.ref_name }}
+          path: packages/gateway/dist/${{ needs.prepare.outputs.release_tag }}
 
       - name: Ensure AWS CLI
         if: ${{ steps.check.outputs.enabled == 'true' }}
@@ -249,4 +289,4 @@ jobs:
           R2_ACCESS_KEY_ID: ${{ env.R2_ACCESS_KEY_ID }}
           R2_SECRET_ACCESS_KEY: ${{ env.R2_SECRET_ACCESS_KEY }}
           RELEASE_PREFIX: gateway
-        run: ./scripts/publish-release-r2.sh "${GITHUB_REF_NAME}" "${R2_RELEASE_BUCKET}"
+        run: ./scripts/publish-release-r2.sh "${{ needs.prepare.outputs.release_tag }}" "${R2_RELEASE_BUCKET}"
