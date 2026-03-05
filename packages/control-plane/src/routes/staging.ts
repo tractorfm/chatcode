@@ -203,6 +203,8 @@ ${STAGING_TERMINAL_SECTION}
         <option value="session.resize">session.resize</option>
         <option value="session.input">session.input</option>
         <option value="session.end">session.end</option>
+        <option value="ssh.authorize">ssh.authorize</option>
+        <option value="ssh.revoke">ssh.revoke</option>
         <option value="ssh.list">ssh.list</option>
         <option value="agents.list">agents.list</option>
         <option value="agents.install">agents.install</option>
@@ -217,6 +219,13 @@ ${STAGING_TERMINAL_SECTION}
         <option value="gemini">gemini</option>
         <option value="opencode">opencode</option>
       </select>
+    </div>
+    <div class="row">
+      <input id="schema-ssh-label" placeholder="ssh label (for ssh.authorize)" style="min-width: 220px" />
+      <input id="schema-ssh-fingerprint" placeholder="fingerprint (for ssh.revoke)" style="min-width: 280px" />
+    </div>
+    <div class="row">
+      <input id="schema-ssh-public-key" placeholder="ssh-ed25519 ... (for ssh.authorize)" style="min-width: 680px; width: 100%" />
     </div>
     <div class="row">
       <button id="schema-build">Build Preset</button>
@@ -250,6 +259,9 @@ ${STAGING_TERMINAL_SECTION}
     const schemaCols = document.getElementById("schema-cols");
     const schemaRows = document.getElementById("schema-rows");
     const schemaAgent = document.getElementById("schema-agent");
+    const schemaSSHLabel = document.getElementById("schema-ssh-label");
+    const schemaSSHFingerprint = document.getElementById("schema-ssh-fingerprint");
+    const schemaSSHPublicKey = document.getElementById("schema-ssh-public-key");
     const schemaJson = document.getElementById("schema-json");
 
     let vpsRows = [];
@@ -344,6 +356,15 @@ ${STAGING_TERMINAL_SECTION}
 
       if (type === "agents.install") {
         cmd.agent = schemaAgent.value || "claude-code";
+      }
+
+      if (type === "ssh.authorize") {
+        cmd.label = (schemaSSHLabel.value || "staging-key").trim();
+        cmd.public_key = (schemaSSHPublicKey.value || "").trim();
+      }
+
+      if (type === "ssh.revoke") {
+        cmd.fingerprint = (schemaSSHFingerprint.value || "").trim();
       }
 
       return cmd;
@@ -554,7 +575,7 @@ ${STAGING_TERMINAL_SECTION}
       const ip = vps && typeof vps.ipv4 === "string" ? vps.ipv4.trim() : "";
       if (!ip) return "";
       const tmuxName = "vibe-" + sessionId;
-      return "ssh root@" + ip + " -t 'sudo -u vibe env TMUX_TMPDIR=/tmp/chatcode tmux attach -t " + tmuxName + "'";
+      return "ssh vibe@" + ip + " -t 'env TMUX_TMPDIR=/tmp/chatcode tmux attach -t " + tmuxName + "'";
     }
 
     async function copyToClipboard(text) {
