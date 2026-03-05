@@ -30,7 +30,7 @@ install -d -m 755 "${BOOTSTRAP_TMP_DIR}"
 curl -fsSL -o "${INSTALLER_PATH}" "${GATEWAY_RELEASE_BASE_URL}/${GATEWAY_VERSION}/gateway-install.sh"
 chmod 0755 "${INSTALLER_PATH}"
 
-for dep in update-agent-clis.sh install-claude-code.sh install-codex.sh install-gemini.sh install-opencode.sh; do
+for dep in update-agent-clis.sh install-git.sh install-claude-code.sh install-codex.sh install-gemini.sh install-opencode.sh; do
   if curl -fsSL -o "${BOOTSTRAP_TMP_DIR}/${dep}" "${GATEWAY_RELEASE_BASE_URL}/${GATEWAY_VERSION}/${dep}"; then
     chmod 0755 "${BOOTSTRAP_TMP_DIR}/${dep}"
   else

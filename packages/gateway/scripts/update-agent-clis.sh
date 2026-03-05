@@ -54,6 +54,21 @@ installer_for_agent() {
   esac
 }
 
+run_git_installer() {
+  local installer
+  installer="${SCRIPT_DIR}/install-git.sh"
+  if [[ ! -f "${installer}" ]]; then
+    log "missing git installer script: ${installer}"
+    return 1
+  fi
+  if [[ ! -x "${installer}" ]]; then
+    chmod +x "${installer}" >/dev/null 2>&1 || true
+  fi
+
+  log "ensure git is installed"
+  "${installer}"
+}
+
 is_supported_agent() {
   local candidate="$1"
   local a
@@ -119,7 +134,16 @@ if [[ ${#agents[@]} -eq 0 ]]; then
   exit 0
 fi
 
-failures=0
+if ! run_git_installer; then
+  log "git install/update failed"
+  if [[ "${BEST_EFFORT}" -ne 1 ]]; then
+    exit 1
+  fi
+  failures=1
+else
+  failures=0
+fi
+
 for agent in "${agents[@]}"; do
   installer="$(installer_for_agent "${agent}")" || {
     log "missing installer mapping for ${agent}"

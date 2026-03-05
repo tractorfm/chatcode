@@ -35,6 +35,7 @@ LINUX_MAINTENANCE_SCRIPT="/usr/local/sbin/chatcode-maintenance"
 LINUX_MAINTENANCE_LOCK="/var/lock/chatcode-maintenance.lock"
 LINUX_AGENT_UPDATE_HELPER="/usr/local/sbin/chatcode-update-agent-clis"
 LINUX_AGENT_INSTALLER_SCRIPTS=(
+  "/usr/local/sbin/install-git.sh"
   "/usr/local/sbin/install-claude-code.sh"
   "/usr/local/sbin/install-codex.sh"
   "/usr/local/sbin/install-gemini.sh"
@@ -242,6 +243,7 @@ case "${OS_NAME}" in
     INSTALLER_CODEX="${USER_HOME}/.local/bin/install-codex.sh"
     INSTALLER_GEMINI="${USER_HOME}/.local/bin/install-gemini.sh"
     INSTALLER_OPENCODE="${USER_HOME}/.local/bin/install-opencode.sh"
+    INSTALLER_GIT="${USER_HOME}/.local/bin/install-git.sh"
     WORKSPACE_DIR="${USER_HOME}/workspace"
 
     bootout_darwin_agent "${USER_UID}" "${DARWIN_LABEL}" "${PLIST_PATH}"
@@ -257,6 +259,7 @@ case "${OS_NAME}" in
     safe_rm_file "${INSTALLER_CODEX}"
     safe_rm_file "${INSTALLER_GEMINI}"
     safe_rm_file "${INSTALLER_OPENCODE}"
+    safe_rm_file "${INSTALLER_GIT}"
     safe_rm_dir "${CONFIG_DIR}"
     safe_rm_dir "/tmp/chatcode"
 

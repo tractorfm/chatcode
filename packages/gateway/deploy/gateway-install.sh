@@ -260,7 +260,7 @@ download_agent_update_script_source() {
   fi
   chmod 0755 "${helper_path}"
 
-  for dep in install-claude-code.sh install-codex.sh install-gemini.sh install-opencode.sh; do
+  for dep in install-git.sh install-claude-code.sh install-codex.sh install-gemini.sh install-opencode.sh; do
     dep_url="${base_url}/${version}/${dep}"
     if curl -fsSL -o "${tmp_dir}/${dep}" "${dep_url}"; then
       chmod 0755 "${tmp_dir}/${dep}"
@@ -554,7 +554,7 @@ install_agent_update_helper() {
 
   install -d -m 755 "${target_dir}"
   install -m 0755 "${source_path}" "${target_path}"
-  for dep in install-claude-code.sh install-codex.sh install-gemini.sh install-opencode.sh; do
+  for dep in install-git.sh install-claude-code.sh install-codex.sh install-gemini.sh install-opencode.sh; do
     if [[ -f "${source_dir}/${dep}" ]]; then
       install -m 0755 "${source_dir}/${dep}" "${target_dir}/${dep}"
     fi
@@ -562,14 +562,14 @@ install_agent_update_helper() {
 
   if [[ "${OS_NAME}" == "Linux" ]]; then
     chown root:root "${target_path}" >/dev/null 2>&1 || true
-    for dep in install-claude-code.sh install-codex.sh install-gemini.sh install-opencode.sh; do
+    for dep in install-git.sh install-claude-code.sh install-codex.sh install-gemini.sh install-opencode.sh; do
       if [[ -f "${target_dir}/${dep}" ]]; then
         chown root:root "${target_dir}/${dep}" >/dev/null 2>&1 || true
       fi
     done
   else
     chown "${TARGET_USER}:${TARGET_GROUP}" "${target_path}" >/dev/null 2>&1 || true
-    for dep in install-claude-code.sh install-codex.sh install-gemini.sh install-opencode.sh; do
+    for dep in install-git.sh install-claude-code.sh install-codex.sh install-gemini.sh install-opencode.sh; do
       if [[ -f "${target_dir}/${dep}" ]]; then
         chown "${TARGET_USER}:${TARGET_GROUP}" "${target_dir}/${dep}" >/dev/null 2>&1 || true
       fi

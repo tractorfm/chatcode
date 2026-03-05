@@ -124,6 +124,7 @@ jobs:
           cp deploy/cloud-init.sh "${DIST_DIR}/cloud-init.sh"
           cp deploy/chatcode-gateway.service "${DIST_DIR}/chatcode-gateway.service"
           cp scripts/update-agent-clis.sh "${DIST_DIR}/update-agent-clis.sh"
+          cp scripts/install-git.sh "${DIST_DIR}/install-git.sh"
           cp scripts/install-claude-code.sh "${DIST_DIR}/install-claude-code.sh"
           cp scripts/install-codex.sh "${DIST_DIR}/install-codex.sh"
           cp scripts/install-gemini.sh "${DIST_DIR}/install-gemini.sh"
@@ -133,6 +134,7 @@ jobs:
             "${DIST_DIR}/gateway-cleanup.sh" \
             "${DIST_DIR}/cloud-init.sh" \
             "${DIST_DIR}/update-agent-clis.sh" \
+            "${DIST_DIR}/install-git.sh" \
             "${DIST_DIR}/install-claude-code.sh" \
             "${DIST_DIR}/install-codex.sh" \
             "${DIST_DIR}/install-gemini.sh" \

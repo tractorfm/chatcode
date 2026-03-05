@@ -46,7 +46,7 @@ Linux mode:
 - preinstalls default agent CLIs: `claude-code` and `codex`
 - installs reusable helper scripts in `/usr/local/sbin`:
   - `chatcode-update-agent-clis`
-  - `install-claude-code.sh`, `install-codex.sh`, `install-gemini.sh`, `install-opencode.sh`
+  - `install-git.sh`, `install-claude-code.sh`, `install-codex.sh`, `install-gemini.sh`, `install-opencode.sh`
 - configures sudo logging for `vibe` at `/var/log/chatcode/sudo-vibe.log`
 - installs log rotation policy at `/etc/logrotate.d/chatcode-sudo-vibe`
 - installs `chatcode-gateway.service` and starts it
@@ -131,6 +131,7 @@ Default behavior:
 - new installs preinstall `claude-code` + `codex`
 - periodic automated updates target all installed agent CLIs + gateway binary
 - automation uses the same installer scripts for both preinstall and updates
+- `update-agent-clis.sh` ensures `git` is installed first (`install-git.sh`)
 
 Update all installed CLIs to latest:
 ```bash

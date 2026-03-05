@@ -78,12 +78,13 @@ cp deploy/gateway-cleanup.sh "${DIST_DIR}/gateway-cleanup.sh"
 cp deploy/cloud-init.sh "${DIST_DIR}/cloud-init.sh"
 cp deploy/chatcode-gateway.service "${DIST_DIR}/chatcode-gateway.service"
 cp scripts/update-agent-clis.sh "${DIST_DIR}/update-agent-clis.sh"
+cp scripts/install-git.sh "${DIST_DIR}/install-git.sh"
 cp scripts/install-claude-code.sh "${DIST_DIR}/install-claude-code.sh"
 cp scripts/install-codex.sh "${DIST_DIR}/install-codex.sh"
 cp scripts/install-gemini.sh "${DIST_DIR}/install-gemini.sh"
 cp scripts/install-opencode.sh "${DIST_DIR}/install-opencode.sh"
 chmod +x "${DIST_DIR}/gateway-install.sh" "${DIST_DIR}/gateway-cleanup.sh" "${DIST_DIR}/cloud-init.sh"
-chmod +x "${DIST_DIR}/update-agent-clis.sh" "${DIST_DIR}/install-claude-code.sh" "${DIST_DIR}/install-codex.sh" "${DIST_DIR}/install-gemini.sh" "${DIST_DIR}/install-opencode.sh"
+chmod +x "${DIST_DIR}/update-agent-clis.sh" "${DIST_DIR}/install-git.sh" "${DIST_DIR}/install-claude-code.sh" "${DIST_DIR}/install-codex.sh" "${DIST_DIR}/install-gemini.sh" "${DIST_DIR}/install-opencode.sh"
 printf '%s\n' "${VERSION}" > "${DIST_DIR}/latest.txt"
 
 cat > "${DIST_DIR}/manifest.json" <<JSON
@@ -96,6 +97,7 @@ cat > "${DIST_DIR}/manifest.json" <<JSON
     "gateway-install.sh",
     "gateway-cleanup.sh",
     "update-agent-clis.sh",
+    "install-git.sh",
     "install-claude-code.sh",
     "install-codex.sh",
     "install-gemini.sh",
