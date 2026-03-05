@@ -31,9 +31,10 @@ curl -fsSL -o "${INSTALLER_PATH}" "${GATEWAY_RELEASE_BASE_URL}/${GATEWAY_VERSION
 chmod 0755 "${INSTALLER_PATH}"
 
 for dep in update-agent-clis.sh install-claude-code.sh install-codex.sh install-gemini.sh install-opencode.sh; do
-  curl -fsSL -o "${BOOTSTRAP_TMP_DIR}/${dep}" "${GATEWAY_RELEASE_BASE_URL}/${GATEWAY_VERSION}/${dep}" || true
-  if [[ -f "${BOOTSTRAP_TMP_DIR}/${dep}" ]]; then
+  if curl -fsSL -o "${BOOTSTRAP_TMP_DIR}/${dep}" "${GATEWAY_RELEASE_BASE_URL}/${GATEWAY_VERSION}/${dep}"; then
     chmod 0755 "${BOOTSTRAP_TMP_DIR}/${dep}"
+  else
+    echo "[cloud-init] WARN: unable to download ${dep}; installer will continue without it"
   fi
 done
 

@@ -126,13 +126,13 @@ for agent in "${agents[@]}"; do
     failures=$((failures + 1))
     continue
   }
-  if [[ ! -x "${installer}" ]]; then
-    chmod +x "${installer}" >/dev/null 2>&1 || true
-  fi
   if [[ ! -f "${installer}" ]]; then
     log "missing installer script for ${agent}: ${installer}"
     failures=$((failures + 1))
     continue
+  fi
+  if [[ ! -x "${installer}" ]]; then
+    chmod +x "${installer}" >/dev/null 2>&1 || true
   fi
 
   log "install/update ${agent}"

@@ -163,7 +163,9 @@ hash_file() {
 resolve_version() {
   local base_url="$1"
   local version="$2"
+  local version_re='^v[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9._-]+)?$'
   if [[ "$version" != "latest" ]]; then
+    [[ "$version" =~ $version_re ]] || die "invalid version format: ${version}"
     echo "$version"
     return
   fi
@@ -171,6 +173,7 @@ resolve_version() {
   local latest
   latest="$(curl -fsSL "${base_url}/latest.txt" | tr -d '[:space:]')"
   [[ -n "$latest" ]] || die "failed to resolve latest version from ${base_url}/latest.txt"
+  [[ "$latest" =~ $version_re ]] || die "invalid latest version value: ${latest}"
   echo "$latest"
 }
 
@@ -587,12 +590,14 @@ detect_release_arch() {
 
 update_gateway() {
   local arch current_version latest_version tmp_dir expected_sha actual_sha object_name
+  local version_re='^v[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9._-]+)?$'
 
   if [ ! -s "$ENV_FILE" ]; then
     log "env file not found, skipping gateway update"
     return
   fi
 
+  # Trusted local file written by installer with mode 600.
   # shellcheck disable=SC1090
   source "$ENV_FILE"
   arch="$(detect_release_arch)" || {
@@ -603,6 +608,10 @@ update_gateway() {
 
   current_version="${GATEWAY_VERSION:-}"
   latest_version="$(curl -fsSL "${GATEWAY_RELEASE_BASE_URL:-https://releases.chatcode.dev/gateway}/latest.txt" | tr -d '[:space:]')"
+  if [[ ! "$latest_version" =~ $version_re ]]; then
+    log "WARNING: invalid latest version value: ${latest_version}"
+    return
+  fi
   if [ -z "$latest_version" ] || [ "$latest_version" = "$current_version" ]; then
     return
   fi
@@ -626,6 +635,7 @@ update_gateway() {
     echo "GATEWAY_VERSION=${latest_version}" >> "$ENV_FILE"
   fi
   systemctl restart "$SERVICE_NAME"
+  # TODO: keep and auto-restore a previous binary if restart health check fails.
   log "gateway updated to ${latest_version}"
 }
 
@@ -715,13 +725,19 @@ kickstart_gateway() {
 
 update_gateway() {
   local arch current_version latest_version base_url tmp_dir object_name expected_sha actual_sha
+  local version_re='^v[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9._-]+)?$'
   [ -s "$ENV_FILE" ] || return
+  # Trusted local file written by installer with mode 600.
   # shellcheck disable=SC1090
   source "$ENV_FILE"
   arch="$(detect_release_arch)" || return
   base_url="${GATEWAY_RELEASE_BASE_URL:-https://releases.chatcode.dev/gateway}"
   current_version="${GATEWAY_VERSION:-}"
   latest_version="$(curl -fsSL "${base_url}/latest.txt" | tr -d '[:space:]')"
+  if [[ ! "$latest_version" =~ $version_re ]]; then
+    log "WARNING: invalid latest version value: ${latest_version}"
+    return
+  fi
   if [ -z "$latest_version" ] || [ "$latest_version" = "$current_version" ]; then
     return
   fi
@@ -739,6 +755,7 @@ update_gateway() {
   else
     echo "GATEWAY_VERSION=${latest_version}" >> "$ENV_FILE"
   fi
+  # TODO: keep and auto-restore a previous binary if gateway restart health check fails.
   kickstart_gateway
 }
 

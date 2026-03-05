@@ -21,3 +21,6 @@ packages/*/dist/
 .idea/
 .vscode/
 *.swp
+
+# Local developer secrets
+.dev-secrets.env
