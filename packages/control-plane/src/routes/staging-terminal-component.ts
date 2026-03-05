@@ -205,7 +205,7 @@ export const STAGING_TERMINAL_COMPONENT_SCRIPT = `
       if (!term) {
         const initialThemeName = getThemeName();
         term = new window.Terminal({
-          cursorBlink: true,
+          cursorBlink: false,
           convertEol: true,
           fontSize: 13,
           fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace',
