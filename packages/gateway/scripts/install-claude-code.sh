@@ -20,6 +20,7 @@ ensure_node() {
     fi
 
     if [ "${os}" = "Linux" ]; then
+        # Linux package install path assumes Debian/Ubuntu (our managed VPS image).
         if [ "${EUID:-$(id -u)}" -eq 0 ]; then
             curl -fsSL https://deb.nodesource.com/setup_24.x | bash -
             apt-get install -y nodejs

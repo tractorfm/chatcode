@@ -15,6 +15,7 @@ os="$(uname -s)"
 log "Git not found, installing for ${os}..."
 
 if [[ "${os}" == "Linux" ]]; then
+  # Linux package install path assumes Debian/Ubuntu (our managed VPS image).
   if [[ "${EUID:-$(id -u)}" -eq 0 ]]; then
     export DEBIAN_FRONTEND=noninteractive
     apt-get update -q
