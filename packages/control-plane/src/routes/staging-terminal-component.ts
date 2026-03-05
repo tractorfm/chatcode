@@ -18,6 +18,13 @@ export const STAGING_TERMINAL_SECTION = `
     <div class="row">
       <label for="terminal-session-id">Session:</label>
       <input id="terminal-session-id" placeholder="session id" style="min-width: 280px" />
+      <label for="terminal-theme">Theme:</label>
+      <select id="terminal-theme">
+        <option value="default">default</option>
+        <option value="iterm2">iterm2</option>
+        <option value="solarized-dark">solarized-dark</option>
+        <option value="tango-dark">tango-dark</option>
+      </select>
       <button id="terminal-connect">Connect</button>
       <button id="terminal-disconnect">Disconnect</button>
       <button id="terminal-snapshot">Snapshot</button>
@@ -33,6 +40,7 @@ export const STAGING_TERMINAL_COMPONENT_SCRIPT = `
     const terminalWrap = document.getElementById("terminal-wrap");
     const terminalNode = document.getElementById("terminal");
     const terminalSessionInput = document.getElementById("terminal-session-id");
+    const terminalThemeSelect = document.getElementById("terminal-theme");
     const terminalStatus = document.getElementById("terminal-status");
 
     let term = null;
@@ -48,6 +56,81 @@ export const STAGING_TERMINAL_COMPONENT_SCRIPT = `
     let lastResizeRows = 0;
     let activeSessionId = "";
     const terminalMinHeightPx = Number(config.terminalMinHeightPx || 720);
+    const terminalThemeStorageKey = "chatcode.staging.terminal.theme";
+    const terminalThemes = {
+      default: {
+        background: "#111111",
+        foreground: "#dddddd",
+        cursor: "#e6e6e6",
+        selectionBackground: "#35506b",
+      },
+      iterm2: {
+        background: "#101421",
+        foreground: "#c7c7c7",
+        cursor: "#c7c7c7",
+        selectionBackground: "#3f638b",
+        black: "#000000",
+        red: "#c91b00",
+        green: "#00c200",
+        yellow: "#c7c400",
+        blue: "#0225c7",
+        magenta: "#ca30c7",
+        cyan: "#00c5c7",
+        white: "#c7c7c7",
+        brightBlack: "#686868",
+        brightRed: "#ff6e67",
+        brightGreen: "#5ffa68",
+        brightYellow: "#fffc67",
+        brightBlue: "#6871ff",
+        brightMagenta: "#ff77ff",
+        brightCyan: "#60fdff",
+        brightWhite: "#ffffff",
+      },
+      "solarized-dark": {
+        background: "#002b36",
+        foreground: "#839496",
+        cursor: "#93a1a1",
+        selectionBackground: "#073642",
+        black: "#073642",
+        red: "#dc322f",
+        green: "#859900",
+        yellow: "#b58900",
+        blue: "#268bd2",
+        magenta: "#d33682",
+        cyan: "#2aa198",
+        white: "#eee8d5",
+        brightBlack: "#002b36",
+        brightRed: "#cb4b16",
+        brightGreen: "#586e75",
+        brightYellow: "#657b83",
+        brightBlue: "#839496",
+        brightMagenta: "#6c71c4",
+        brightCyan: "#93a1a1",
+        brightWhite: "#fdf6e3",
+      },
+      "tango-dark": {
+        background: "#000000",
+        foreground: "#d3d7cf",
+        cursor: "#d3d7cf",
+        selectionBackground: "#204a87",
+        black: "#2e3436",
+        red: "#cc0000",
+        green: "#4e9a06",
+        yellow: "#c4a000",
+        blue: "#3465a4",
+        magenta: "#75507b",
+        cyan: "#06989a",
+        white: "#d3d7cf",
+        brightBlack: "#555753",
+        brightRed: "#ef2929",
+        brightGreen: "#8ae234",
+        brightYellow: "#fce94f",
+        brightBlue: "#729fcf",
+        brightMagenta: "#ad7fa8",
+        brightCyan: "#34e2e2",
+        brightWhite: "#eeeeec",
+      },
+    };
 
     function decodeTerminalFrame(data) {
       const buf = new Uint8Array(data);
@@ -65,6 +148,39 @@ export const STAGING_TERMINAL_COMPONENT_SCRIPT = `
 
     function setTerminalStatus(text) {
       if (terminalStatus) terminalStatus.textContent = text;
+    }
+
+    function getStoredThemeName() {
+      try {
+        const raw = window.localStorage.getItem(terminalThemeStorageKey);
+        if (raw && terminalThemes[raw]) return raw;
+      } catch {}
+      return "default";
+    }
+
+    function getThemeName() {
+      if (terminalThemeSelect && terminalThemes[terminalThemeSelect.value]) {
+        return terminalThemeSelect.value;
+      }
+      return getStoredThemeName();
+    }
+
+    function getTheme(themeName) {
+      if (terminalThemes[themeName]) return terminalThemes[themeName];
+      return terminalThemes.default;
+    }
+
+    function applyTheme(themeName, persist) {
+      const resolvedTheme = getTheme(themeName);
+      const resolvedName = terminalThemes[themeName] ? themeName : "default";
+      if (terminalThemeSelect && terminalThemeSelect.value !== resolvedName) {
+        terminalThemeSelect.value = resolvedName;
+      }
+      if (persist) {
+        try { window.localStorage.setItem(terminalThemeStorageKey, resolvedName); } catch {}
+      }
+      if (!term) return;
+      term.options.theme = resolvedTheme;
     }
 
     function setSessionId(sessionId) {
@@ -87,13 +203,14 @@ export const STAGING_TERMINAL_COMPONENT_SCRIPT = `
         return false;
       }
       if (!term) {
+        const initialThemeName = getThemeName();
         term = new window.Terminal({
           cursorBlink: true,
           convertEol: true,
           fontSize: 13,
           fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace',
           scrollback: 50000,
-          theme: { background: "#111", foreground: "#ddd" },
+          theme: getTheme(initialThemeName),
         });
         if (window.FitAddon && typeof window.FitAddon.FitAddon === "function") {
           fitAddon = new window.FitAddon.FitAddon();
@@ -119,6 +236,7 @@ export const STAGING_TERMINAL_COMPONENT_SCRIPT = `
           termResizeObserver = new window.ResizeObserver(() => scheduleFit());
           termResizeObserver.observe(terminalNode);
         }
+        applyTheme(initialThemeName, true);
       }
       return true;
     }
@@ -199,6 +317,16 @@ export const STAGING_TERMINAL_COMPONENT_SCRIPT = `
       lastResizeCols = 0;
       lastResizeRows = 0;
       setTerminalStatus("disconnected");
+    }
+
+    if (terminalThemeSelect) {
+      const storedTheme = getStoredThemeName();
+      if (terminalThemes[storedTheme]) {
+        terminalThemeSelect.value = storedTheme;
+      }
+      terminalThemeSelect.addEventListener("change", () => {
+        applyTheme(getThemeName(), true);
+      });
     }
 
     async function connect(vpsId, sessionId) {
