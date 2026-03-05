@@ -647,7 +647,7 @@ update_gateway() {
   fi
 
   tmp_dir="$(mktemp -d)"
-  trap 'rm -rf "$tmp_dir"' RETURN
+  trap '[[ -n "${tmp_dir:-}" ]] && rm -rf "${tmp_dir}"' RETURN
   curl -fsSL -o "${tmp_dir}/gateway" "${GATEWAY_RELEASE_BASE_URL}/${latest_version}/${object_name}"
   curl -fsSL -o "${tmp_dir}/gateway.sha256" "${GATEWAY_RELEASE_BASE_URL}/${latest_version}/${object_name}.sha256"
 
@@ -773,7 +773,7 @@ update_gateway() {
   fi
   object_name="chatcode-gateway-darwin-${arch}"
   tmp_dir="$(mktemp -d)"
-  trap 'rm -rf "$tmp_dir"' RETURN
+  trap '[[ -n "${tmp_dir:-}" ]] && rm -rf "${tmp_dir}"' RETURN
   curl -fsSL -o "${tmp_dir}/gateway" "${base_url}/${latest_version}/${object_name}"
   curl -fsSL -o "${tmp_dir}/gateway.sha256" "${base_url}/${latest_version}/${object_name}.sha256"
   expected_sha="$(awk '{print $1}' "${tmp_dir}/gateway.sha256" | tr -d '[:space:]')"
