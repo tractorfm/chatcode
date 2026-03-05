@@ -20,6 +20,7 @@ export interface Env {
   GATEWAY_VERSION?: string;
   GATEWAY_RELEASE_BASE_URL?: string;
   AUTH_MODE?: string; // "dev" for local dev only
+  DEV_AUTH_SECRET?: string; // optional shared secret for dev header auth
 
   // Secrets (set via `wrangler secret put`)
   DO_CLIENT_SECRET: string;

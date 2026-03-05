@@ -19,8 +19,13 @@ ensure_node() {
     fi
 
     if [ "${os}" = "Linux" ]; then
-        curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
-        sudo apt-get install -y nodejs
+        if [ "${EUID:-$(id -u)}" -eq 0 ]; then
+            curl -fsSL https://deb.nodesource.com/setup_24.x | bash -
+            apt-get install -y nodejs
+        else
+            curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
+            sudo apt-get install -y nodejs
+        fi
         return 0
     fi
 

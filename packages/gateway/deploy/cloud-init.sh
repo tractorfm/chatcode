@@ -1,178 +1,54 @@
 #!/usr/bin/env bash
-# cloud-init.sh – Bootstrap a DigitalOcean droplet for Chatcode.dev
-#
-# This script is intended to be passed as cloud-init user-data or run
-# manually on a fresh Ubuntu 22.04 droplet.
-#
-# Required environment variables (set before running):
-#   GATEWAY_ID         – assigned by control plane
-#   GATEWAY_AUTH_TOKEN – assigned by control plane
-#   GATEWAY_CP_URL     – e.g. wss://cp.chatcode.dev/gw/connect
-#   GATEWAY_VERSION    – release tag to install, e.g. "v0.1.0"
-#
-# Optional:
-#   GATEWAY_RELEASE_BASE_URL – defaults to https://releases.chatcode.dev/gateway
-#
-# This bootstrap also configures sudo command logging for user `vibe`:
-#   /var/log/chatcode/sudo-vibe.log
-#   /etc/logrotate.d/chatcode-sudo-vibe (handles append-only rotate)
+# cloud-init.sh – Bootstrap a DigitalOcean droplet for Chatcode.dev by
+# delegating to gateway-install.sh from the selected release.
 set -euo pipefail
 
 GATEWAY_RELEASE_BASE_URL="${GATEWAY_RELEASE_BASE_URL:-https://releases.chatcode.dev/gateway}"
-BINARY_PATH="/usr/local/bin/chatcode-gateway"
-SERVICE_NAME="chatcode-gateway"
-CONFIG_DIR="/etc/chatcode"
-VIBE_USER="vibe"
-VIBE_HOME="/home/vibe"
+BOOTSTRAP_TMP_DIR="/tmp/chatcode-bootstrap"
+INSTALLER_PATH="${BOOTSTRAP_TMP_DIR}/gateway-install.sh"
 
-echo "[cloud-init] Chatcode.dev gateway bootstrap starting..."
+echo "[cloud-init] Chatcode.dev bootstrap starting..."
 
-# ----- System setup -----
+require_env() {
+  local name="$1"
+  if [[ -z "${!name:-}" ]]; then
+    echo "[cloud-init] ERROR: ${name} not set" >&2
+    exit 1
+  fi
+}
 
-# Update and install dependencies
+require_env GATEWAY_ID
+require_env GATEWAY_AUTH_TOKEN
+require_env GATEWAY_CP_URL
+require_env GATEWAY_VERSION
+
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -q
-apt-get install -y -q tmux curl ca-certificates git logrotate
+apt-get install -y -q tmux curl ca-certificates git logrotate sudo
 
-# Create vibe user if it doesn't exist
-if ! id "$VIBE_USER" &>/dev/null; then
-    useradd -m -s /bin/bash "$VIBE_USER"
+install -d -m 755 "${BOOTSTRAP_TMP_DIR}"
+curl -fsSL -o "${INSTALLER_PATH}" "${GATEWAY_RELEASE_BASE_URL}/${GATEWAY_VERSION}/gateway-install.sh"
+chmod 0755 "${INSTALLER_PATH}"
+
+for dep in update-agent-clis.sh install-claude-code.sh install-codex.sh install-gemini.sh install-opencode.sh; do
+  curl -fsSL -o "${BOOTSTRAP_TMP_DIR}/${dep}" "${GATEWAY_RELEASE_BASE_URL}/${GATEWAY_VERSION}/${dep}" || true
+  if [[ -f "${BOOTSTRAP_TMP_DIR}/${dep}" ]]; then
+    chmod 0755 "${BOOTSTRAP_TMP_DIR}/${dep}"
+  fi
+done
+
+install_args=(
+  --version "${GATEWAY_VERSION}"
+  --release-base-url "${GATEWAY_RELEASE_BASE_URL}"
+  --gateway-id "${GATEWAY_ID}"
+  --gateway-auth-token "${GATEWAY_AUTH_TOKEN}"
+  --cp-url "${GATEWAY_CP_URL}"
+)
+
+if [[ -n "${GATEWAY_BOOTSTRAP_TOKEN:-}" ]]; then
+  install_args+=(--bootstrap-token "${GATEWAY_BOOTSTRAP_TOKEN}")
 fi
 
-# Configure sudo command logging for vibe.
-install -d -m 750 -o root -g "$VIBE_USER" /var/log/chatcode
-touch /var/log/chatcode/sudo-vibe.log
-chown root:"$VIBE_USER" /var/log/chatcode/sudo-vibe.log
-chmod 640 /var/log/chatcode/sudo-vibe.log
-if command -v chattr >/dev/null 2>&1; then
-    chattr +a /var/log/chatcode/sudo-vibe.log >/dev/null 2>&1 || true
-fi
-
-cat > /etc/sudoers.d/vibe <<EOF
-Defaults:$VIBE_USER use_pty
-Defaults:$VIBE_USER logfile="/var/log/chatcode/sudo-vibe.log"
-$VIBE_USER ALL=(ALL) NOPASSWD:ALL
-EOF
-chmod 0440 /etc/sudoers.d/vibe
-
-cat > /etc/logrotate.d/chatcode-sudo-vibe <<'EOF'
-/var/log/chatcode/sudo-vibe.log {
-    daily
-    rotate 14
-    compress
-    missingok
-    notifempty
-    create 0640 root vibe
-    sharedscripts
-    prerotate
-        if command -v chattr >/dev/null 2>&1; then
-            chattr -a /var/log/chatcode/sudo-vibe.log >/dev/null 2>&1 || true
-        fi
-    endscript
-    postrotate
-        if command -v chattr >/dev/null 2>&1; then
-            chattr +a /var/log/chatcode/sudo-vibe.log >/dev/null 2>&1 || true
-        fi
-    endscript
-}
-EOF
-chmod 0644 /etc/logrotate.d/chatcode-sudo-vibe
-
-# Set up SSH directory
-mkdir -p "$VIBE_HOME/.ssh"
-chmod 700 "$VIBE_HOME/.ssh"
-touch "$VIBE_HOME/.ssh/authorized_keys"
-chmod 600 "$VIBE_HOME/.ssh/authorized_keys"
-chown -R "$VIBE_USER:$VIBE_USER" "$VIBE_HOME/.ssh"
-
-# ----- Install gateway binary -----
-
-if [ -z "${GATEWAY_VERSION:-}" ]; then
-    echo "[cloud-init] ERROR: GATEWAY_VERSION not set" >&2
-    exit 1
-fi
-
-ARCH="$(uname -m)"
-case "$ARCH" in
-    x86_64|amd64) RELEASE_ARCH="amd64" ;;
-    aarch64|arm64) RELEASE_ARCH="arm64" ;;
-    *)
-        echo "[cloud-init] ERROR: unsupported architecture: $ARCH" >&2
-        exit 1
-        ;;
-esac
-
-BINARY_URL="$GATEWAY_RELEASE_BASE_URL/$GATEWAY_VERSION/chatcode-gateway-linux-$RELEASE_ARCH"
-SHA256_URL="$BINARY_URL.sha256"
-
-echo "[cloud-init] Downloading gateway $GATEWAY_VERSION..."
-curl -fsSL -o "${BINARY_PATH}.new" "$BINARY_URL"
-curl -fsSL -o "${BINARY_PATH}.sha256" "$SHA256_URL"
-
-# Verify checksum
-EXPECTED_SHA256=$(awk '{print $1}' "${BINARY_PATH}.sha256")
-ACTUAL_SHA256=$(sha256sum "${BINARY_PATH}.new" | awk '{print $1}')
-if [ "$EXPECTED_SHA256" != "$ACTUAL_SHA256" ]; then
-    echo "[cloud-init] ERROR: checksum mismatch" >&2
-    echo "  expected: $EXPECTED_SHA256" >&2
-    echo "  actual:   $ACTUAL_SHA256" >&2
-    rm -f "${BINARY_PATH}.new" "${BINARY_PATH}.sha256"
-    exit 1
-fi
-
-mv "${BINARY_PATH}.new" "$BINARY_PATH"
-chmod 755 "$BINARY_PATH"
-rm -f "${BINARY_PATH}.sha256"
-
-echo "[cloud-init] Gateway binary installed: $BINARY_PATH"
-
-# ----- Write config -----
-
-mkdir -p "$CONFIG_DIR"
-chmod 750 "$CONFIG_DIR"
-
-cat > "$CONFIG_DIR/gateway.env" <<EOF
-GATEWAY_ID=${GATEWAY_ID}
-GATEWAY_AUTH_TOKEN=${GATEWAY_AUTH_TOKEN}
-GATEWAY_CP_URL=${GATEWAY_CP_URL}
-GATEWAY_BINARY_PATH=${BINARY_PATH}
-GATEWAY_LOG_LEVEL=info
-EOF
-
-chmod 600 "$CONFIG_DIR/gateway.env"
-
-# ----- Install systemd unit -----
-
-cat > "/etc/systemd/system/$SERVICE_NAME.service" <<'UNIT'
-[Unit]
-Description=Chatcode.dev Gateway Daemon
-After=network-online.target
-Wants=network-online.target
-StartLimitIntervalSec=60
-StartLimitBurst=5
-
-[Service]
-Type=simple
-User=vibe
-Group=vibe
-WorkingDirectory=/home/vibe
-ExecStart=/usr/local/bin/chatcode-gateway
-EnvironmentFile=/etc/chatcode/gateway.env
-Restart=on-failure
-RestartSec=5s
-StandardOutput=journal
-StandardError=journal
-SyslogIdentifier=chatcode-gateway
-
-[Install]
-WantedBy=multi-user.target
-UNIT
-
-systemctl daemon-reload
-systemctl enable "$SERVICE_NAME"
-systemctl start "$SERVICE_NAME"
-
-echo "[cloud-init] Gateway service started."
-systemctl status "$SERVICE_NAME" --no-pager || true
+"${INSTALLER_PATH}" "${install_args[@]}"
 
 echo "[cloud-init] Bootstrap complete!"

@@ -2,7 +2,7 @@
  * Request authentication:
  * - Session cookie sign/verify (HMAC-SHA256) for browser requests
  * - Gateway HMAC token verification (timing-safe)
- * - AUTH_MODE=dev passthrough via X-Dev-User header
+ * - AUTH_MODE=dev passthrough via X-Dev-User header (+ optional secret)
  */
 
 import type { Env, AuthContext } from "../types.js";
@@ -95,6 +95,16 @@ export async function authenticateRequest(
   if (env.AUTH_MODE === "dev") {
     const devUser = request.headers.get("X-Dev-User");
     if (devUser) {
+      const requiredDevSecret = env.DEV_AUTH_SECRET?.trim();
+      if (requiredDevSecret) {
+        const providedDevSecret = request.headers.get("X-Dev-Secret") || "";
+        if (!timingSafeEqual(providedDevSecret, requiredDevSecret)) {
+          return new Response(JSON.stringify({ error: "unauthorized" }), {
+            status: 401,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+      }
       return { userId: devUser };
     }
   }

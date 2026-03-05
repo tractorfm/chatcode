@@ -121,6 +121,12 @@ function htmlPage(): string {
     .muted { color: #666; font-size: 12px; }
 ${STAGING_TERMINAL_STYLE}
     .vps-card, .session-card { padding: 8px; border: 1px solid #ddd; margin-top: 8px; border-radius: 4px; }
+    .session-card { padding: 6px 8px; }
+    .session-line { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 4px; }
+    .session-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+    .session-tabs { display: flex; gap: 6px; margin-bottom: 8px; }
+    .session-tab { border: 1px solid #bbb; background: #f6f6f6; border-radius: 4px; padding: 4px 8px; cursor: pointer; }
+    .session-tab.active { background: #1a73e8; border-color: #1a73e8; color: #fff; }
     #schema-json { width: 100%; min-height: 150px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
   </style>
 </head>
@@ -179,6 +185,7 @@ ${STAGING_TERMINAL_STYLE}
       <input id="session-workdir" value="/home/vibe/workspace" placeholder="workdir" />
       <button id="session-create">Create Session</button>
     </div>
+    <div id="sessions-tabs" class="session-tabs"></div>
     <div id="sessions-list-panel"></div>
   </div>
 
@@ -230,6 +237,7 @@ ${STAGING_TERMINAL_SECTION}
     const schemaWrap = document.getElementById("schema-wrap");
     const vpsListPanel = document.getElementById("vps-list-panel");
     const sessionsListPanel = document.getElementById("sessions-list-panel");
+    const sessionsTabs = document.getElementById("sessions-tabs");
     const vpsSelect = document.getElementById("session-vps-select");
     const schemaCommandType = document.getElementById("schema-command-type");
     const schemaSessionId = document.getElementById("schema-session-id");
@@ -242,6 +250,8 @@ ${STAGING_TERMINAL_SECTION}
     let vpsRows = [];
     let activeVpsId = "";
     let activeSessionId = "";
+    let activeSessionsTab = "open";
+    const sessionsByVps = new Map();
 
     function show(obj) {
       out.textContent = typeof obj === "string" ? obj : JSON.stringify(obj, null, 2);
@@ -386,6 +396,7 @@ ${STAGING_TERMINAL_SECTION}
         terminalComponent.setVisible(false);
         schemaWrap.style.display = "none";
         vpsListPanel.innerHTML = "";
+        sessionsTabs.innerHTML = "";
         sessionsListPanel.innerHTML = "";
       }
     }
@@ -426,6 +437,41 @@ ${STAGING_TERMINAL_SECTION}
       }).join("");
     }
 
+    function isClosedSessionStatus(status) {
+      const normalized = String(status || "").toLowerCase();
+      return (
+        normalized === "ended" ||
+        normalized === "error" ||
+        normalized === "failed" ||
+        normalized === "closed" ||
+        normalized.endsWith("_timeout")
+      );
+    }
+
+    function renderSessionTabs(rows) {
+      const openCount = rows.filter((row) => !isClosedSessionStatus(row.status)).length;
+      const closedCount = rows.length - openCount;
+      const tabs = [
+        { key: "open", label: "Open (" + openCount + ")" },
+        { key: "closed", label: "Closed (" + closedCount + ")" },
+        { key: "all", label: "All (" + rows.length + ")" },
+      ];
+      sessionsTabs.innerHTML = tabs
+        .map((tab) => {
+          const activeClass = tab.key === activeSessionsTab ? " active" : "";
+          return (
+            "<button class='session-tab" +
+            activeClass +
+            "' data-tab='" +
+            tab.key +
+            "'>" +
+            escapeHtml(tab.label) +
+            "</button>"
+          );
+        })
+        .join("");
+    }
+
     async function listVPS() {
       const { res, body } = await call("/vps", { method: "GET" });
       if (res.ok && body && Array.isArray(body.vps)) {
@@ -439,11 +485,26 @@ ${STAGING_TERMINAL_SECTION}
 
     function renderSessions(vpsId, sessionRows) {
       if (!Array.isArray(sessionRows) || sessionRows.length === 0) {
+        sessionsTabs.innerHTML = "";
         sessionsListPanel.innerHTML = "<p>No sessions for " + escapeHtml(vpsId) + ".</p>";
         return;
       }
 
-      const html = sessionRows.map((row) => {
+      renderSessionTabs(sessionRows);
+
+      const filteredRows = sessionRows.filter((row) => {
+        if (activeSessionsTab === "all") return true;
+        const closed = isClosedSessionStatus(row.status);
+        return activeSessionsTab === "closed" ? closed : !closed;
+      });
+
+      if (filteredRows.length === 0) {
+        sessionsListPanel.innerHTML =
+          "<p>No " + escapeHtml(activeSessionsTab) + " sessions for " + escapeHtml(vpsId) + ".</p>";
+        return;
+      }
+
+      const html = filteredRows.map((row) => {
         const sid = escapeHtml(row.id);
         const status = escapeHtml(row.status || "unknown");
         const title = escapeHtml(row.title || "");
@@ -451,12 +512,13 @@ ${STAGING_TERMINAL_SECTION}
         const wd = escapeHtml(row.workdir || "");
         return (
           "<div class='session-card'>" +
-          "<div><strong>" + sid + "</strong></div>" +
-          "<div>Title: " + title + " | Agent: " + agent + " | Status: " + status + "</div>" +
-          "<div>Workdir: " + wd + "</div>" +
+          "<div class='session-line'><strong>" + sid + "</strong><span>[" + status + "]</span><span>" + title + "</span><span>" + agent + "</span></div>" +
+          "<div class='session-line muted'>Workdir: " + wd + "</div>" +
+          "<div class='session-actions'>" +
           "<button data-vps='" + escapeHtml(vpsId) + "' data-sid='" + sid + "' class='connect-session'>Connect</button>" +
           "<button data-vps='" + escapeHtml(vpsId) + "' data-sid='" + sid + "' class='snapshot-session'>Snapshot</button>" +
           "<button data-vps='" + escapeHtml(vpsId) + "' data-sid='" + sid + "' class='end-session'>End</button>" +
+          "</div>" +
           "</div>"
         );
       }).join("");
@@ -468,6 +530,7 @@ ${STAGING_TERMINAL_SECTION}
       if (!vpsId) return;
       const { res, body } = await call("/vps/" + encodeURIComponent(vpsId) + "/sessions", { method: "GET" });
       if (res.ok && body && Array.isArray(body.sessions)) {
+        sessionsByVps.set(vpsId, body.sessions);
         renderSessions(vpsId, body.sessions);
       }
       return { res, body };
@@ -583,6 +646,22 @@ ${STAGING_TERMINAL_SECTION}
       if (!vpsId) return;
       activeVpsId = vpsId;
       await listSessions(vpsId);
+    });
+
+    sessionsTabs.addEventListener("click", (event) => {
+      const target = event.target;
+      if (!target || !target.classList || !target.classList.contains("session-tab")) {
+        return;
+      }
+      const tab = target.dataset.tab;
+      if (!tab || (tab !== "open" && tab !== "closed" && tab !== "all")) {
+        return;
+      }
+      activeSessionsTab = tab;
+      const vpsId = vpsSelect.value || activeVpsId;
+      if (!vpsId) return;
+      const rows = sessionsByVps.get(vpsId) || [];
+      renderSessions(vpsId, rows);
     });
 
     document.getElementById("session-create").addEventListener("click", async () => {

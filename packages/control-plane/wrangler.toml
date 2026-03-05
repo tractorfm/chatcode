@@ -34,6 +34,8 @@ DEFAULT_DROPLET_IMAGE = "ubuntu-24-04-x64"
 GATEWAY_VERSION = "v0.0.3"
 GATEWAY_RELEASE_BASE_URL = "https://releases.chatcode.dev/gateway"
 AUTH_MODE = "dev"
+# Optional hardening for AUTH_MODE=dev:
+# set with `wrangler secret put DEV_AUTH_SECRET --env <env>`
 
 [env.staging]
 name = "chatcode-cp-staging"

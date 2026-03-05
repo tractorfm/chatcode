@@ -17,9 +17,14 @@ LINUX_SUDOERS_FILE="/etc/sudoers.d/vibe"
 LINUX_SUDO_LOG_DIR="/var/log/chatcode"
 LINUX_SUDO_LOG_FILE="${LINUX_SUDO_LOG_DIR}/sudo-vibe.log"
 LINUX_LOGROTATE_FILE="/etc/logrotate.d/chatcode-sudo-vibe"
+LINUX_AGENT_UPDATE_HELPER="/usr/local/sbin/chatcode-update-agent-clis"
+LINUX_MAINTENANCE_SCRIPT="/usr/local/sbin/chatcode-maintenance"
+LINUX_MAINTENANCE_SERVICE="/etc/systemd/system/chatcode-maintenance.service"
+LINUX_MAINTENANCE_TIMER="/etc/systemd/system/chatcode-maintenance.timer"
 
 # macOS paths/ids (current user model).
 DARWIN_LABEL="dev.chatcode.gateway"
+DARWIN_MAINTENANCE_LABEL="dev.chatcode.maintenance"
 
 GATEWAY_ID="${GATEWAY_ID:-}"
 GATEWAY_AUTH_TOKEN="${GATEWAY_AUTH_TOKEN:-}"
@@ -34,6 +39,7 @@ GATEWAY_VERSION="${GATEWAY_VERSION:-latest}"
 GATEWAY_RELEASE_BASE_URL="${GATEWAY_RELEASE_BASE_URL:-https://releases.chatcode.dev/gateway}"
 BINARY_PATH="${BINARY_PATH:-}"
 NO_START=0
+SKIP_AGENT_PREINSTALL=0
 DOWNLOAD_TMP_DIR=""
 
 OS_NAME="$(uname -s)"
@@ -45,7 +51,10 @@ ENV_FILE=""
 SERVICE_FILE=""
 SUDOERS_FILE=""
 DARWIN_PLIST_PATH=""
+DARWIN_MAINTENANCE_PLIST_PATH=""
 DARWIN_LOG_DIR=""
+AGENT_UPDATE_HELPER_PATH=""
+AGENT_UPDATE_SOURCE=""
 
 usage() {
   cat <<'USAGE'
@@ -73,11 +82,15 @@ Options:
   --health-interval DURATION Health interval (default: 30s).
   --max-sessions N           Max sessions (default: 5).
   --no-start                 Install files but do not start/restart service now.
+  --skip-agent-preinstall    Do not preinstall default agents (claude-code, codex).
   -h, --help                 Show this help.
 
 Notes:
   - Linux mode expects root and installs a dedicated `vibe` user + systemd unit.
-  - macOS mode must run as the target non-root user and installs a launchd agent.
+    It also preinstalls `claude-code` + `codex`, and enables a daily maintenance timer
+    that updates installed agent CLIs and the gateway binary.
+  - macOS mode must run as the target non-root user and installs launchd agents
+    for both gateway runtime and daily maintenance.
 USAGE
 }
 
@@ -206,6 +219,27 @@ download_release_binary() {
   echo "${DOWNLOAD_TMP_DIR}/chatcode-gateway"
 }
 
+resolve_agent_update_script_source() {
+  local install_dir source_path
+  install_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+  # Repo path: deploy/../scripts/update-agent-clis.sh
+  source_path="${install_dir}/../scripts/update-agent-clis.sh"
+  if [[ -f "${source_path}" ]]; then
+    echo "${source_path}"
+    return 0
+  fi
+
+  # Release artifact path: next to gateway-install.sh
+  source_path="${install_dir}/update-agent-clis.sh"
+  if [[ -f "${source_path}" ]]; then
+    echo "${source_path}"
+    return 0
+  fi
+
+  return 1
+}
+
 xml_escape() {
   local s="$1"
   s="${s//&/&amp;}"
@@ -235,6 +269,7 @@ GATEWAY_LOG_LEVEL=${GATEWAY_LOG_LEVEL}
 GATEWAY_HEALTH_INTERVAL=${GATEWAY_HEALTH_INTERVAL}
 GATEWAY_MAX_SESSIONS=${GATEWAY_MAX_SESSIONS}
 GATEWAY_VERSION=${install_version}
+GATEWAY_RELEASE_BASE_URL=${GATEWAY_RELEASE_BASE_URL}
 ENV
   if [[ -n "${GATEWAY_BOOTSTRAP_TOKEN}" ]]; then
     echo "GATEWAY_BOOTSTRAP_TOKEN=${GATEWAY_BOOTSTRAP_TOKEN}" >> "${tmp_env}"
@@ -344,24 +379,69 @@ PLIST
   chmod 644 "${DARWIN_PLIST_PATH}"
 }
 
+write_darwin_maintenance_plist() {
+  install -d -m 755 "$(dirname "${DARWIN_MAINTENANCE_PLIST_PATH}")"
+  install -d -m 755 "${DARWIN_LOG_DIR}"
+
+  {
+    cat <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>${DARWIN_MAINTENANCE_LABEL}</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>$(xml_escape "${TARGET_HOME}/.local/bin/chatcode-maintenance")</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>$(xml_escape "${TARGET_HOME}")</string>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>5</integer>
+    <key>Minute</key>
+    <integer>0</integer>
+  </dict>
+  <key>StandardOutPath</key>
+  <string>$(xml_escape "${DARWIN_LOG_DIR}/chatcode-maintenance.log")</string>
+  <key>StandardErrorPath</key>
+  <string>$(xml_escape "${DARWIN_LOG_DIR}/chatcode-maintenance.err.log")</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
+</dict>
+</plist>
+PLIST
+  } > "${DARWIN_MAINTENANCE_PLIST_PATH}"
+
+  chmod 644 "${DARWIN_MAINTENANCE_PLIST_PATH}"
+}
+
 bootout_darwin_agent() {
+  local label="$1"
+  local plist_path="$2"
   local uid
   uid="$(id -u)"
-  launchctl bootout "gui/${uid}" "${DARWIN_PLIST_PATH}" >/dev/null 2>&1 || true
-  launchctl bootout "gui/${uid}/${DARWIN_LABEL}" >/dev/null 2>&1 || true
-  launchctl bootout "user/${uid}" "${DARWIN_PLIST_PATH}" >/dev/null 2>&1 || true
-  launchctl bootout "user/${uid}/${DARWIN_LABEL}" >/dev/null 2>&1 || true
+  launchctl bootout "gui/${uid}" "${plist_path}" >/dev/null 2>&1 || true
+  launchctl bootout "gui/${uid}/${label}" >/dev/null 2>&1 || true
+  launchctl bootout "user/${uid}" "${plist_path}" >/dev/null 2>&1 || true
+  launchctl bootout "user/${uid}/${label}" >/dev/null 2>&1 || true
 }
 
 bootstrap_darwin_agent() {
+  local plist_path="$1"
   local uid
   uid="$(id -u)"
 
-  if launchctl bootstrap "gui/${uid}" "${DARWIN_PLIST_PATH}" >/dev/null 2>&1; then
+  if launchctl bootstrap "gui/${uid}" "${plist_path}" >/dev/null 2>&1; then
     echo "gui/${uid}"
     return 0
   fi
-  if launchctl bootstrap "user/${uid}" "${DARWIN_PLIST_PATH}" >/dev/null 2>&1; then
+  if launchctl bootstrap "user/${uid}" "${plist_path}" >/dev/null 2>&1; then
     echo "user/${uid}"
     return 0
   fi
@@ -430,6 +510,253 @@ ${LINUX_SUDO_LOG_FILE} {
 }
 EOF
   chmod 0644 "${LINUX_LOGROTATE_FILE}"
+}
+
+install_agent_update_helper() {
+  local source_path="$1"
+  local target_path="$2"
+  local source_dir target_dir dep
+  source_dir="$(dirname "${source_path}")"
+  target_dir="$(dirname "${target_path}")"
+
+  install -d -m 755 "${target_dir}"
+  install -m 0755 "${source_path}" "${target_path}"
+  for dep in install-claude-code.sh install-codex.sh install-gemini.sh install-opencode.sh; do
+    if [[ -f "${source_dir}/${dep}" ]]; then
+      install -m 0755 "${source_dir}/${dep}" "${target_dir}/${dep}"
+    fi
+  done
+
+  if [[ "${OS_NAME}" == "Linux" ]]; then
+    chown root:root "${target_path}" >/dev/null 2>&1 || true
+    for dep in install-claude-code.sh install-codex.sh install-gemini.sh install-opencode.sh; do
+      if [[ -f "${target_dir}/${dep}" ]]; then
+        chown root:root "${target_dir}/${dep}" >/dev/null 2>&1 || true
+      fi
+    done
+  else
+    chown "${TARGET_USER}:${TARGET_GROUP}" "${target_path}" >/dev/null 2>&1 || true
+    for dep in install-claude-code.sh install-codex.sh install-gemini.sh install-opencode.sh; do
+      if [[ -f "${target_dir}/${dep}" ]]; then
+        chown "${TARGET_USER}:${TARGET_GROUP}" "${target_dir}/${dep}" >/dev/null 2>&1 || true
+      fi
+    done
+  fi
+}
+
+preinstall_default_agents() {
+  if [[ "${SKIP_AGENT_PREINSTALL}" -eq 1 ]]; then
+    log "skipping default agent preinstall"
+    return 0
+  fi
+  if [[ -z "${AGENT_UPDATE_HELPER_PATH}" || ! -x "${AGENT_UPDATE_HELPER_PATH}" ]]; then
+    log "warning: no agent update helper found; skipping preinstall"
+    return 0
+  fi
+
+  log "preinstalling default agents (claude-code, codex)"
+  if ! "${AGENT_UPDATE_HELPER_PATH}" --best-effort claude-code codex; then
+    log "warning: default agent preinstall encountered errors"
+  fi
+}
+
+write_linux_maintenance_script() {
+  cat > "${LINUX_MAINTENANCE_SCRIPT}" <<'SCRIPT'
+#!/usr/bin/env bash
+set -euo pipefail
+
+LOG_PREFIX="[chatcode-maintenance]"
+ENV_FILE="/etc/chatcode/gateway.env"
+AGENT_HELPER="/usr/local/sbin/chatcode-update-agent-clis"
+SERVICE_NAME="chatcode-gateway"
+LOCK_FILE="/var/lock/chatcode-maintenance.lock"
+
+log() {
+  echo "${LOG_PREFIX} $*"
+}
+
+detect_release_arch() {
+  local machine
+  machine="$(uname -m)"
+  case "${machine}" in
+    x86_64|amd64) echo "amd64" ;;
+    aarch64|arm64) echo "arm64" ;;
+    *) return 1 ;;
+  esac
+}
+
+update_gateway() {
+  local arch current_version latest_version tmp_dir expected_sha actual_sha object_name
+
+  if [ ! -s "$ENV_FILE" ]; then
+    log "env file not found, skipping gateway update"
+    return
+  fi
+
+  # shellcheck disable=SC1090
+  source "$ENV_FILE"
+  arch="$(detect_release_arch)" || {
+    log "unsupported architecture, skipping gateway update"
+    return
+  }
+  object_name="chatcode-gateway-linux-${arch}"
+
+  current_version="${GATEWAY_VERSION:-}"
+  latest_version="$(curl -fsSL "${GATEWAY_RELEASE_BASE_URL:-https://releases.chatcode.dev/gateway}/latest.txt" | tr -d '[:space:]')"
+  if [ -z "$latest_version" ] || [ "$latest_version" = "$current_version" ]; then
+    return
+  fi
+
+  tmp_dir="$(mktemp -d)"
+  trap 'rm -rf "$tmp_dir"' RETURN
+  curl -fsSL -o "${tmp_dir}/gateway" "${GATEWAY_RELEASE_BASE_URL}/${latest_version}/${object_name}"
+  curl -fsSL -o "${tmp_dir}/gateway.sha256" "${GATEWAY_RELEASE_BASE_URL}/${latest_version}/${object_name}.sha256"
+
+  expected_sha="$(awk '{print $1}' "${tmp_dir}/gateway.sha256" | tr -d '[:space:]')"
+  actual_sha="$(sha256sum "${tmp_dir}/gateway" | awk '{print $1}')"
+  if [ -z "$expected_sha" ] || [ "$expected_sha" != "$actual_sha" ]; then
+    log "WARNING: gateway checksum mismatch, skipping update"
+    return
+  fi
+
+  install -m 0755 "${tmp_dir}/gateway" "${GATEWAY_BINARY_PATH:-/usr/local/bin/chatcode-gateway}"
+  if grep -q '^GATEWAY_VERSION=' "$ENV_FILE"; then
+    sed -i "s/^GATEWAY_VERSION=.*/GATEWAY_VERSION=${latest_version}/" "$ENV_FILE"
+  else
+    echo "GATEWAY_VERSION=${latest_version}" >> "$ENV_FILE"
+  fi
+  systemctl restart "$SERVICE_NAME"
+  log "gateway updated to ${latest_version}"
+}
+
+main() {
+  install -d -m 755 "$(dirname "$LOCK_FILE")"
+  exec 9>"$LOCK_FILE"
+  if ! flock -n 9; then
+    log "another run is in progress, skipping"
+    exit 0
+  fi
+
+  if [ -x "$AGENT_HELPER" ]; then
+    "$AGENT_HELPER" --installed-only --best-effort || log "WARNING: agent CLI update returned non-zero"
+  fi
+  update_gateway
+}
+
+main "$@"
+SCRIPT
+  chmod 0755 "${LINUX_MAINTENANCE_SCRIPT}"
+}
+
+write_linux_maintenance_units() {
+  cat > "${LINUX_MAINTENANCE_SERVICE}" <<UNIT
+[Unit]
+Description=Chatcode periodic maintenance (gateway + agent updates)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=${LINUX_MAINTENANCE_SCRIPT}
+UNIT
+
+  cat > "${LINUX_MAINTENANCE_TIMER}" <<'TIMER'
+[Unit]
+Description=Daily Chatcode maintenance timer
+
+[Timer]
+OnCalendar=*-*-* 05:00:00
+RandomizedDelaySec=2h
+Persistent=true
+Unit=chatcode-maintenance.service
+
+[Install]
+WantedBy=timers.target
+TIMER
+}
+
+write_darwin_maintenance_script() {
+  local script_path="${TARGET_HOME}/.local/bin/chatcode-maintenance"
+  cat > "${script_path}" <<'SCRIPT'
+#!/usr/bin/env bash
+set -euo pipefail
+
+LOG_PREFIX="[chatcode-maintenance]"
+ENV_FILE="${HOME}/.config/chatcode/gateway.env"
+AGENT_HELPER="${HOME}/.local/bin/chatcode-update-agent-clis"
+LOCK_DIR="/tmp/chatcode-maintenance.lock"
+GATEWAY_LABEL="dev.chatcode.gateway"
+
+log() {
+  echo "${LOG_PREFIX} $*"
+}
+
+hash_file() {
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$1" | awk '{print $1}'
+    return
+  fi
+  sha256sum "$1" | awk '{print $1}'
+}
+
+detect_release_arch() {
+  case "$(uname -m)" in
+    arm64|aarch64) echo "arm64" ;;
+    *) return 1 ;;
+  esac
+}
+
+kickstart_gateway() {
+  local uid
+  uid="$(id -u)"
+  launchctl kickstart -k "gui/${uid}/${GATEWAY_LABEL}" >/dev/null 2>&1 || \
+    launchctl kickstart -k "user/${uid}/${GATEWAY_LABEL}" >/dev/null 2>&1 || true
+}
+
+update_gateway() {
+  local arch current_version latest_version base_url tmp_dir object_name expected_sha actual_sha
+  [ -s "$ENV_FILE" ] || return
+  # shellcheck disable=SC1090
+  source "$ENV_FILE"
+  arch="$(detect_release_arch)" || return
+  base_url="${GATEWAY_RELEASE_BASE_URL:-https://releases.chatcode.dev/gateway}"
+  current_version="${GATEWAY_VERSION:-}"
+  latest_version="$(curl -fsSL "${base_url}/latest.txt" | tr -d '[:space:]')"
+  if [ -z "$latest_version" ] || [ "$latest_version" = "$current_version" ]; then
+    return
+  fi
+  object_name="chatcode-gateway-darwin-${arch}"
+  tmp_dir="$(mktemp -d)"
+  trap 'rm -rf "$tmp_dir"' RETURN
+  curl -fsSL -o "${tmp_dir}/gateway" "${base_url}/${latest_version}/${object_name}"
+  curl -fsSL -o "${tmp_dir}/gateway.sha256" "${base_url}/${latest_version}/${object_name}.sha256"
+  expected_sha="$(awk '{print $1}' "${tmp_dir}/gateway.sha256" | tr -d '[:space:]')"
+  actual_sha="$(hash_file "${tmp_dir}/gateway")"
+  [ "$expected_sha" = "$actual_sha" ] || return
+  install -m 0755 "${tmp_dir}/gateway" "${GATEWAY_BINARY_PATH:-${HOME}/.local/bin/chatcode-gateway}"
+  if grep -q '^GATEWAY_VERSION=' "$ENV_FILE"; then
+    sed -i.bak "s/^GATEWAY_VERSION=.*/GATEWAY_VERSION=${latest_version}/" "$ENV_FILE" && rm -f "${ENV_FILE}.bak"
+  else
+    echo "GATEWAY_VERSION=${latest_version}" >> "$ENV_FILE"
+  fi
+  kickstart_gateway
+}
+
+main() {
+  if ! mkdir "$LOCK_DIR" >/dev/null 2>&1; then
+    exit 0
+  fi
+  trap 'rmdir "$LOCK_DIR" >/dev/null 2>&1 || true' EXIT
+
+  if [ -x "$AGENT_HELPER" ]; then
+    "$AGENT_HELPER" --installed-only --best-effort || true
+  fi
+  update_gateway
+}
+
+main "$@"
+SCRIPT
+  chmod 0755 "${script_path}"
 }
 
 prepare_darwin_user() {
@@ -502,6 +829,10 @@ while [[ $# -gt 0 ]]; do
       NO_START=1
       shift
       ;;
+    --skip-agent-preinstall)
+      SKIP_AGENT_PREINSTALL=1
+      shift
+      ;;
     -h|--help)
       usage
       exit 0
@@ -533,6 +864,7 @@ case "${OS_NAME}" in
     CONFIG_DIR="${TARGET_HOME}/.config/chatcode"
     ENV_FILE="${CONFIG_DIR}/gateway.env"
     DARWIN_PLIST_PATH="${TARGET_HOME}/Library/LaunchAgents/${DARWIN_LABEL}.plist"
+    DARWIN_MAINTENANCE_PLIST_PATH="${TARGET_HOME}/Library/LaunchAgents/${DARWIN_MAINTENANCE_LABEL}.plist"
     DARWIN_LOG_DIR="${TARGET_HOME}/Library/Logs"
     if [[ -z "${BINARY_PATH}" ]]; then
       BINARY_PATH="${TARGET_HOME}/.local/bin/chatcode-gateway"
@@ -549,6 +881,13 @@ cleanup() {
   fi
 }
 trap cleanup EXIT
+
+if AGENT_UPDATE_SOURCE="$(resolve_agent_update_script_source 2>/dev/null)"; then
+  :
+else
+  AGENT_UPDATE_SOURCE=""
+  log "warning: update-agent-clis.sh not found next to installer; agent preinstall/update helper will be skipped"
+fi
 
 [[ -n "${GATEWAY_ID}" ]] || die "gateway id is required (--gateway-id or GATEWAY_ID)"
 [[ -n "${GATEWAY_AUTH_TOKEN}" ]] || die "gateway auth token is required (--gateway-auth-token or GATEWAY_AUTH_TOKEN)"
@@ -590,8 +929,22 @@ fi
 if [[ "${OS_NAME}" == "Linux" ]]; then
   prepare_linux_user
   write_linux_logrotate
+  AGENT_UPDATE_HELPER_PATH="${LINUX_AGENT_UPDATE_HELPER}"
+  if [[ -n "${AGENT_UPDATE_SOURCE}" ]]; then
+    install_agent_update_helper "${AGENT_UPDATE_SOURCE}" "${AGENT_UPDATE_HELPER_PATH}"
+  fi
+  preinstall_default_agents
+  write_linux_maintenance_script
+  write_linux_maintenance_units
 else
   prepare_darwin_user
+  AGENT_UPDATE_HELPER_PATH="${TARGET_HOME}/.local/bin/chatcode-update-agent-clis"
+  if [[ -n "${AGENT_UPDATE_SOURCE}" ]]; then
+    install_agent_update_helper "${AGENT_UPDATE_SOURCE}" "${AGENT_UPDATE_HELPER_PATH}"
+  fi
+  preinstall_default_agents
+  write_darwin_maintenance_script
+  write_darwin_maintenance_plist
 fi
 
 log "installing gateway binary to ${BINARY_PATH}"
@@ -603,6 +956,8 @@ if [[ "${OS_NAME}" == "Linux" ]]; then
   write_linux_service_unit
   systemctl daemon-reload
   systemctl enable "${SERVICE_NAME}" >/dev/null
+  systemctl enable --now chatcode-maintenance.timer >/dev/null 2>&1 || \
+    log "warning: failed to enable chatcode-maintenance.timer"
 
   if [[ "${NO_START}" -eq 0 ]]; then
     systemctl reset-failed "${SERVICE_NAME}" >/dev/null 2>&1 || true
@@ -625,15 +980,20 @@ if [[ "${OS_NAME}" == "Linux" ]]; then
   echo "  unit:   ${SERVICE_FILE}"
 else
   write_darwin_plist
-  bootout_darwin_agent
+  bootout_darwin_agent "${DARWIN_LABEL}" "${DARWIN_PLIST_PATH}"
+  bootout_darwin_agent "${DARWIN_MAINTENANCE_LABEL}" "${DARWIN_MAINTENANCE_PLIST_PATH}"
 
   if [[ "${NO_START}" -eq 0 ]]; then
-    domain="$(bootstrap_darwin_agent || true)"
+    domain="$(bootstrap_darwin_agent "${DARWIN_PLIST_PATH}" || true)"
     [[ -n "${domain}" ]] || die "launchctl bootstrap failed for ${DARWIN_PLIST_PATH}"
     launchctl kickstart -k "${domain}/${DARWIN_LABEL}" >/dev/null 2>&1 || true
+    maintenance_domain="$(bootstrap_darwin_agent "${DARWIN_MAINTENANCE_PLIST_PATH}" || true)"
+    if [[ -n "${maintenance_domain}" ]]; then
+      launchctl kickstart -k "${maintenance_domain}/${DARWIN_MAINTENANCE_LABEL}" >/dev/null 2>&1 || true
+    fi
     log "launchd agent started (${domain}/${DARWIN_LABEL})"
   else
-    log "--no-start requested; launchd plist was written but not bootstrapped"
+    log "--no-start requested; launchd plists were written but not bootstrapped"
   fi
 
   log "done"
@@ -642,4 +1002,5 @@ else
   echo "  binary: ${BINARY_PATH}"
   echo "  env:    ${ENV_FILE}"
   echo "  plist:  ${DARWIN_PLIST_PATH}"
+  echo "  maintenance plist: ${DARWIN_MAINTENANCE_PLIST_PATH}"
 fi

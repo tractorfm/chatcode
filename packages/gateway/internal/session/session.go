@@ -21,6 +21,7 @@ const (
 	preferredTmuxTerminal   = "tmux-256color"
 	fallbackTmuxTerminal    = "screen-256color"
 	legacyTmuxTerminal      = "screen"
+	defaultShellCommand     = "${SHELL:-/bin/bash}"
 )
 
 var (
@@ -127,16 +128,24 @@ func (s *Session) buildTmuxNewSessionCmd() *exec.Cmd {
 func (s *Session) agentCommand() string {
 	switch s.opts.Agent {
 	case "claude-code":
-		return "claude"
+		return buildAgentLaunchCommand("claude-code", "claude")
 	case "codex":
-		return "codex"
+		return buildAgentLaunchCommand("codex", "codex")
 	case "gemini":
-		return "gemini"
+		return buildAgentLaunchCommand("gemini", "gemini")
 	case "opencode":
-		return "opencode"
+		return buildAgentLaunchCommand("opencode", "opencode")
 	default:
-		return "$SHELL"
+		return defaultShellCommand
 	}
+}
+
+func buildAgentLaunchCommand(agentType, binary string) string {
+	return fmt.Sprintf(
+		`if command -v %[1]s >/dev/null 2>&1; then %[1]s; ec=$?; printf '\n[chatcode] %[2]s exited (code %%s); starting shell.\n' "$ec"; else printf '\n[chatcode] %[2]s is not installed. Run agents.install and retry.\n'; fi; exec "${SHELL:-/bin/bash}"`,
+		binary,
+		agentType,
+	)
 }
 
 // buildEnv merges the host environment with session-specific overrides.

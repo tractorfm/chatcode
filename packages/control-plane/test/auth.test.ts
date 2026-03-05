@@ -4,6 +4,7 @@ import {
   verifySessionCookie,
   hashGatewayToken,
   verifyGatewayToken,
+  authenticateRequest,
 } from "../src/lib/auth";
 
 describe("session cookie", () => {
@@ -63,5 +64,49 @@ describe("gateway token HMAC", () => {
     const hash1 = await hashGatewayToken(token, "salt1");
     const hash2 = await hashGatewayToken(token, "salt2");
     expect(hash1).not.toBe(hash2);
+  });
+});
+
+describe("dev header auth", () => {
+  const baseEnv = {
+    AUTH_MODE: "dev",
+    JWT_SECRET: "jwt",
+    DEV_AUTH_SECRET: undefined,
+  } as const;
+
+  it("accepts X-Dev-User when no dev secret is configured", async () => {
+    const req = new Request("https://example.com", {
+      headers: { "X-Dev-User": "usr-dev-1" },
+    });
+    const result = await authenticateRequest(req, baseEnv as unknown as any);
+    expect(result).toEqual({ userId: "usr-dev-1" });
+  });
+
+  it("rejects X-Dev-User when dev secret is configured but missing", async () => {
+    const req = new Request("https://example.com", {
+      headers: { "X-Dev-User": "usr-dev-1" },
+    });
+    const result = await authenticateRequest(
+      req,
+      { ...baseEnv, DEV_AUTH_SECRET: "secret-1" } as unknown as any,
+    );
+    expect(result).toBeInstanceOf(Response);
+    if (result instanceof Response) {
+      expect(result.status).toBe(401);
+    }
+  });
+
+  it("accepts X-Dev-User when X-Dev-Secret matches", async () => {
+    const req = new Request("https://example.com", {
+      headers: {
+        "X-Dev-User": "usr-dev-1",
+        "X-Dev-Secret": "secret-1",
+      },
+    });
+    const result = await authenticateRequest(
+      req,
+      { ...baseEnv, DEV_AUTH_SECRET: "secret-1" } as unknown as any,
+    );
+    expect(result).toEqual({ userId: "usr-dev-1" });
   });
 });

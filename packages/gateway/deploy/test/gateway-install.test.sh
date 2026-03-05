@@ -79,6 +79,7 @@ EOF
       --gateway-id "gw-test-binary-source" \
       --gateway-auth-token "tok-test-binary-source" \
       --cp-url "wss://cp.staging.chatcode.dev/gw/connect" \
+      --skip-agent-preinstall \
       --no-start
 
   local installed_bin="${home_dir}/.local/bin/chatcode-gateway"
@@ -176,6 +177,7 @@ EOF
       --gateway-id "gw-test-download" \
       --gateway-auth-token "tok-test-download" \
       --cp-url "wss://cp.staging.chatcode.dev/gw/connect" \
+      --skip-agent-preinstall \
       --no-start
 
   local installed_bin="${home_dir}/.local/bin/chatcode-gateway"

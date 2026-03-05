@@ -3,6 +3,7 @@
 #
 # Linux (root, dedicated vibe user):
 # - chatcode-gateway systemd unit + process
+# - chatcode-maintenance service/timer + helper scripts
 # - /etc/chatcode config
 # - /usr/local/bin/chatcode-gateway binary
 # - vibe sudoers entry
@@ -11,6 +12,7 @@
 #
 # macOS (current user):
 # - dev.chatcode.gateway launchd agent
+# - dev.chatcode.maintenance launchd agent + helper scripts
 # - ~/.config/chatcode config
 # - ~/.local/bin/chatcode-gateway binary
 # - /tmp/chatcode leftovers
@@ -26,8 +28,21 @@ LINUX_SUDOERS_FILE="/etc/sudoers.d/vibe"
 LINUX_SUDO_LOG_DIR="/var/log/chatcode"
 LINUX_SUDO_LOG_FILE="${LINUX_SUDO_LOG_DIR}/sudo-vibe.log"
 LINUX_LOGROTATE_FILE="/etc/logrotate.d/chatcode-sudo-vibe"
+LINUX_MAINTENANCE_SERVICE="chatcode-maintenance"
+LINUX_MAINTENANCE_SERVICE_FILE="/etc/systemd/system/chatcode-maintenance.service"
+LINUX_MAINTENANCE_TIMER_FILE="/etc/systemd/system/chatcode-maintenance.timer"
+LINUX_MAINTENANCE_SCRIPT="/usr/local/sbin/chatcode-maintenance"
+LINUX_MAINTENANCE_LOCK="/var/lock/chatcode-maintenance.lock"
+LINUX_AGENT_UPDATE_HELPER="/usr/local/sbin/chatcode-update-agent-clis"
+LINUX_AGENT_INSTALLER_SCRIPTS=(
+  "/usr/local/sbin/install-claude-code.sh"
+  "/usr/local/sbin/install-codex.sh"
+  "/usr/local/sbin/install-gemini.sh"
+  "/usr/local/sbin/install-opencode.sh"
+)
 
 DARWIN_LABEL="dev.chatcode.gateway"
+DARWIN_MAINTENANCE_LABEL="dev.chatcode.maintenance"
 
 CONFIRM=0
 KEEP_USER=0
@@ -88,12 +103,13 @@ safe_rm_dir() {
 
 bootout_darwin_agent() {
   local uid="$1"
-  local plist_path="$2"
+  local label="$2"
+  local plist_path="$3"
 
   launchctl bootout "gui/${uid}" "${plist_path}" >/dev/null 2>&1 || true
-  launchctl bootout "gui/${uid}/${DARWIN_LABEL}" >/dev/null 2>&1 || true
+  launchctl bootout "gui/${uid}/${label}" >/dev/null 2>&1 || true
   launchctl bootout "user/${uid}" "${plist_path}" >/dev/null 2>&1 || true
-  launchctl bootout "user/${uid}/${DARWIN_LABEL}" >/dev/null 2>&1 || true
+  launchctl bootout "user/${uid}/${label}" >/dev/null 2>&1 || true
 }
 
 while [[ $# -gt 0 ]]; do
@@ -155,13 +171,25 @@ case "${OS_NAME}" in
     if command -v systemctl >/dev/null 2>&1; then
       systemctl stop "${SERVICE_NAME}" >/dev/null 2>&1 || true
       systemctl disable "${SERVICE_NAME}" >/dev/null 2>&1 || true
+      systemctl stop "${LINUX_MAINTENANCE_SERVICE}.timer" >/dev/null 2>&1 || true
+      systemctl disable "${LINUX_MAINTENANCE_SERVICE}.timer" >/dev/null 2>&1 || true
     fi
     pkill -x chatcode-gateway >/dev/null 2>&1 || true
 
     safe_rm_file "${LINUX_SERVICE_FILE}"
+    safe_rm_file "${LINUX_MAINTENANCE_SERVICE_FILE}"
+    safe_rm_file "${LINUX_MAINTENANCE_TIMER_FILE}"
+    safe_rm_file "${LINUX_MAINTENANCE_SCRIPT}"
+    safe_rm_file "${LINUX_AGENT_UPDATE_HELPER}"
+    for helper in "${LINUX_AGENT_INSTALLER_SCRIPTS[@]}"; do
+      safe_rm_file "${helper}"
+    done
+    safe_rm_file "${LINUX_MAINTENANCE_LOCK}"
     if command -v systemctl >/dev/null 2>&1; then
       systemctl daemon-reload
       systemctl reset-failed "${SERVICE_NAME}" >/dev/null 2>&1 || true
+      systemctl reset-failed "${LINUX_MAINTENANCE_SERVICE}.service" >/dev/null 2>&1 || true
+      systemctl reset-failed "${LINUX_MAINTENANCE_SERVICE}.timer" >/dev/null 2>&1 || true
     fi
 
     safe_rm_file "${LINUX_BINARY_PATH}"
@@ -205,15 +233,30 @@ case "${OS_NAME}" in
     USER_HOME="${HOME}"
     USER_UID="$(id -u)"
     PLIST_PATH="${USER_HOME}/Library/LaunchAgents/${DARWIN_LABEL}.plist"
+    MAINTENANCE_PLIST_PATH="${USER_HOME}/Library/LaunchAgents/${DARWIN_MAINTENANCE_LABEL}.plist"
     CONFIG_DIR="${USER_HOME}/.config/chatcode"
     BINARY_PATH="${USER_HOME}/.local/bin/chatcode-gateway"
+    AGENT_UPDATE_HELPER="${USER_HOME}/.local/bin/chatcode-update-agent-clis"
+    MAINTENANCE_SCRIPT="${USER_HOME}/.local/bin/chatcode-maintenance"
+    INSTALLER_CLAUDE="${USER_HOME}/.local/bin/install-claude-code.sh"
+    INSTALLER_CODEX="${USER_HOME}/.local/bin/install-codex.sh"
+    INSTALLER_GEMINI="${USER_HOME}/.local/bin/install-gemini.sh"
+    INSTALLER_OPENCODE="${USER_HOME}/.local/bin/install-opencode.sh"
     WORKSPACE_DIR="${USER_HOME}/workspace"
 
-    bootout_darwin_agent "${USER_UID}" "${PLIST_PATH}"
+    bootout_darwin_agent "${USER_UID}" "${DARWIN_LABEL}" "${PLIST_PATH}"
+    bootout_darwin_agent "${USER_UID}" "${DARWIN_MAINTENANCE_LABEL}" "${MAINTENANCE_PLIST_PATH}"
     pkill -x chatcode-gateway >/dev/null 2>&1 || true
 
     safe_rm_file "${PLIST_PATH}"
+    safe_rm_file "${MAINTENANCE_PLIST_PATH}"
     safe_rm_file "${BINARY_PATH}"
+    safe_rm_file "${AGENT_UPDATE_HELPER}"
+    safe_rm_file "${MAINTENANCE_SCRIPT}"
+    safe_rm_file "${INSTALLER_CLAUDE}"
+    safe_rm_file "${INSTALLER_CODEX}"
+    safe_rm_file "${INSTALLER_GEMINI}"
+    safe_rm_file "${INSTALLER_OPENCODE}"
     safe_rm_dir "${CONFIG_DIR}"
     safe_rm_dir "/tmp/chatcode"
 

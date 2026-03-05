@@ -43,9 +43,16 @@ Linux mode:
 - prepares `~vibe/.ssh/authorized_keys` and `~/workspace`
 - installs binary to `/usr/local/bin/chatcode-gateway`
 - writes `/etc/chatcode/gateway.env`
+- preinstalls default agent CLIs: `claude-code` and `codex`
+- installs reusable helper scripts in `/usr/local/sbin`:
+  - `chatcode-update-agent-clis`
+  - `install-claude-code.sh`, `install-codex.sh`, `install-gemini.sh`, `install-opencode.sh`
 - configures sudo logging for `vibe` at `/var/log/chatcode/sudo-vibe.log`
 - installs log rotation policy at `/etc/logrotate.d/chatcode-sudo-vibe`
 - installs `chatcode-gateway.service` and starts it
+- installs and enables `chatcode-maintenance.timer` (daily):
+  - updates all installed agent CLIs (`--installed-only`)
+  - updates gateway binary to latest release and restarts service
 
 Sudo logging details (Linux):
 - `vibe` has passwordless sudo for operational workflows
@@ -63,6 +70,8 @@ macOS mode:
 - installs binary to `~/.local/bin/chatcode-gateway` by default
 - writes `~/.config/chatcode/gateway.env`
 - installs `~/Library/LaunchAgents/dev.chatcode.gateway.plist` and starts it
+- installs `~/.local/bin/chatcode-update-agent-clis` and per-agent installer scripts
+- installs `~/Library/LaunchAgents/dev.chatcode.maintenance.plist` (daily maintenance)
 
 Legacy alias:
 - `manual-install.sh` is now a wrapper to `gateway-install.sh`.
@@ -83,6 +92,8 @@ sudo ./gateway-cleanup.sh --yes
 
 Linux cleanup (default) removes:
 - `chatcode-gateway` systemd service
+- `chatcode-maintenance` systemd service/timer and maintenance script
+- `chatcode-update-agent-clis` and per-agent installer scripts from `/usr/local/sbin`
 - `/usr/local/bin/chatcode-gateway`
 - `/etc/chatcode`
 - `/tmp/chatcode` and `/opt/chatcode`
@@ -93,7 +104,10 @@ Linux cleanup (default) removes:
 
 macOS cleanup removes:
 - `dev.chatcode.gateway` launchd agent
+- `dev.chatcode.maintenance` launchd agent
 - `~/.local/bin/chatcode-gateway`
+- `~/.local/bin/chatcode-maintenance`
+- `~/.local/bin/chatcode-update-agent-clis` + installer scripts
 - `~/.config/chatcode`
 - `/tmp/chatcode`
 - keeps `~/workspace` by default
@@ -113,10 +127,15 @@ Gateway supports installing these CLIs:
 
 Node.js baseline for installer scripts is Node 24 (LTS on current timeline).
 
+Default behavior:
+- new installs preinstall `claude-code` + `codex`
+- periodic automated updates target all installed agent CLIs + gateway binary
+- automation uses the same installer scripts for both preinstall and updates
+
 Update all installed CLIs to latest:
 ```bash
 cd packages/gateway
-./scripts/update-agent-clis.sh
+./scripts/update-agent-clis.sh --installed-only
 ```
 
 Update specific CLIs:
