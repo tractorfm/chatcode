@@ -109,7 +109,7 @@ func (s *Session) start() error {
 
 // buildTmuxNewSessionCmd returns the exec.Cmd to start the tmux session.
 func (s *Session) buildTmuxNewSessionCmd() *exec.Cmd {
-	shellCmd := fmt.Sprintf("TERM=%s %s", detectTmuxDefaultTerminal(), s.agentCommand())
+	shellCmd := s.agentCommand()
 
 	args := []string{
 		"new-session",
@@ -120,7 +120,7 @@ func (s *Session) buildTmuxNewSessionCmd() *exec.Cmd {
 		"sh", "-c", shellCmd,
 	}
 	cmd := exec.Command("tmux", args...)
-	cmd.Env = s.buildEnv()
+	cmd.Env = append(s.buildEnv(), "TERM="+detectTmuxDefaultTerminal())
 	return cmd
 }
 

@@ -41,6 +41,7 @@ BINARY_PATH="${BINARY_PATH:-}"
 NO_START=0
 SKIP_AGENT_PREINSTALL=0
 DOWNLOAD_TMP_DIR=""
+AGENT_HELPER_TMP_DIR=""
 
 OS_NAME="$(uname -s)"
 TARGET_USER=""
@@ -55,6 +56,7 @@ DARWIN_MAINTENANCE_PLIST_PATH=""
 DARWIN_LOG_DIR=""
 AGENT_UPDATE_HELPER_PATH=""
 AGENT_UPDATE_SOURCE=""
+RESOLVED_VERSION=""
 
 usage() {
   cat <<'USAGE'
@@ -241,6 +243,34 @@ resolve_agent_update_script_source() {
   fi
 
   return 1
+}
+
+download_agent_update_script_source() {
+  local base_url="$1"
+  local version="$2"
+  local tmp_dir helper_url helper_path dep dep_url
+
+  tmp_dir="$(mktemp -d)"
+  helper_url="${base_url}/${version}/update-agent-clis.sh"
+  helper_path="${tmp_dir}/update-agent-clis.sh"
+
+  if ! curl -fsSL -o "${helper_path}" "${helper_url}"; then
+    rm -rf "${tmp_dir}"
+    return 1
+  fi
+  chmod 0755 "${helper_path}"
+
+  for dep in install-claude-code.sh install-codex.sh install-gemini.sh install-opencode.sh; do
+    dep_url="${base_url}/${version}/${dep}"
+    if curl -fsSL -o "${tmp_dir}/${dep}" "${dep_url}"; then
+      chmod 0755 "${tmp_dir}/${dep}"
+    else
+      log "warning: unable to download ${dep}; continuing without it"
+    fi
+  done
+
+  AGENT_HELPER_TMP_DIR="${tmp_dir}"
+  echo "${helper_path}"
 }
 
 xml_escape() {
@@ -896,6 +926,9 @@ cleanup() {
   if [[ -n "${DOWNLOAD_TMP_DIR}" && -d "${DOWNLOAD_TMP_DIR}" ]]; then
     rm -rf "${DOWNLOAD_TMP_DIR}"
   fi
+  if [[ -n "${AGENT_HELPER_TMP_DIR}" && -d "${AGENT_HELPER_TMP_DIR}" ]]; then
+    rm -rf "${AGENT_HELPER_TMP_DIR}"
+  fi
 }
 trap cleanup EXIT
 
@@ -940,6 +973,15 @@ else
   [[ -f "${BINARY_SOURCE}" ]] || die "binary source not found: ${BINARY_SOURCE}"
   if [[ -n "${GATEWAY_VERSION}" && "${GATEWAY_VERSION}" != "latest" ]]; then
     INSTALL_VERSION="${GATEWAY_VERSION}"
+  fi
+fi
+
+if [[ -z "${AGENT_UPDATE_SOURCE}" && -n "${RESOLVED_VERSION}" ]]; then
+  if AGENT_UPDATE_SOURCE="$(download_agent_update_script_source "${GATEWAY_RELEASE_BASE_URL}" "${RESOLVED_VERSION}" 2>/dev/null)"; then
+    log "downloaded agent update helper from release ${RESOLVED_VERSION}"
+  else
+    log "warning: unable to fetch release agent helper; agent preinstall/update helper will be skipped"
+    AGENT_UPDATE_SOURCE=""
   fi
 fi
 

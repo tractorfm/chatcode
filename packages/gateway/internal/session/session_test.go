@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os/exec"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 )
@@ -151,6 +152,36 @@ func TestBuildEnvIncludesHostAndSessionVars(t *testing.T) {
 	}
 	if !containsEnv(env, "VIBECODE_SESSION_ENV=from-session") {
 		t.Fatal("expected session env variable to be set")
+	}
+}
+
+func TestBuildTmuxNewSessionCmdSetsTERMInEnv(t *testing.T) {
+	detectedTmuxTerminal = "screen-256color"
+	detectTmuxTermOnce = sync.Once{}
+	detectTmuxTermOnce.Do(func() { detectedTmuxTerminal = "screen-256color" })
+
+	s := &Session{
+		opts: Options{
+			SessionID: "ses-test",
+			Workdir:   "/tmp",
+			Agent:     "claude-code",
+		},
+		tmuxName: "vibe-ses-test",
+	}
+
+	cmd := s.buildTmuxNewSessionCmd()
+	if len(cmd.Args) < 2 {
+		t.Fatalf("unexpected tmux args: %v", cmd.Args)
+	}
+	shellCmd := cmd.Args[len(cmd.Args)-1]
+	if !contains(shellCmd, "if command -v claude") {
+		t.Fatalf("expected agent shell command, got %q", shellCmd)
+	}
+	if contains(shellCmd, "TERM=") {
+		t.Fatalf("shell command should not inline TERM assignment, got %q", shellCmd)
+	}
+	if !containsEnv(cmd.Env, "TERM=screen-256color") {
+		t.Fatalf("expected TERM in command env, got %v", cmd.Env)
 	}
 }
 
