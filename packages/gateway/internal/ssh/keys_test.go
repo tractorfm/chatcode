@@ -4,6 +4,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"os"
+	"os/user"
 	"path/filepath"
 	"testing"
 	"time"
@@ -33,7 +34,7 @@ func tempKeyFile(t *testing.T) string {
 
 func TestAuthorize(t *testing.T) {
 	f := tempKeyFile(t)
-	m := NewManager(f)
+	m := newManagerWithPath(f)
 	key := generateTestKey(t, "test@example.com")
 
 	if err := m.Authorize(key, "my-laptop", nil); err != nil {
@@ -57,7 +58,7 @@ func TestAuthorize(t *testing.T) {
 
 func TestAuthorizeWithExpiry(t *testing.T) {
 	f := tempKeyFile(t)
-	m := NewManager(f)
+	m := newManagerWithPath(f)
 	key := generateTestKey(t, "test@example.com")
 
 	exp := time.Now().Add(24 * time.Hour).Truncate(time.Second)
@@ -82,7 +83,7 @@ func TestAuthorizeWithExpiry(t *testing.T) {
 
 func TestRevoke(t *testing.T) {
 	f := tempKeyFile(t)
-	m := NewManager(f)
+	m := newManagerWithPath(f)
 	key1 := generateTestKey(t, "key1@example.com")
 	key2 := generateTestKey(t, "key2@example.com")
 
@@ -110,7 +111,7 @@ func TestRevoke(t *testing.T) {
 
 func TestListEmptyFile(t *testing.T) {
 	f := tempKeyFile(t)
-	m := NewManager(f)
+	m := newManagerWithPath(f)
 	entries, err := m.List()
 	if err != nil {
 		t.Fatalf("List on missing file: %v", err)
@@ -122,7 +123,7 @@ func TestListEmptyFile(t *testing.T) {
 
 func TestRemoveExpired(t *testing.T) {
 	f := tempKeyFile(t)
-	m := NewManager(f)
+	m := newManagerWithPath(f)
 	key1 := generateTestKey(t, "key1@example.com")
 	key2 := generateTestKey(t, "key2@example.com")
 
@@ -159,7 +160,7 @@ func TestBuildParseComment(t *testing.T) {
 
 func TestInvalidKeyRejected(t *testing.T) {
 	f := tempKeyFile(t)
-	m := NewManager(f)
+	m := newManagerWithPath(f)
 	err := m.Authorize("not-a-public-key", "bad", nil)
 	if err == nil {
 		t.Fatal("expected error for invalid key")
@@ -167,5 +168,22 @@ func TestInvalidKeyRejected(t *testing.T) {
 	// File should not have been written
 	if _, err := os.Stat(f); !os.IsNotExist(err) {
 		t.Error("expected file to not exist after invalid key")
+	}
+}
+
+func TestNewManagerUsesHomeAuthorizedKeysPath(t *testing.T) {
+	m, err := NewManager()
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+
+	u, err := user.Current()
+	if err != nil || u.HomeDir == "" {
+		t.Fatalf("resolve current user: %v", err)
+	}
+	home := u.HomeDir
+	want := filepath.Join(home, ".ssh", "authorized_keys")
+	if m.keyFile != want {
+		t.Fatalf("key file = %q, want %q", m.keyFile, want)
 	}
 }

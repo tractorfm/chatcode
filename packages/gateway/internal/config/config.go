@@ -33,9 +33,6 @@ type Config struct {
 	// MaxSessions is the maximum number of concurrent sessions. Default 5.
 	MaxSessions int `json:"max_sessions"`
 
-	// SSHKeysFile is the path to the authorized_keys file. Default ~/.ssh/authorized_keys.
-	SSHKeysFile string `json:"ssh_keys_file"`
-
 	// TempDir is used for file upload staging. Default /tmp/vibecode.
 	TempDir string `json:"temp_dir"`
 
@@ -50,8 +47,8 @@ type Config struct {
 // overridden by environment variables.
 //
 // Required env vars: GATEWAY_ID, GATEWAY_AUTH_TOKEN, GATEWAY_CP_URL.
-// Optional: GATEWAY_HEALTH_INTERVAL, GATEWAY_MAX_SESSIONS, GATEWAY_SSH_KEYS_FILE,
-// GATEWAY_TEMP_DIR, GATEWAY_BINARY_PATH, GATEWAY_LOG_LEVEL,
+// Optional: GATEWAY_HEALTH_INTERVAL, GATEWAY_MAX_SESSIONS, GATEWAY_TEMP_DIR,
+// GATEWAY_BINARY_PATH, GATEWAY_LOG_LEVEL,
 // GATEWAY_BOOTSTRAP_TOKEN.
 func Load(configFile string) (*Config, error) {
 	cfg := defaults()
@@ -71,12 +68,10 @@ func Load(configFile string) (*Config, error) {
 }
 
 func defaults() *Config {
-	home, _ := os.UserHomeDir()
 	exe, _ := os.Executable()
 	return &Config{
 		HealthInterval: 30 * time.Second,
 		MaxSessions:    5,
-		SSHKeysFile:    home + "/.ssh/authorized_keys",
 		TempDir:        "/tmp/chatcode",
 		BinaryPath:     exe,
 		LogLevel:       "info",
@@ -114,9 +109,6 @@ func applyEnv(cfg *Config) {
 		if n, err := strconv.Atoi(v); err == nil {
 			cfg.MaxSessions = n
 		}
-	}
-	if v := os.Getenv("GATEWAY_SSH_KEYS_FILE"); v != "" {
-		cfg.SSHKeysFile = v
 	}
 	if v := os.Getenv("GATEWAY_TEMP_DIR"); v != "" {
 		cfg.TempDir = v

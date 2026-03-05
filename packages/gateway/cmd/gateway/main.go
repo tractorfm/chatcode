@@ -62,9 +62,13 @@ func main() {
 		cfg:      cfg,
 		log:      log,
 		sessions: session.NewManager(cfg.MaxSessions),
-		sshMgr:   sshkeys.NewManager(cfg.SSHKeysFile),
 		health:   health.NewCollector("/"),
 		updater:  update.NewUpdater(cfg.BinaryPath, log),
+	}
+	g.sshMgr, err = sshkeys.NewManager()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "ssh manager init error: %v\n", err)
+		os.Exit(1)
 	}
 
 	// Output channel: session output chunks → WS sender goroutine

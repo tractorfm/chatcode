@@ -7,6 +7,8 @@ import (
 	"encoding/base64"
 	"fmt"
 	"os"
+	"os/user"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -29,8 +31,19 @@ type Manager struct {
 	keyFile string
 }
 
-// NewManager creates a Manager for the given authorized_keys file.
-func NewManager(keyFile string) *Manager {
+// NewManager creates a Manager bound to ~/.ssh/authorized_keys of the current user.
+func NewManager() (*Manager, error) {
+	u, err := user.Current()
+	if err != nil || u.HomeDir == "" {
+		return nil, fmt.Errorf("resolve current user home directory: %w", err)
+	}
+
+	return newManagerWithPath(filepath.Join(u.HomeDir, ".ssh", "authorized_keys")), nil
+}
+
+// newManagerWithPath creates a manager for a specific key file path.
+// Used by tests.
+func newManagerWithPath(keyFile string) *Manager {
 	return &Manager{keyFile: keyFile}
 }
 

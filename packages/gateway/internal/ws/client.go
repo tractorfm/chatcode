@@ -9,7 +9,10 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"net"
 	"net/http"
+	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -84,13 +87,18 @@ func (c *Client) Run(ctx context.Context) {
 
 // connect dials, reads until error, then returns.
 func (c *Client) connect(ctx context.Context) (time.Duration, error) {
+	wsURL, err := sanitizeGatewayWSURL(c.url)
+	if err != nil {
+		return 0, err
+	}
+
 	dialCtx, cancelDial := context.WithTimeout(ctx, dialTimeout)
 	defer cancelDial()
 
 	headers := http.Header{
 		"Authorization": []string{"Bearer " + c.authToken},
 	}
-	conn, _, err := websocket.Dial(dialCtx, c.url, &websocket.DialOptions{
+	conn, _, err := websocket.Dial(dialCtx, wsURL, &websocket.DialOptions{
 		HTTPHeader: headers,
 	})
 	if err != nil {
@@ -109,7 +117,7 @@ func (c *Client) connect(ctx context.Context) (time.Duration, error) {
 		conn.CloseNow()
 	}()
 
-	c.log.Info("ws connected", "url", c.url)
+	c.log.Info("ws connected", "url", wsURL)
 	err = c.readLoop(ctx, conn)
 	return time.Since(connectedAt), err
 }
@@ -218,4 +226,43 @@ func exponentialBackoff(attempt int) time.Duration {
 		d = maxBackoff
 	}
 	return d
+}
+
+func sanitizeGatewayWSURL(rawURL string) (string, error) {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return "", fmt.Errorf("invalid gateway websocket URL: %w", err)
+	}
+
+	if u.User != nil {
+		return "", fmt.Errorf("invalid gateway websocket URL: user info is not allowed")
+	}
+	switch strings.ToLower(u.Scheme) {
+	case "ws", "wss":
+	default:
+		return "", fmt.Errorf("invalid gateway websocket URL: unsupported scheme %q", u.Scheme)
+	}
+
+	host := strings.ToLower(strings.TrimSpace(u.Hostname()))
+	if host == "" {
+		return "", fmt.Errorf("invalid gateway websocket URL: missing host")
+	}
+	if !isAllowedGatewayControlPlaneHost(host) {
+		return "", fmt.Errorf("invalid gateway websocket URL: host %q is not allowed", host)
+	}
+
+	return u.String(), nil
+}
+
+func isAllowedGatewayControlPlaneHost(host string) bool {
+	switch host {
+	case "localhost":
+		return true
+	}
+
+	if ip := net.ParseIP(host); ip != nil {
+		return ip.IsLoopback()
+	}
+
+	return host == "chatcode.dev" || strings.HasSuffix(host, ".chatcode.dev")
 }

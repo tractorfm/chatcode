@@ -283,3 +283,31 @@ func TestClientConcurrentSendsAreSerialized(t *testing.T) {
 	cancel()
 	<-runDone
 }
+
+func TestSanitizeGatewayWSURL(t *testing.T) {
+	tests := []struct {
+		name    string
+		rawURL  string
+		wantErr bool
+	}{
+		{name: "allow production host", rawURL: "wss://cp.chatcode.dev/gw/connect/gw-1"},
+		{name: "allow staging subdomain", rawURL: "wss://cp.staging.chatcode.dev/gw/connect/gw-1"},
+		{name: "allow localhost ws", rawURL: "ws://127.0.0.1:8787/gw/connect/gw-1"},
+		{name: "reject unsupported scheme", rawURL: "http://cp.chatcode.dev/gw/connect/gw-1", wantErr: true},
+		{name: "reject user info", rawURL: "wss://user@cp.chatcode.dev/gw/connect/gw-1", wantErr: true},
+		{name: "reject non-chatcode host", rawURL: "wss://evil.example.com/gw/connect/gw-1", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := sanitizeGatewayWSURL(tt.rawURL)
+			if tt.wantErr && err == nil {
+				t.Fatalf("expected error for %q", tt.rawURL)
+			}
+			if !tt.wantErr && err != nil {
+				t.Fatalf("unexpected error for %q: %v", tt.rawURL, err)
+			}
+		})
+	}
+}
