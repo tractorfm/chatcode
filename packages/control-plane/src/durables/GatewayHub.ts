@@ -81,7 +81,14 @@ type GatewayEvent =
   | AgentInstalled
   | GatewayUpdated;
 
-type GatewayCommandResult = Ack | SessionSnapshotEvent | AgentsStatus;
+type GatewayCommandResult =
+  | Ack
+  | SessionSnapshotEvent
+  | SSHKeyList
+  | AgentsStatus
+  | AgentInstalled
+  | GatewayUpdated;
+type GatewayCommandEvent = SSHKeyList | AgentsStatus | AgentInstalled | GatewayUpdated;
 
 export class GatewayHub {
   private state: DurableObjectState;
@@ -286,7 +293,7 @@ export class GatewayHub {
       case "agent.installed":
       case "gateway.updated":
         // Forward to pending entry's sourceSocket
-        this.onCommandEvent(msg as { request_id: string });
+        this.onCommandEvent(msg as GatewayCommandEvent);
         break;
 
       case "file.content.begin":
@@ -483,7 +490,7 @@ export class GatewayHub {
     }
   }
 
-  private onCommandEvent(msg: { request_id: string }): void {
+  private onCommandEvent(msg: GatewayCommandEvent): void {
     const requestId = msg.request_id;
 
     const entry = this.pending.get(requestId);
@@ -495,7 +502,7 @@ export class GatewayHub {
       safeSend(entry.sourceSocket, JSON.stringify(msg));
     }
 
-    entry.resolve(msg as GatewayCommandResult);
+    entry.resolve(msg);
   }
 
   private onGatewayBinary(data: Uint8Array): void {

@@ -673,7 +673,6 @@ func (g *gateway) handleAgentsList(ctx context.Context, raw json.RawMessage) err
 		"request_id": cmd.RequestID,
 		"agents":     items,
 	})
-	g.sendAck(ctx, cmd.RequestID, true, "")
 	return nil
 }
 

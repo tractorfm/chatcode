@@ -261,7 +261,7 @@ export async function handleSessionSnapshot(
   const cmd = {
     type: "session.snapshot",
     schema_version: "1",
-    request_id: `snap-${sessionId}-${Date.now()}`,
+    request_id: newRequestId(`snap-${sessionId}`),
     session_id: sessionId,
   };
 
@@ -377,7 +377,7 @@ async function fetchGatewayAgents(
   const cmd = {
     type: "agents.list",
     schema_version: "1",
-    request_id: `agents-${Date.now()}`,
+    request_id: newRequestId("agents"),
   };
 
   const cmdResp = await stub.fetch(
@@ -399,4 +399,12 @@ async function fetchGatewayAgents(
     return null;
   }
   return payload.agents;
+}
+
+function newRequestId(prefix: string): string {
+  try {
+    return `${prefix}-${crypto.randomUUID()}`;
+  } catch {
+    return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  }
 }

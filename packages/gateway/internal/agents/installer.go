@@ -21,6 +21,18 @@ const (
 	AgentOpenCode   AgentName = "opencode"
 )
 
+type agentSpec struct {
+	binary string
+	script string
+}
+
+var agentSpecs = map[AgentName]agentSpec{
+	AgentClaudeCode: {binary: "claude", script: gw.InstallClaudeCodeScript},
+	AgentCodex:      {binary: "codex", script: gw.InstallCodexScript},
+	AgentGemini:     {binary: "gemini", script: gw.InstallGeminiScript},
+	AgentOpenCode:   {binary: "opencode", script: gw.InstallOpenCodeScript},
+}
+
 // Install runs the embedded install script for the given agent and returns
 // the installed version string.
 func Install(agent AgentName) (version string, err error) {
@@ -64,38 +76,19 @@ func Install(agent AgentName) (version string, err error) {
 }
 
 func agentScript(agent AgentName) (script, binaryName string, err error) {
-	binaryName, err = binaryForAgent(agent)
-	if err != nil {
-		return "", "", err
-	}
-
-	switch agent {
-	case AgentClaudeCode:
-		return gw.InstallClaudeCodeScript, binaryName, nil
-	case AgentCodex:
-		return gw.InstallCodexScript, binaryName, nil
-	case AgentGemini:
-		return gw.InstallGeminiScript, binaryName, nil
-	case AgentOpenCode:
-		return gw.InstallOpenCodeScript, binaryName, nil
-	default:
+	spec, ok := agentSpecs[agent]
+	if !ok {
 		return "", "", fmt.Errorf("unknown agent: %q", agent)
 	}
+	return spec.script, spec.binary, nil
 }
 
 func binaryForAgent(agent AgentName) (string, error) {
-	switch agent {
-	case AgentClaudeCode:
-		return "claude", nil
-	case AgentCodex:
-		return "codex", nil
-	case AgentGemini:
-		return "gemini", nil
-	case AgentOpenCode:
-		return "opencode", nil
-	default:
+	spec, ok := agentSpecs[agent]
+	if !ok {
 		return "", fmt.Errorf("unknown agent: %q", agent)
 	}
+	return spec.binary, nil
 }
 
 func supportedAgents() []AgentName {
