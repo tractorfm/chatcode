@@ -141,16 +141,10 @@ describe("routes/vps", () => {
       }),
     );
     const createPayload = mocks.createDroplet.mock.calls[0]?.[1];
-    expect(createPayload?.user_data).toContain("User=vibe");
-    expect(createPayload?.user_data).toContain(
-      "Environment=GATEWAY_SSH_KEYS_FILE=/home/vibe/.ssh/authorized_keys",
-    );
-    expect(createPayload?.user_data).toContain(
-      "install -d -m 700 -o vibe -g vibe /home/vibe/.ssh",
-    );
-    expect(createPayload?.user_data).toContain(
-      "apt-get install -y -q tmux curl ca-certificates",
-    );
+    expect(createPayload?.user_data).toContain("BOOTSTRAP_URL=\"$GATEWAY_RELEASE_BASE_URL/$GATEWAY_VERSION/cloud-init.sh\"");
+    expect(createPayload?.user_data).toContain("export GATEWAY_ID='gw-test-1'");
+    expect(createPayload?.user_data).toContain("export GATEWAY_CP_URL='wss://cp.example.test/gw/connect'");
+    expect(createPayload?.user_data).toContain("export GATEWAY_VERSION='v0.0.3'");
   });
 
   it("rolls back droplet when DB write fails", async () => {

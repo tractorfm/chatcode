@@ -27,7 +27,7 @@ import { hashGatewayToken } from "../lib/auth.js";
 import { newVPSId, newGatewayId, randomHex } from "../lib/ids.js";
 
 const PROVISIONING_TIMEOUT_SEC = 600; // 10 minutes
-const DEFAULT_GATEWAY_VERSION = "v0.0.1";
+const DEFAULT_GATEWAY_VERSION = "v0.0.3";
 const DEFAULT_GATEWAY_RELEASE_BASE_URL = "https://releases.chatcode.dev/gateway";
 const DEFAULT_DROPLET_REGION = "nyc1";
 const DEFAULT_DROPLET_SIZE = "s-1vcpu-512mb-10gb";
@@ -421,90 +421,36 @@ function buildCloudInit(
   version: string,
   releaseBaseUrl: string,
 ): string {
+  const gatewayIdQ = shellQuote(gatewayId);
+  const authTokenQ = shellQuote(authToken);
+  const cpUrlQ = shellQuote(cpUrl);
+  const versionQ = shellQuote(version);
+  const releaseBaseUrlQ = shellQuote(releaseBaseUrl);
+
   return `#!/bin/bash
 set -euo pipefail
 
-# Install runtime dependencies required by gateway sessions.
-export DEBIAN_FRONTEND=noninteractive
-apt-get update -q
-apt-get install -y -q tmux curl ca-certificates
-
-# Create vibe user
-id -u vibe >/dev/null 2>&1 || useradd -m -s /bin/bash vibe
-echo "vibe ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/vibe
-chmod 440 /etc/sudoers.d/vibe
-
-# Ensure vibe-owned home paths
-install -d -m 700 -o vibe -g vibe /home/vibe/.ssh
-touch /home/vibe/.ssh/authorized_keys
-chown vibe:vibe /home/vibe/.ssh/authorized_keys
-chmod 600 /home/vibe/.ssh/authorized_keys
-install -d -m 755 -o vibe -g vibe /home/vibe/workspace
-
-# Install gateway
-mkdir -p /opt/chatcode
-cd /opt/chatcode
-
-GATEWAY_RELEASE_BASE_URL="${releaseBaseUrl}"
-ARCH="$(uname -m)"
-case "$ARCH" in
-  x86_64|amd64) GATEWAY_ARCH="amd64" ;;
-  aarch64|arm64) GATEWAY_ARCH="arm64" ;;
-  *)
-    echo "unsupported architecture: $ARCH" >&2
-    exit 1
-    ;;
-esac
-
-GATEWAY_URL="$GATEWAY_RELEASE_BASE_URL/${version}/chatcode-gateway-linux-\${GATEWAY_ARCH}"
-curl -fsSL -o gateway "$GATEWAY_URL"
-curl -fsSL -o gateway.sha256 "$GATEWAY_URL.sha256"
-EXPECTED_SHA256="$(awk '{print $1}' gateway.sha256)"
-ACTUAL_SHA256="$(sha256sum gateway | awk '{print $1}')"
-if [ "$EXPECTED_SHA256" != "$ACTUAL_SHA256" ]; then
-  echo "gateway checksum mismatch" >&2
-  rm -f gateway gateway.sha256
-  exit 1
+if ! command -v curl >/dev/null 2>&1; then
+  export DEBIAN_FRONTEND=noninteractive
+  apt-get update -q
+  apt-get install -y -q curl ca-certificates
 fi
-rm -f gateway.sha256
-chmod +x gateway
 
-# Write config
-cat > /opt/chatcode/config.json <<CONF
-{
-  "gateway_id": "${gatewayId}",
-  "gateway_auth_token": "${authToken}",
-  "gateway_cp_url": "${cpUrl}"
-}
-CONF
+export GATEWAY_ID=${gatewayIdQ}
+export GATEWAY_AUTH_TOKEN=${authTokenQ}
+export GATEWAY_CP_URL=${cpUrlQ}
+export GATEWAY_VERSION=${versionQ}
+export GATEWAY_RELEASE_BASE_URL=${releaseBaseUrlQ}
 
-# Create systemd service
-cat > /etc/systemd/system/chatcode-gateway.service <<SVC
-[Unit]
-Description=Chatcode Gateway
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=simple
-User=vibe
-Group=vibe
-ExecStart=/opt/chatcode/gateway
-WorkingDirectory=/home/vibe
-Environment=HOME=/home/vibe
-Environment=GATEWAY_ID=${gatewayId}
-Environment=GATEWAY_AUTH_TOKEN=${authToken}
-Environment=GATEWAY_CP_URL=${cpUrl}
-Environment=GATEWAY_SSH_KEYS_FILE=/home/vibe/.ssh/authorized_keys
-Restart=always
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-SVC
-
-systemctl daemon-reload
-systemctl enable chatcode-gateway
-systemctl start chatcode-gateway
+BOOTSTRAP_URL="$GATEWAY_RELEASE_BASE_URL/$GATEWAY_VERSION/cloud-init.sh"
+BOOTSTRAP_PATH="/tmp/chatcode-cloud-init.sh"
+curl -fsSL "$BOOTSTRAP_URL" -o "$BOOTSTRAP_PATH"
+chmod +x "$BOOTSTRAP_PATH"
+"$BOOTSTRAP_PATH"
+rm -f "$BOOTSTRAP_PATH"
 `;
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", `'\"'\"'`)}'`;
 }

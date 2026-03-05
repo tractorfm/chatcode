@@ -320,6 +320,39 @@ describe("GatewayHub", () => {
     ).toBe(0);
   });
 
+  it("sends schema-versioned protocol error on invalid browser payload", () => {
+    const hub = makeHub();
+    const wsSend = vi.fn();
+    const ws = makeSocket(wsSend);
+
+    (
+      hub as unknown as {
+        onBrowserText: (ws: WebSocket, sessionId: string, data: string) => void;
+      }
+    ).onBrowserText(ws, "ses-1", "{not-json");
+
+    expect(wsSend).toHaveBeenCalledOnce();
+    const payload = JSON.parse(String(wsSend.mock.calls[0][0])) as Record<string, unknown>;
+    expect(payload.type).toBe("error");
+    expect(payload.schema_version).toBe("1");
+    expect(payload.code).toBe("invalid_payload");
+  });
+
+  it("returns schema-versioned pong to browser ping", () => {
+    const hub = makeHub();
+    const wsSend = vi.fn();
+    const ws = makeSocket(wsSend);
+
+    (
+      hub as unknown as {
+        onBrowserText: (ws: WebSocket, sessionId: string, data: string) => void;
+      }
+    ).onBrowserText(ws, "ses-1", JSON.stringify({ type: "ping" }));
+
+    expect(wsSend).toHaveBeenCalledOnce();
+    expect(wsSend.mock.calls[0][0]).toBe(JSON.stringify({ type: "pong", schema_version: "1" }));
+  });
+
   it("reconciles active sessions from gateway.health", async () => {
     const hub = makeHub("vps-1", [
       { id: "ses-active-running", status: "running" },

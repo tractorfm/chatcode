@@ -586,14 +586,7 @@ export class GatewayHub {
   private onBrowserText(ws: WebSocket, sessionId: string, data: string): void {
     // Payload guard
     if (data.length > MAX_TEXT_PAYLOAD) {
-      safeSend(
-        ws,
-        JSON.stringify({
-          type: "error",
-          code: "payload_too_large",
-          message: "payload exceeds maximum size",
-        }),
-      );
+      this.sendProtocolError(ws, "payload_too_large", "payload exceeds maximum size");
       try {
         ws.close(1008, "payload too large");
       } catch {
@@ -607,14 +600,7 @@ export class GatewayHub {
     try {
       msg = JSON.parse(data);
     } catch {
-      safeSend(
-        ws,
-        JSON.stringify({
-          type: "error",
-          code: "invalid_payload",
-          message: "invalid JSON",
-        }),
-      );
+      this.sendProtocolError(ws, "invalid_payload", "invalid JSON");
       return;
     }
 
@@ -643,18 +629,11 @@ export class GatewayHub {
         break;
 
       case "ping":
-        safeSend(ws, JSON.stringify({ type: "pong" }));
+        safeSend(ws, JSON.stringify({ type: "pong", schema_version: "1" }));
         break;
 
       default:
-        safeSend(
-          ws,
-          JSON.stringify({
-            type: "error",
-            code: "unknown_type",
-            message: `unknown message type: ${msg.type}`,
-          }),
-        );
+        this.sendProtocolError(ws, "unknown_type", `unknown message type: ${msg.type}`);
     }
   }
 
@@ -997,6 +976,18 @@ export class GatewayHub {
         }),
       );
     }
+  }
+
+  private sendProtocolError(ws: WebSocket, code: string, message: string): void {
+    safeSend(
+      ws,
+      JSON.stringify({
+        type: "error",
+        schema_version: "1",
+        code,
+        message,
+      }),
+    );
   }
 
   private trackBrowserAck(requestId: string, ws: WebSocket): void {
