@@ -639,10 +639,15 @@ func (g *gateway) handleAgentsInstall(ctx context.Context, raw json.RawMessage) 
 	if err := json.Unmarshal(raw, &cmd); err != nil {
 		return err
 	}
+
+	// Acknowledge immediately so control-plane/test UI does not time out while
+	// npm-based installs run for minutes on small VPS instances.
+	g.sendAck(ctx, cmd.RequestID, true, "")
+
 	go func() {
 		version, err := agents.Install(agents.AgentName(cmd.Agent))
 		if err != nil {
-			g.sendAck(ctx, cmd.RequestID, false, err.Error())
+			g.log.Error("agent install failed", "agent", cmd.Agent, "request_id", cmd.RequestID, "err", err)
 			return
 		}
 		g.sendEvent(ctx, map[string]any{
@@ -651,7 +656,6 @@ func (g *gateway) handleAgentsInstall(ctx context.Context, raw json.RawMessage) 
 			"agent":      cmd.Agent,
 			"version":    version,
 		})
-		g.sendAck(ctx, cmd.RequestID, true, "")
 	}()
 	return nil
 }

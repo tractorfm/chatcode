@@ -3,10 +3,12 @@ package agents
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 
 	gw "github.com/tractorfm/chatcode/packages/gateway"
 )
@@ -106,6 +108,33 @@ func verifyInPath(binary string) error {
 }
 
 func getVersion(binary string) (string, error) {
+	return getVersionWithTimeout(binary, 0)
+}
+
+func getVersionWithTimeout(binary string, timeout time.Duration) (string, error) {
+	ctx := context.Background()
+	cancel := func() {}
+	if timeout > 0 {
+		ctxWithTimeout, cancelWithTimeout := context.WithTimeout(ctx, timeout)
+		ctx = ctxWithTimeout
+		cancel = cancelWithTimeout
+	}
+	defer cancel()
+
+	args := versionArgs(binary)
+	out, err := exec.CommandContext(ctx, binary, args...).Output()
+	if err != nil {
+		return "", err
+	}
+	// Return first line of version output
+	lines := strings.SplitN(strings.TrimSpace(string(bytes.TrimSpace(out))), "\n", 2)
+	if len(lines) > 0 {
+		return lines[0], nil
+	}
+	return "", nil
+}
+
+func versionArgs(binary string) []string {
 	var args []string
 	switch binary {
 	case "claude":
@@ -119,15 +148,5 @@ func getVersion(binary string) (string, error) {
 	default:
 		args = []string{"--version"}
 	}
-
-	out, err := exec.Command(binary, args...).Output()
-	if err != nil {
-		return "", err
-	}
-	// Return first line of version output
-	lines := strings.SplitN(strings.TrimSpace(string(bytes.TrimSpace(out))), "\n", 2)
-	if len(lines) > 0 {
-		return lines[0], nil
-	}
-	return "", nil
+	return args
 }

@@ -1,5 +1,9 @@
 package agents
 
+import "time"
+
+const statusVersionTimeout = 1500 * time.Millisecond
+
 // Status reports whether a supported agent is currently available on PATH.
 type Status struct {
 	Agent     AgentName `json:"agent"`
@@ -19,11 +23,23 @@ func ListStatus() []Status {
 		status := Status{Agent: agent, Binary: binary}
 		if err := verifyInPath(binary); err == nil {
 			status.Installed = true
-			if version, err := getVersion(binary); err == nil {
-				status.Version = version
+			// Keep status checks responsive even when some CLIs are slow to boot.
+			if shouldProbeVersion(agent) {
+				if version, err := getVersionWithTimeout(binary, statusVersionTimeout); err == nil {
+					status.Version = version
+				}
 			}
 		}
 		out = append(out, status)
 	}
 	return out
+}
+
+func shouldProbeVersion(agent AgentName) bool {
+	switch agent {
+	case AgentClaudeCode, AgentCodex:
+		return true
+	default:
+		return false
+	}
 }
