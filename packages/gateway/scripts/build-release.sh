@@ -62,7 +62,6 @@ mkdir -p "${DIST_DIR}"
 LDFLAGS="-X main.Version=${VERSION} -X main.BuildTime=${BUILD_TIME} -s -w"
 if [[ -n "${SELFHOST_CP_URL}" ]]; then
   LDFLAGS="${LDFLAGS} -X github.com/tractorfm/chatcode/packages/gateway/internal/config.CPURLSelfHost=${SELFHOST_CP_URL}"
-  LDFLAGS="${LDFLAGS} -X github.com/tractorfm/chatcode/packages/gateway/internal/ws.SelfHostGatewayWSURL=${SELFHOST_CP_URL}"
 fi
 
 for target in "${TARGETS[@]}"; do

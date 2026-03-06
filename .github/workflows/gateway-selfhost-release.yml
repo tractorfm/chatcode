@@ -50,10 +50,25 @@ jobs:
             echo "::error::invalid cp_domain: ${domain}"
             exit 1
           fi
-          if [[ "${domain}" == *".."* || "${domain}" == .* || "${domain}" == *-.* || "${domain}" == *.-* ]]; then
+          if [[ "${#domain}" -gt 253 ]]; then
             echo "::error::invalid cp_domain: ${domain}"
             exit 1
           fi
+          IFS='.' read -r -a labels <<< "${domain}"
+          for label in "${labels[@]}"; do
+            if [[ -z "${label}" ]]; then
+              echo "::error::invalid cp_domain label in '${domain}'"
+              exit 1
+            fi
+            if [[ "${#label}" -gt 63 ]]; then
+              echo "::error::cp_domain label too long in '${domain}'"
+              exit 1
+            fi
+            if [[ ! "${label}" =~ ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$ ]]; then
+              echo "::error::invalid cp_domain label '${label}'"
+              exit 1
+            fi
+          done
 
           cp_url="wss://${domain}/gw/connect"
           if [[ -z "${prefix}" ]]; then

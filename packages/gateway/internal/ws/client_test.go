@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/tractorfm/chatcode/packages/gateway/internal/config"
 	"nhooyr.io/websocket"
 	"nhooyr.io/websocket/wsjson"
 )
@@ -315,9 +316,9 @@ func TestConnectHeadersIncludesGatewayID(t *testing.T) {
 }
 
 func TestDefaultDialURLSelfHost(t *testing.T) {
-	old := SelfHostGatewayWSURL
-	SelfHostGatewayWSURL = "wss://cp.selfhost.example/gw/connect"
-	t.Cleanup(func() { SelfHostGatewayWSURL = old })
+	old := config.CPURLSelfHost
+	config.CPURLSelfHost = "wss://cp.selfhost.example/gw/connect"
+	t.Cleanup(func() { config.CPURLSelfHost = old })
 
 	client := NewClient("gw-test", "token", TargetSelfHost, nil, nil, slog.Default())
 	if got, want := client.defaultDialURL(), "wss://cp.selfhost.example/gw/connect"; got != want {

@@ -163,15 +163,28 @@ func (c *Config) validate() error {
 
 func allowedCPURLs() ([]string, error) {
 	allowed := []string{CPURLProd, CPURLStaging}
-	if CPURLSelfHost == "" {
-		return allowed, nil
-	}
-	normalized, err := normalizeCPURL(CPURLSelfHost)
+	normalizedSelfHost, ok, err := NormalizedSelfHostCPURL()
 	if err != nil {
 		return nil, fmt.Errorf("invalid self-host control-plane URL in build config: %w", err)
 	}
-	allowed = append(allowed, normalized)
+	if !ok {
+		return allowed, nil
+	}
+	allowed = append(allowed, normalizedSelfHost)
 	return allowed, nil
+}
+
+// NormalizedSelfHostCPURL returns the configured build-time self-host CP URL.
+// ok=false means no self-host URL is configured for this build.
+func NormalizedSelfHostCPURL() (normalized string, ok bool, err error) {
+	if CPURLSelfHost == "" {
+		return "", false, nil
+	}
+	normalized, err = normalizeCPURL(CPURLSelfHost)
+	if err != nil {
+		return "", false, err
+	}
+	return normalized, true, nil
 }
 
 func normalizeCPURL(raw string) (string, error) {

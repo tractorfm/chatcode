@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/tractorfm/chatcode/packages/gateway/internal/config"
 	"nhooyr.io/websocket"
 	"nhooyr.io/websocket/wsjson"
 )
@@ -43,12 +44,6 @@ const (
 	TargetStaging
 	TargetSelfHost
 )
-
-// SelfHostGatewayWSURL is optionally injected at build time for self-hosted
-// releases. Example:
-//
-//	-X github.com/tractorfm/chatcode/packages/gateway/internal/ws.SelfHostGatewayWSURL=wss://cp.example.com/gw/connect
-var SelfHostGatewayWSURL = ""
 
 // Client is a persistent WebSocket connection to the control plane.
 type Client struct {
@@ -92,7 +87,11 @@ func (c *Client) defaultDialURL() string {
 	case TargetStaging:
 		return "wss://cp.staging.chatcode.dev/gw/connect"
 	case TargetSelfHost:
-		return SelfHostGatewayWSURL
+		selfHostURL, ok, err := config.NormalizedSelfHostCPURL()
+		if err != nil || !ok {
+			return ""
+		}
+		return selfHostURL
 	default:
 		return "wss://cp.chatcode.dev/gw/connect"
 	}
