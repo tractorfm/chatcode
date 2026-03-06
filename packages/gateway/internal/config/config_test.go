@@ -2,7 +2,16 @@ package config
 
 import "testing"
 
+func resetSelfHostCPURL(t *testing.T) {
+	t.Helper()
+	old := CPURLSelfHost
+	t.Cleanup(func() {
+		CPURLSelfHost = old
+	})
+}
+
 func TestLoadReadsBootstrapTokenFromEnv(t *testing.T) {
+	resetSelfHostCPURL(t)
 	t.Setenv("GATEWAY_ID", "gw-test")
 	t.Setenv("GATEWAY_AUTH_TOKEN", "auth-test")
 	t.Setenv("GATEWAY_CP_URL", CPURLStaging)
@@ -18,6 +27,7 @@ func TestLoadReadsBootstrapTokenFromEnv(t *testing.T) {
 }
 
 func TestLoadAllowsMissingBootstrapToken(t *testing.T) {
+	resetSelfHostCPURL(t)
 	t.Setenv("GATEWAY_ID", "gw-test")
 	t.Setenv("GATEWAY_AUTH_TOKEN", "auth-test")
 	t.Setenv("GATEWAY_CP_URL", CPURLStaging)
@@ -33,6 +43,7 @@ func TestLoadAllowsMissingBootstrapToken(t *testing.T) {
 }
 
 func TestLoadRejectsInvalidGatewayID(t *testing.T) {
+	resetSelfHostCPURL(t)
 	t.Setenv("GATEWAY_ID", "gw test")
 	t.Setenv("GATEWAY_AUTH_TOKEN", "auth-test")
 	t.Setenv("GATEWAY_CP_URL", CPURLStaging)
@@ -40,5 +51,29 @@ func TestLoadRejectsInvalidGatewayID(t *testing.T) {
 	_, err := Load("")
 	if err == nil {
 		t.Fatal("Load() error = nil, want invalid gateway id error")
+	}
+}
+
+func TestLoadAllowsSelfHostCPURLWhenBaked(t *testing.T) {
+	resetSelfHostCPURL(t)
+	CPURLSelfHost = "wss://cp.example.com/gw/connect"
+	t.Setenv("GATEWAY_ID", "gw-test")
+	t.Setenv("GATEWAY_AUTH_TOKEN", "auth-test")
+	t.Setenv("GATEWAY_CP_URL", "wss://cp.example.com/gw/connect")
+
+	if _, err := Load(""); err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+}
+
+func TestLoadRejectsMalformedSelfHostCPURLBuildConfig(t *testing.T) {
+	resetSelfHostCPURL(t)
+	CPURLSelfHost = "http://cp.example.com/gw/connect"
+	t.Setenv("GATEWAY_ID", "gw-test")
+	t.Setenv("GATEWAY_AUTH_TOKEN", "auth-test")
+	t.Setenv("GATEWAY_CP_URL", CPURLProd)
+
+	if _, err := Load(""); err == nil {
+		t.Fatal("Load() error = nil, want invalid self-host cp url error")
 	}
 }

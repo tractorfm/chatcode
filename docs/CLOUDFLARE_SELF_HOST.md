@@ -135,6 +135,14 @@ Set repo secrets:
 
 Then push a tag (`vX.Y.Z`) to trigger `.github/workflows/gateway-release.yml`.
 
+For self-hosted control-plane domains, prefer `.github/workflows/gateway-selfhost-release.yml`:
+- input `release_tag` (example: `v0.2.0-selfhost.1`)
+- input `cp_domain` (example: `cp.example.com`)
+- optional `publish_r2=true`
+
+This workflow bakes `wss://<cp_domain>/gw/connect` into the gateway binary.
+Runtime `--cp-url` must match that baked URL (or managed prod/staging URLs).
+
 ## 9. Quick Verification
 
 ```bash

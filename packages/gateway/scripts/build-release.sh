@@ -12,6 +12,7 @@ Example:
 
 Environment:
   TARGETS="linux/amd64 linux/arm64 darwin/arm64"  # optional override
+  GATEWAY_SELFHOST_CP_URL="wss://cp.example.com/gw/connect"  # optional
 USAGE
 }
 
@@ -32,6 +33,13 @@ fi
 TARGETS_STR="${TARGETS:-linux/amd64 linux/arm64 darwin/arm64}"
 read -r -a TARGETS <<<"${TARGETS_STR}"
 BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+SELFHOST_CP_URL="${GATEWAY_SELFHOST_CP_URL:-}"
+SELFHOST_URL_RE='^wss://[A-Za-z0-9.-]+(:[0-9]+)?/gw/connect$'
+
+if [[ -n "${SELFHOST_CP_URL}" && ! "${SELFHOST_CP_URL}" =~ ${SELFHOST_URL_RE} ]]; then
+  echo "[build-release] ERROR: GATEWAY_SELFHOST_CP_URL must match wss://<host>[:port]/gw/connect" >&2
+  exit 1
+fi
 
 hash_file() {
   local file="$1"
@@ -51,6 +59,12 @@ cd "${PKG_DIR}"
 rm -rf "${DIST_DIR}"
 mkdir -p "${DIST_DIR}"
 
+LDFLAGS="-X main.Version=${VERSION} -X main.BuildTime=${BUILD_TIME} -s -w"
+if [[ -n "${SELFHOST_CP_URL}" ]]; then
+  LDFLAGS="${LDFLAGS} -X github.com/tractorfm/chatcode/packages/gateway/internal/config.CPURLSelfHost=${SELFHOST_CP_URL}"
+  LDFLAGS="${LDFLAGS} -X github.com/tractorfm/chatcode/packages/gateway/internal/ws.SelfHostGatewayWSURL=${SELFHOST_CP_URL}"
+fi
+
 for target in "${TARGETS[@]}"; do
   goos="${target%/*}"
   goarch="${target#*/}"
@@ -58,7 +72,7 @@ for target in "${TARGETS[@]}"; do
 
   echo "[build-release] building ${goos}/${goarch} -> ${out}"
   CGO_ENABLED=0 GOOS="${goos}" GOARCH="${goarch}" \
-    go build -ldflags "-X main.Version=${VERSION} -X main.BuildTime=${BUILD_TIME} -s -w" \
+    go build -ldflags "${LDFLAGS}" \
     -o "${out}" ./cmd/gateway
 
   hash="$(hash_file "${out}")"
@@ -90,6 +104,7 @@ printf '%s\n' "${VERSION}" > "${DIST_DIR}/latest.txt"
 cat > "${DIST_DIR}/manifest.json" <<JSON
 {
   "version": "${VERSION}",
+  "selfhost_cp_url": "${SELFHOST_CP_URL}",
   "targets": [
     $(printf '"%s",' "${TARGETS[@]}" | sed 's/,$//')
   ],

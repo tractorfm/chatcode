@@ -68,7 +68,7 @@ func (ms *mockServer) received_() []json.RawMessage {
 }
 
 func newTestClient(wsURL, token string, onText TextHandler, onBinary BinaryHandler) *Client {
-	c := NewClient("gw-test", token, false, onText, onBinary, slog.Default())
+	c := NewClient("gw-test", token, TargetProd, onText, onBinary, slog.Default())
 	c.dialURL = func() string { return wsURL }
 	return c
 }
@@ -81,7 +81,7 @@ func TestClientConnectsAndSendsHello(t *testing.T) {
 	defer cancel()
 
 	client := NewClient(
-		"gw-test", "test-token", false,
+		"gw-test", "test-token", TargetProd,
 		func(ctx context.Context, msg json.RawMessage) {},
 		nil,
 		slog.Default(),
@@ -292,24 +292,35 @@ func TestClientConcurrentSendsAreSerialized(t *testing.T) {
 }
 
 func TestDefaultDialURL(t *testing.T) {
-	prod := NewClient("gw-test", "token", false, nil, nil, slog.Default())
+	prod := NewClient("gw-test", "token", TargetProd, nil, nil, slog.Default())
 	if got, want := prod.defaultDialURL(), "wss://cp.chatcode.dev/gw/connect"; got != want {
 		t.Fatalf("defaultDialURL() for prod = %q, want %q", got, want)
 	}
 
-	staging := NewClient("gw-test", "token", true, nil, nil, slog.Default())
+	staging := NewClient("gw-test", "token", TargetStaging, nil, nil, slog.Default())
 	if got, want := staging.defaultDialURL(), "wss://cp.staging.chatcode.dev/gw/connect"; got != want {
 		t.Fatalf("defaultDialURL() for staging = %q, want %q", got, want)
 	}
 }
 
 func TestConnectHeadersIncludesGatewayID(t *testing.T) {
-	client := NewClient("gw-test", "token", false, nil, nil, slog.Default())
+	client := NewClient("gw-test", "token", TargetProd, nil, nil, slog.Default())
 	headers := client.connectHeaders()
 	if got, want := headers.Get("Authorization"), "Bearer token"; got != want {
 		t.Fatalf("Authorization header = %q, want %q", got, want)
 	}
 	if got, want := headers.Get("X-Gateway-Id"), "gw-test"; got != want {
 		t.Fatalf("X-Gateway-Id header = %q, want %q", got, want)
+	}
+}
+
+func TestDefaultDialURLSelfHost(t *testing.T) {
+	old := SelfHostGatewayWSURL
+	SelfHostGatewayWSURL = "wss://cp.selfhost.example/gw/connect"
+	t.Cleanup(func() { SelfHostGatewayWSURL = old })
+
+	client := NewClient("gw-test", "token", TargetSelfHost, nil, nil, slog.Default())
+	if got, want := client.defaultDialURL(), "wss://cp.selfhost.example/gw/connect"; got != want {
+		t.Fatalf("defaultDialURL() for self-host = %q, want %q", got, want)
 	}
 }

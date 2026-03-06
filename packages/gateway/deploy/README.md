@@ -151,6 +151,10 @@ Update specific CLIs:
 cd packages/gateway
 ./scripts/build-release.sh v0.1.1
 
+# Build self-host bundle pinned to your control-plane domain
+GATEWAY_SELFHOST_CP_URL="wss://cp.example.com/gw/connect" \
+  ./scripts/build-release.sh v0.1.1-selfhost.1
+
 # Publish to R2 (requires R2 S3 access key/secret in env)
 export R2_ACCOUNT_ID="<cloudflare-account-id>"
 export R2_ACCESS_KEY_ID="<r2-access-key-id>"
@@ -202,6 +206,11 @@ Workflow `.github/workflows/gateway-release.yml` expects:
 - `R2_ACCESS_KEY_ID`
 - `R2_SECRET_ACCESS_KEY`
 - `R2_RELEASE_BUCKET`
+
+Self-host workflow `.github/workflows/gateway-selfhost-release.yml`:
+- dispatch manually with `release_tag` + `cp_domain`
+- bakes `wss://<cp_domain>/gw/connect` into gateway binaries
+- optional `publish_r2=true` uploads bundle to `gateway-selfhost/<cp_domain>/...`
 
 Upload credentials should come from an R2 API token/access key pair scoped to the release bucket.
 

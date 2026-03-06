@@ -35,11 +35,26 @@ type TextHandler func(ctx context.Context, msg json.RawMessage)
 // BinaryHandler is called for every incoming binary frame.
 type BinaryHandler func(ctx context.Context, data []byte)
 
+// Target identifies which control-plane endpoint this client should dial.
+type Target uint8
+
+const (
+	TargetProd Target = iota
+	TargetStaging
+	TargetSelfHost
+)
+
+// SelfHostGatewayWSURL is optionally injected at build time for self-hosted
+// releases. Example:
+//
+//	-X github.com/tractorfm/chatcode/packages/gateway/internal/ws.SelfHostGatewayWSURL=wss://cp.example.com/gw/connect
+var SelfHostGatewayWSURL = ""
+
 // Client is a persistent WebSocket connection to the control plane.
 type Client struct {
 	gatewayID string
 	authToken string
-	staging   bool
+	target    Target
 	onText    TextHandler
 	onBinary  BinaryHandler
 	dialURL   func() string
@@ -55,7 +70,7 @@ type Client struct {
 // NewClient creates a Client. Call Run to start connecting.
 func NewClient(
 	gatewayID, authToken string,
-	staging bool,
+	target Target,
 	onText TextHandler,
 	onBinary BinaryHandler,
 	log *slog.Logger,
@@ -63,7 +78,7 @@ func NewClient(
 	c := &Client{
 		gatewayID: gatewayID,
 		authToken: authToken,
-		staging:   staging,
+		target:    target,
 		onText:    onText,
 		onBinary:  onBinary,
 		log:       log,
@@ -73,10 +88,14 @@ func NewClient(
 }
 
 func (c *Client) defaultDialURL() string {
-	if c.staging {
+	switch c.target {
+	case TargetStaging:
 		return "wss://cp.staging.chatcode.dev/gw/connect"
+	case TargetSelfHost:
+		return SelfHostGatewayWSURL
+	default:
+		return "wss://cp.chatcode.dev/gw/connect"
 	}
-	return "wss://cp.chatcode.dev/gw/connect"
 }
 
 func (c *Client) connectHeaders() http.Header {
@@ -113,6 +132,9 @@ func (c *Client) Run(ctx context.Context) {
 // connect dials, reads until error, then returns.
 func (c *Client) connect(ctx context.Context) (time.Duration, error) {
 	wsURL := c.dialURL()
+	if wsURL == "" {
+		return 0, fmt.Errorf("control-plane websocket URL is empty for target %d", c.target)
+	}
 
 	dialCtx, cancelDial := context.WithTimeout(ctx, dialTimeout)
 	defer cancelDial()

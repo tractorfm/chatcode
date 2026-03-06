@@ -96,13 +96,21 @@ func main() {
 	})
 
 	// Create WS client.
-	// The control-plane target is fixed (prod/staging) and gateway identity is
-	// sent via header, not user-controlled URL composition.
-	isStagingCP := cfg.CPURL == config.CPURLStaging
+	// Target selection is enum-based (prod/staging/selfhost), so dial URLs are
+	// build-time controlled and not runtime-composed from arbitrary input.
+	target := ws.TargetProd
+	switch cfg.CPURL {
+	case config.CPURLStaging:
+		target = ws.TargetStaging
+	case config.CPURLProd:
+		target = ws.TargetProd
+	default:
+		target = ws.TargetSelfHost
+	}
 	g.wsClient = ws.NewClient(
 		cfg.GatewayID,
 		cfg.AuthToken,
-		isStagingCP,
+		target,
 		g.onTextFrame,
 		nil, // gateway doesn't receive binary frames
 		log,

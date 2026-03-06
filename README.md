@@ -6,6 +6,7 @@ Provision a VPS, connect a gateway, and use AI agents in a browser terminal.
 - Architecture plan: [`MVP.md`](MVP.md)
 - Security model: [`docs/SECURITY.md`](docs/SECURITY.md)
 - Self-host guide: [`docs/CLOUDFLARE_SELF_HOST.md`](docs/CLOUDFLARE_SELF_HOST.md)
+- Self-host release model: [`SELFHOSTING.md`](SELFHOSTING.md)
 
 ## Why Chatcode
 

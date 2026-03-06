@@ -5,9 +5,11 @@ package config
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -50,6 +52,11 @@ const (
 )
 
 var gatewayIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
+
+// CPURLSelfHost can be injected at build time for self-host releases:
+//
+//	-X github.com/tractorfm/chatcode/packages/gateway/internal/config.CPURLSelfHost=wss://cp.example.com/gw/connect
+var CPURLSelfHost = ""
 
 // Load returns a Config populated from the optional file at path, then
 // overridden by environment variables.
@@ -142,12 +149,50 @@ func (c *Config) validate() error {
 	if c.CPURL == "" {
 		return fmt.Errorf("GATEWAY_CP_URL is required")
 	}
-	if c.CPURL != CPURLProd && c.CPURL != CPURLStaging {
-		return fmt.Errorf(
-			"GATEWAY_CP_URL must be %q or %q",
-			CPURLProd,
-			CPURLStaging,
-		)
+	allowed, err := allowedCPURLs()
+	if err != nil {
+		return err
 	}
-	return nil
+	for _, candidate := range allowed {
+		if c.CPURL == candidate {
+			return nil
+		}
+	}
+	return fmt.Errorf("GATEWAY_CP_URL is not allowed for this build")
+}
+
+func allowedCPURLs() ([]string, error) {
+	allowed := []string{CPURLProd, CPURLStaging}
+	if CPURLSelfHost == "" {
+		return allowed, nil
+	}
+	normalized, err := normalizeCPURL(CPURLSelfHost)
+	if err != nil {
+		return nil, fmt.Errorf("invalid self-host control-plane URL in build config: %w", err)
+	}
+	allowed = append(allowed, normalized)
+	return allowed, nil
+}
+
+func normalizeCPURL(raw string) (string, error) {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return "", fmt.Errorf("parse URL: %w", err)
+	}
+	if u.Scheme != "wss" {
+		return "", fmt.Errorf("scheme must be wss")
+	}
+	if u.User != nil {
+		return "", fmt.Errorf("userinfo is not allowed")
+	}
+	if u.Host == "" {
+		return "", fmt.Errorf("missing host")
+	}
+	if u.Path != "/gw/connect" {
+		return "", fmt.Errorf("path must be /gw/connect")
+	}
+	if u.RawQuery != "" || u.Fragment != "" {
+		return "", fmt.Errorf("query and fragment are not allowed")
+	}
+	return u.String(), nil
 }
