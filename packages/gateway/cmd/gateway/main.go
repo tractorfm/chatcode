@@ -14,7 +14,6 @@ import (
 	"os/signal"
 	"regexp"
 	"runtime"
-	"strings"
 	"syscall"
 	"time"
 	"unicode/utf8"
@@ -97,12 +96,13 @@ func main() {
 	})
 
 	// Create WS client.
-	// URL format: <CPURL>/<gateway_id> so the Worker can extract the ID from the path
-	// and route to the correct GatewayHub DO without a separate header.
-	wsURL := strings.TrimRight(cfg.CPURL, "/") + "/" + cfg.GatewayID
+	// The control-plane target is fixed (prod/staging) and gateway identity is
+	// sent via header, not user-controlled URL composition.
+	isStagingCP := cfg.CPURL == config.CPURLStaging
 	g.wsClient = ws.NewClient(
-		wsURL,
+		cfg.GatewayID,
 		cfg.AuthToken,
+		isStagingCP,
 		g.onTextFrame,
 		nil, // gateway doesn't receive binary frames
 		log,

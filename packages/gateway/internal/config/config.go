@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"regexp"
 	"strconv"
 	"time"
 )
@@ -42,6 +43,13 @@ type Config struct {
 	// LogLevel: "debug", "info", "warn", "error". Default "info".
 	LogLevel string `json:"log_level"`
 }
+
+const (
+	CPURLProd    = "wss://cp.chatcode.dev/gw/connect"
+	CPURLStaging = "wss://cp.staging.chatcode.dev/gw/connect"
+)
+
+var gatewayIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 
 // Load returns a Config populated from the optional file at path, then
 // overridden by environment variables.
@@ -125,11 +133,21 @@ func (c *Config) validate() error {
 	if c.GatewayID == "" {
 		return fmt.Errorf("GATEWAY_ID is required")
 	}
+	if !gatewayIDPattern.MatchString(c.GatewayID) {
+		return fmt.Errorf("GATEWAY_ID must match %q", gatewayIDPattern.String())
+	}
 	if c.AuthToken == "" {
 		return fmt.Errorf("GATEWAY_AUTH_TOKEN is required")
 	}
 	if c.CPURL == "" {
 		return fmt.Errorf("GATEWAY_CP_URL is required")
+	}
+	if c.CPURL != CPURLProd && c.CPURL != CPURLStaging {
+		return fmt.Errorf(
+			"GATEWAY_CP_URL must be %q or %q",
+			CPURLProd,
+			CPURLStaging,
+		)
 	}
 	return nil
 }

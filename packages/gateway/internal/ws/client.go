@@ -9,10 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
-	"net"
 	"net/http"
-	"net/url"
-	"strings"
 	"sync"
 	"time"
 
@@ -40,10 +37,12 @@ type BinaryHandler func(ctx context.Context, data []byte)
 
 // Client is a persistent WebSocket connection to the control plane.
 type Client struct {
-	url       string
+	gatewayID string
 	authToken string
+	staging   bool
 	onText    TextHandler
 	onBinary  BinaryHandler
+	dialURL   func() string
 
 	mu   sync.Mutex
 	conn *websocket.Conn
@@ -54,14 +53,40 @@ type Client struct {
 }
 
 // NewClient creates a Client. Call Run to start connecting.
-func NewClient(url, authToken string, onText TextHandler, onBinary BinaryHandler, log *slog.Logger) *Client {
-	return &Client{
-		url:       url,
+func NewClient(
+	gatewayID, authToken string,
+	staging bool,
+	onText TextHandler,
+	onBinary BinaryHandler,
+	log *slog.Logger,
+) *Client {
+	c := &Client{
+		gatewayID: gatewayID,
 		authToken: authToken,
+		staging:   staging,
 		onText:    onText,
 		onBinary:  onBinary,
 		log:       log,
 	}
+	c.dialURL = c.defaultDialURL
+	return c
+}
+
+func (c *Client) defaultDialURL() string {
+	if c.staging {
+		return "wss://cp.staging.chatcode.dev/gw/connect"
+	}
+	return "wss://cp.chatcode.dev/gw/connect"
+}
+
+func (c *Client) connectHeaders() http.Header {
+	headers := http.Header{
+		"Authorization": []string{"Bearer " + c.authToken},
+	}
+	if c.gatewayID != "" {
+		headers.Set("X-Gateway-Id", c.gatewayID)
+	}
+	return headers
 }
 
 // Run connects and reconnects until ctx is cancelled. It blocks.
@@ -87,19 +112,13 @@ func (c *Client) Run(ctx context.Context) {
 
 // connect dials, reads until error, then returns.
 func (c *Client) connect(ctx context.Context) (time.Duration, error) {
-	wsURL, err := sanitizeGatewayWSURL(c.url)
-	if err != nil {
-		return 0, err
-	}
+	wsURL := c.dialURL()
 
 	dialCtx, cancelDial := context.WithTimeout(ctx, dialTimeout)
 	defer cancelDial()
 
-	headers := http.Header{
-		"Authorization": []string{"Bearer " + c.authToken},
-	}
 	conn, _, err := websocket.Dial(dialCtx, wsURL, &websocket.DialOptions{
-		HTTPHeader: headers,
+		HTTPHeader: c.connectHeaders(),
 	})
 	if err != nil {
 		return 0, fmt.Errorf("dial: %w", err)
@@ -226,43 +245,4 @@ func exponentialBackoff(attempt int) time.Duration {
 		d = maxBackoff
 	}
 	return d
-}
-
-func sanitizeGatewayWSURL(rawURL string) (string, error) {
-	u, err := url.Parse(rawURL)
-	if err != nil {
-		return "", fmt.Errorf("invalid gateway websocket URL: %w", err)
-	}
-
-	if u.User != nil {
-		return "", fmt.Errorf("invalid gateway websocket URL: user info is not allowed")
-	}
-	switch strings.ToLower(u.Scheme) {
-	case "ws", "wss":
-	default:
-		return "", fmt.Errorf("invalid gateway websocket URL: unsupported scheme %q", u.Scheme)
-	}
-
-	host := strings.ToLower(strings.TrimSpace(u.Hostname()))
-	if host == "" {
-		return "", fmt.Errorf("invalid gateway websocket URL: missing host")
-	}
-	if !isAllowedGatewayControlPlaneHost(host) {
-		return "", fmt.Errorf("invalid gateway websocket URL: host %q is not allowed", host)
-	}
-
-	return u.String(), nil
-}
-
-func isAllowedGatewayControlPlaneHost(host string) bool {
-	switch host {
-	case "localhost":
-		return true
-	}
-
-	if ip := net.ParseIP(host); ip != nil {
-		return ip.IsLoopback()
-	}
-
-	return host == "chatcode.dev" || strings.HasSuffix(host, ".chatcode.dev")
 }

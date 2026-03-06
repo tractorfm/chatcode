@@ -5,7 +5,7 @@ import "testing"
 func TestLoadReadsBootstrapTokenFromEnv(t *testing.T) {
 	t.Setenv("GATEWAY_ID", "gw-test")
 	t.Setenv("GATEWAY_AUTH_TOKEN", "auth-test")
-	t.Setenv("GATEWAY_CP_URL", "wss://cp.example.test/gw/connect")
+	t.Setenv("GATEWAY_CP_URL", CPURLStaging)
 	t.Setenv("GATEWAY_BOOTSTRAP_TOKEN", "boot-test")
 
 	cfg, err := Load("")
@@ -20,7 +20,7 @@ func TestLoadReadsBootstrapTokenFromEnv(t *testing.T) {
 func TestLoadAllowsMissingBootstrapToken(t *testing.T) {
 	t.Setenv("GATEWAY_ID", "gw-test")
 	t.Setenv("GATEWAY_AUTH_TOKEN", "auth-test")
-	t.Setenv("GATEWAY_CP_URL", "wss://cp.example.test/gw/connect")
+	t.Setenv("GATEWAY_CP_URL", CPURLStaging)
 	t.Setenv("GATEWAY_BOOTSTRAP_TOKEN", "")
 
 	cfg, err := Load("")
@@ -29,5 +29,16 @@ func TestLoadAllowsMissingBootstrapToken(t *testing.T) {
 	}
 	if cfg.BootstrapToken != "" {
 		t.Fatalf("BootstrapToken = %q, want empty", cfg.BootstrapToken)
+	}
+}
+
+func TestLoadRejectsInvalidGatewayID(t *testing.T) {
+	t.Setenv("GATEWAY_ID", "gw test")
+	t.Setenv("GATEWAY_AUTH_TOKEN", "auth-test")
+	t.Setenv("GATEWAY_CP_URL", CPURLStaging)
+
+	_, err := Load("")
+	if err == nil {
+		t.Fatal("Load() error = nil, want invalid gateway id error")
 	}
 }

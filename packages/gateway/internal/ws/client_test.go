@@ -67,6 +67,12 @@ func (ms *mockServer) received_() []json.RawMessage {
 	return out
 }
 
+func newTestClient(wsURL, token string, onText TextHandler, onBinary BinaryHandler) *Client {
+	c := NewClient("gw-test", token, false, onText, onBinary, slog.Default())
+	c.dialURL = func() string { return wsURL }
+	return c
+}
+
 func TestClientConnectsAndSendsHello(t *testing.T) {
 	ms := newMockServer(t)
 	defer ms.close()
@@ -75,11 +81,12 @@ func TestClientConnectsAndSendsHello(t *testing.T) {
 	defer cancel()
 
 	client := NewClient(
-		ms.wsURL(), "test-token",
+		"gw-test", "test-token", false,
 		func(ctx context.Context, msg json.RawMessage) {},
 		nil,
 		slog.Default(),
 	)
+	client.dialURL = func() string { return ms.wsURL() }
 
 	runDone := make(chan struct{})
 	go func() {
@@ -166,7 +173,7 @@ func TestClientReconnects(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	client := NewClient(wsURL, "token", nil, nil, slog.Default())
+	client := newTestClient(wsURL, "token", nil, nil)
 	go client.Run(ctx)
 
 	// Give time for reconnect
@@ -226,7 +233,7 @@ func TestClientConcurrentSendsAreSerialized(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	client := NewClient(ms.wsURL(), "token", nil, nil, slog.Default())
+	client := newTestClient(ms.wsURL(), "token", nil, nil)
 	runDone := make(chan struct{})
 	go func() {
 		defer close(runDone)
@@ -284,30 +291,25 @@ func TestClientConcurrentSendsAreSerialized(t *testing.T) {
 	<-runDone
 }
 
-func TestSanitizeGatewayWSURL(t *testing.T) {
-	tests := []struct {
-		name    string
-		rawURL  string
-		wantErr bool
-	}{
-		{name: "allow production host", rawURL: "wss://cp.chatcode.dev/gw/connect/gw-1"},
-		{name: "allow staging subdomain", rawURL: "wss://cp.staging.chatcode.dev/gw/connect/gw-1"},
-		{name: "allow localhost ws", rawURL: "ws://127.0.0.1:8787/gw/connect/gw-1"},
-		{name: "reject unsupported scheme", rawURL: "http://cp.chatcode.dev/gw/connect/gw-1", wantErr: true},
-		{name: "reject user info", rawURL: "wss://user@cp.chatcode.dev/gw/connect/gw-1", wantErr: true},
-		{name: "reject non-chatcode host", rawURL: "wss://evil.example.com/gw/connect/gw-1", wantErr: true},
+func TestDefaultDialURL(t *testing.T) {
+	prod := NewClient("gw-test", "token", false, nil, nil, slog.Default())
+	if got, want := prod.defaultDialURL(), "wss://cp.chatcode.dev/gw/connect"; got != want {
+		t.Fatalf("defaultDialURL() for prod = %q, want %q", got, want)
 	}
 
-	for _, tt := range tests {
-		tt := tt
-		t.Run(tt.name, func(t *testing.T) {
-			_, err := sanitizeGatewayWSURL(tt.rawURL)
-			if tt.wantErr && err == nil {
-				t.Fatalf("expected error for %q", tt.rawURL)
-			}
-			if !tt.wantErr && err != nil {
-				t.Fatalf("unexpected error for %q: %v", tt.rawURL, err)
-			}
-		})
+	staging := NewClient("gw-test", "token", true, nil, nil, slog.Default())
+	if got, want := staging.defaultDialURL(), "wss://cp.staging.chatcode.dev/gw/connect"; got != want {
+		t.Fatalf("defaultDialURL() for staging = %q, want %q", got, want)
+	}
+}
+
+func TestConnectHeadersIncludesGatewayID(t *testing.T) {
+	client := NewClient("gw-test", "token", false, nil, nil, slog.Default())
+	headers := client.connectHeaders()
+	if got, want := headers.Get("Authorization"), "Bearer token"; got != want {
+		t.Fatalf("Authorization header = %q, want %q", got, want)
+	}
+	if got, want := headers.Get("X-Gateway-Id"), "gw-test"; got != want {
+		t.Fatalf("X-Gateway-Id header = %q, want %q", got, want)
 	}
 }

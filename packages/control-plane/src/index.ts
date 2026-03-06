@@ -93,9 +93,9 @@ export default {
       }
 
       // --- Gateway WS (gateway auth, not user auth) ---
-      const gwMatch = path.match(/^\/gw\/connect\/([a-zA-Z0-9_-]+)$/);
+      const gwMatch = path.match(/^\/gw\/connect(?:\/([a-zA-Z0-9_-]+))?$/);
       if (gwMatch) {
-        return handleGatewayConnect(request, env, gwMatch[1]);
+        return handleGatewayConnect(request, env, gwMatch[1] ?? null);
       }
 
       // --- All remaining routes require user auth ---
@@ -268,11 +268,20 @@ export default {
 async function handleGatewayConnect(
   request: Request,
   env: Env,
-  gatewayId: string,
+  gatewayIdFromPath: string | null,
 ): Promise<Response> {
   const upgradeHeader = request.headers.get("Upgrade");
   if (!upgradeHeader || upgradeHeader.toLowerCase() !== "websocket") {
     return new Response("expected websocket upgrade", { status: 426 });
+  }
+
+  const gatewayIdHeader = request.headers.get("X-Gateway-Id");
+  if (gatewayIdFromPath && gatewayIdHeader && gatewayIdFromPath !== gatewayIdHeader) {
+    return new Response("gateway id mismatch", { status: 400 });
+  }
+  const gatewayId = gatewayIdFromPath ?? gatewayIdHeader;
+  if (!gatewayId || !/^[a-zA-Z0-9_-]+$/.test(gatewayId)) {
+    return new Response("invalid gateway id", { status: 400 });
   }
 
   // Verify bearer token
