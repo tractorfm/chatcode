@@ -29,10 +29,22 @@ Set repository **secrets**:
 - `CLOUDFLARE_API_TOKEN`
 - `CLOUDFLARE_ACCOUNT_ID`
 
+Legacy-compatible names are also accepted by workflow:
+
+- `CF_API_TOKEN`
+- `CF_ACCOUNT_ID`
+
 Set repository **variables**:
 
 - `CF_PAGES_PROJECT_PROD` = `chatcode-app`
 - `CF_PAGES_PROJECT_STAGING` = `chatcode-app-staging`
+
+Minimum API token permissions:
+
+- Account: Pages Edit
+- Account: Workers Scripts Edit
+- Account: Account Settings Read
+- Zone: Zone Read (and Zone Edit if you automate custom domain attach)
 
 Workflow: `.github/workflows/web-pages.yml`
 
