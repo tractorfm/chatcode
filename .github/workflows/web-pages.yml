@@ -59,6 +59,8 @@ jobs:
           branch="${{ github.event.inputs.branch || github.ref_name }}"
           branch="$(echo "${branch}" | tr '[:upper:]' '[:lower:]' | tr '/' '-' | tr -cd 'a-z0-9-')"
           branch="${branch:0:48}"
+          # If sanitization strips everything (e.g. branch name is only symbols),
+          # use deterministic fallback instead of failing deploy target resolution.
           [[ -n "${branch}" ]] || branch="preview"
 
           if [[ "${branch}" == "main" ]]; then
