@@ -5,6 +5,7 @@ This guide makes Chatcode run under your Cloudflare account and your domains.
 Recommended domain split:
 
 - control-plane API: `cp.<your-domain>`
+- frontend app: `app.<your-domain>`
 - release files: `releases.<your-domain>`
 - install entrypoints: `<your-domain>/install.sh` and `<your-domain>/cleanup.sh`
 
@@ -152,3 +153,10 @@ curl -i https://cp.example.com/vps
 ```
 
 In production auth mode, `/vps` should return `401 unauthorized` without a session.
+
+## 10. Frontend App Hosting
+
+Use Cloudflare Pages for the app surface and keep API on `cp.*`.
+
+Reference:
+- [`docs/FRONTEND_PAGES.md`](./FRONTEND_PAGES.md)

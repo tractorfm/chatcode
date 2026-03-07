@@ -7,6 +7,7 @@ Provision a VPS, connect a gateway, and use AI agents in a browser terminal.
 - Security model: [`docs/SECURITY.md`](docs/SECURITY.md)
 - Self-host guide: [`docs/CLOUDFLARE_SELF_HOST.md`](docs/CLOUDFLARE_SELF_HOST.md)
 - Self-host release model: [`SELFHOSTING.md`](SELFHOSTING.md)
+- Frontend Pages deploy: [`docs/FRONTEND_PAGES.md`](docs/FRONTEND_PAGES.md)
 
 ## Why Chatcode
 
