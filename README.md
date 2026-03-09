@@ -114,7 +114,9 @@ Security details, verification checklist, and roadmap:
 
 Product/runtime trade-offs and deferred hardening items are tracked in:
 
-- [`IMPLEMENTATION_M4_CORE.md`](IMPLEMENTATION_M4_CORE.md) ("Trade-offs & Deferred Improvements")
+- [`IMPLEMENTATION_M4.md`](IMPLEMENTATION_M4.md)
+- [`IMPLEMENTATION_M4_CORE.md`](IMPLEMENTATION_M4_CORE.md) (detailed core reference)
+- [`IMPLEMENTATION_M4_UI.md`](IMPLEMENTATION_M4_UI.md) (detailed UI reference)
 
 ## Self-Host in Your Own Cloudflare Account
 
@@ -142,3 +144,12 @@ Guide:
     <img alt="Star History Chart" src="https://api.star-history.com/image?repos=tractorfm/chatcode&type=Date" />
   </picture>
 </a>
+
+## License
+
+Licensed under **GNU Affero General Public License v3.0 only (AGPL-3.0-only)**.
+
+- Commercial use is allowed.
+- If you modify and run this software as a network service, you must provide complete corresponding source code of your modifications to users of that service.
+
+See [`LICENSE`](LICENSE).

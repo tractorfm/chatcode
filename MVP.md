@@ -1,11 +1,11 @@
-# VibeCode MVP – Architecture & Plan (Revised)
+# chatcode.dev MVP – Architecture & Product Concept
 
 This document reflects the revised MVP recommendations after a critical review.
 
 ---
 
 ## 0) One-sentence summary
-VibeCode is a user-owned VPS agent platform: chatcode.dev provisions a user’s cloud VM via OAuth, installs a lightweight gateway daemon that manages tmux/PTY sessions, and exposes interactive terminal sessions over the web (Phase 1), then Telegram (Phase 2) and a Telegram Mini App (Phase 3).
+chatcode.dev is a user-owned VPS agent platform: it provisions a user VM, installs a lightweight gateway daemon, and exposes persistent terminal sessions that can be continued across clients (web first, then Telegram/miniapp/native) with portable output experiences for smaller screens.
 
 ---
 
@@ -16,6 +16,7 @@ VibeCode is a user-owned VPS agent platform: chatcode.dev provisions a user’s 
 - DigitalOcean OAuth + droplet provisioning (create / destroy / power off/on)
 - Gateway daemon on the VPS (session management + raw terminal streaming)
 - Minimal session model (one session = one workspace)
+- Continuity foundations (stable reconnect, session resume, same session_id across clients)
 - Minimal file transfer (web ⇄ gateway via control plane relay, up to 20MB)
 - SSH key management UI (user keys + time-limited support access)
 - Health dashboard + offline UX
@@ -28,8 +29,15 @@ VibeCode is a user-owned VPS agent platform: chatcode.dev provisions a user’s 
 - R2 file storage + signed URLs
 - Multiple workspace instances per repo / advanced repo workflows
 - Bring Your Own Server (BYO) -- connect non-DO machines (architecture prepared, see 10b)
+- Full cross-channel adaptive rendering engine rollout (direction defined below; staged delivery)
 
 Rationale: keep the first release focused on “create VPS → open terminal → do work reliably”.
+
+### Product direction (guiding principles)
+1. **Continuity**: one session should be easy to continue across web, Telegram, miniapp, and native clients without losing context.
+2. **Portability**: session output should adapt to client capability (desktop terminal vs small-screen consumable view with markdown/actions).
+3. **Progressive transport**: raw terminal transport remains canonical; adaptive output is an additional layer above it, not a replacement.
+4. **Shareability (future)**: secure secret-link access for read-only/read-write session sharing is a planned extension.
 
 ---
 
@@ -42,7 +50,7 @@ Rationale: keep the first release focused on “create VPS → open terminal →
 - VPS dashboard + key management.
 
 #### Landing page messaging (MVP)
-- Headline: **“Vibe-code on your own cloud server”**
+- Headline: **“chatcode.dev on your own cloud server”**
 - Subheadline: “Use your existing ChatGPT, Claude, or Google AI subscription. No extra fees — just your VPS and your AI.”
 - Key points (concise, above the fold):
   - “Bring your own AI subscription — works with Claude Code, Codex CLI, Gemini CLI”
@@ -98,6 +106,7 @@ Rationale: keep the first release focused on “create VPS → open terminal →
 
 - MVP merges “workspace” and “workspace instance” into **Session**.
 - One session = one tmux session = one terminal.
+- `session_id` is the canonical handle for cross-client continuity.
 - Limit: **max 5 concurrent sessions** per VPS (MVP).
 - On session start, gateway writes an agent instruction file in the session workdir:
   - `CLAUDE.md` (Claude Code)
@@ -163,6 +172,7 @@ Evolution note (expected, not emergency):
 ### Reliability
 - Client sends periodic `session.ack {schema_version, request_id, session_id, seq}` text frames for last received seq.
 - Reconnect: **gateway** generates the snapshot (via tmux `capture-pane` / screen dump — it is the source of truth closest to PTY). The snapshot is sent as a text frame `session.snapshot {schema_version, request_id?, session_id, cols, rows, content}` before live binary bytes resume.
+- Continuity requirement: reconnect semantics must work the same regardless of client type (web now, Telegram/miniapp/native later).
 
 ### Backpressure & batching
 - Gateway batches output (20–100ms).
@@ -214,6 +224,11 @@ Evolution note (expected, not emergency):
 Note: file transfer is chunked to avoid large frame limits.
 
 TODO (optimization): file chunks currently use base64 in JSON text frames (~33% overhead). Future improvement: add binary frame `kind: 0x02 = file chunk` to eliminate encoding overhead for large transfers.
+
+### Portability layer (planned on top of terminal stream)
+- Gateway + control-plane keep canonical terminal stream semantics.
+- A higher-level adapter can derive small-screen-friendly outputs (markdown blocks, actionable buttons/links, concise status cards).
+- Adapter output must be strictly tied to session continuity primitives (`session_id`, seq/replay model, deterministic state).
 
 ---
 
@@ -413,11 +428,14 @@ Planned flow for connecting any user-owned machine (Linux or macOS):
 - SSH keys UI (add/remove + grant support access).
 - File drag&drop UI (≤20MB).
 - Idle notification banner.
+- Polish/reliability pass: error surfaces, reconnect behavior, session consistency.
+- Simple landing page integrated with auth funnel.
 
 ### Phase 2 – Telegram bot
 - Workers webhook + Queues.
 - Topics in private chats; bind topic → session.
 - File relay via Telegram API.
+- Start portability layer delivery: adapted session output + action affordances for small screens.
 
 ### Phase 3 – Mini App
 - Open a session from Telegram into embedded web terminal.
@@ -445,3 +463,4 @@ Planned flow for connecting any user-owned machine (Linux or macOS):
 - Multi-server UI (multiple VPS/machines per user).
 - Advanced prompt parsing → Telegram buttons.
 - Harden sudo policy (replace unrestricted sudo with safer admin helper).
+- Secret-link sharing for session access (`read-only`/`read-write`, scoped + expiring + revocable).

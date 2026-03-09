@@ -1,5 +1,7 @@
 # chatcode.dev – Implementation Plan: Milestone 4 (UI)
 
+> Status: kept as detailed reference. Active consolidated plan is `IMPLEMENTATION_M4.md`.
+
 ## Objective
 Build a minimal but reliable session UI on top of M4 core contracts, without changing gateway/control-plane behavior from the frontend layer.
 

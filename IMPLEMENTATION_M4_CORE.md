@@ -1,5 +1,7 @@
 # chatcode.dev – Implementation Plan: Milestone 4 (Core)
 
+> Status: kept as detailed reference. Active consolidated plan is `IMPLEMENTATION_M4.md`.
+
 ## Objective
 Stabilize the terminal runtime path (gateway + control-plane + protocol) so sessions behave like a real terminal under reconnects, long-running agents, and UI restarts.
 
