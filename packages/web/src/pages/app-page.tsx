@@ -76,6 +76,7 @@ function tabReducer(state: TabState, action: TabAction): TabState {
 export function AppPage({ userEmail, onLogout, onNavigate }: AppPageProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [activeVpsId, setActiveVpsId] = useState<string | null>(null);
+  const [sidebarErrorMessage, setSidebarErrorMessage] = useState("");
   const [tabState, dispatchTab] = useReducer(tabReducer, {
     tabs: [],
     activeIndex: 0,
@@ -84,6 +85,7 @@ export function AppPage({ userEmail, onLogout, onNavigate }: AppPageProps) {
 
   const handleSelectVps = useCallback((vpsId: string) => {
     setActiveVpsId(vpsId);
+    setSidebarErrorMessage("");
   }, []);
 
   const handleSelectSession = useCallback(
@@ -96,6 +98,7 @@ export function AppPage({ userEmail, onLogout, onNavigate }: AppPageProps) {
           title: `Session ${tabState.tabs.length + 1}`,
         },
       });
+      setSidebarErrorMessage("");
     },
     [tabState.tabs.length],
   );
@@ -111,6 +114,7 @@ export function AppPage({ userEmail, onLogout, onNavigate }: AppPageProps) {
         },
       });
       setActiveVpsId(vpsId);
+      setSidebarErrorMessage("");
     },
     [tabState.tabs.length],
   );
@@ -139,8 +143,10 @@ export function AppPage({ userEmail, onLogout, onNavigate }: AppPageProps) {
           title: `Session ${tabState.tabs.length + 1}`,
         },
       });
+      setSidebarErrorMessage("");
     } catch (err) {
-      console.error("create session from empty state:", err);
+      const detail = err instanceof Error ? err.message : "unexpected error";
+      setSidebarErrorMessage(`Failed to create session: ${detail}`);
     } finally {
       setEmptyActionBusy(false);
     }
@@ -165,6 +171,7 @@ export function AppPage({ userEmail, onLogout, onNavigate }: AppPageProps) {
         onNavigate={onNavigate}
         onLogout={onLogout}
         userEmail={userEmail}
+        externalErrorMessage={sidebarErrorMessage}
       />
 
       {/* Main content */}

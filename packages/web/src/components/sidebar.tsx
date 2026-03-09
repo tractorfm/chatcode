@@ -37,6 +37,7 @@ interface SidebarProps {
   onNavigate: (page: "settings" | "status" | "onboarding") => void;
   onLogout: () => void;
   userEmail?: string;
+  externalErrorMessage?: string;
 }
 
 export function Sidebar({
@@ -50,6 +51,7 @@ export function Sidebar({
   onNavigate,
   onLogout,
   userEmail,
+  externalErrorMessage,
 }: SidebarProps) {
   const [vpsList, setVpsList] = useState<VPS[]>([]);
   const [sessions, setSessions] = useState<Session[]>([]);
@@ -172,6 +174,7 @@ export function Sidebar({
   }, [activeVpsId, refreshVPS, setOperationError]);
 
   const activeVps = vpsList.find((v) => v.id === activeVpsId);
+  const displayedError = externalErrorMessage || errorMessage;
 
   return (
     <aside
@@ -202,10 +205,10 @@ export function Sidebar({
 
       {!collapsed && (
         <div className="flex-1 overflow-y-auto">
-          {errorMessage && (
+          {displayedError && (
             <div className="px-3 pt-2">
               <p className="text-xs text-destructive bg-destructive/5 border border-destructive/20 rounded px-2 py-1">
-                {errorMessage}
+                {displayedError}
               </p>
             </div>
           )}
