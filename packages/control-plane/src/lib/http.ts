@@ -27,6 +27,20 @@ export function postAuthRedirect(request: Request, env: Env): string {
   return "/staging/test";
 }
 
+/**
+ * Validate optional user-provided post-auth redirect and return it when allowed.
+ */
+export function resolveRequestedPostAuthRedirect(
+  rawTarget: string | null | undefined,
+  request: Request,
+  env: Env,
+): string | null {
+  const target = rawTarget?.trim();
+  if (!target) return null;
+  if (!isSafeRedirectTarget(target, request, env)) return null;
+  return target;
+}
+
 export function withCORS(response: Response, request: Request, env: Env): Response {
   const headers = new Headers(response.headers);
   for (const [key, value] of Object.entries(corsHeaders(request, env))) {

@@ -96,11 +96,33 @@ describe("routes/auth", () => {
     const res = await handleDOConnect(req, env, { userId: "usr-test-1" });
 
     expect(res.status).toBe(302);
-    expect(kv.put).toHaveBeenCalledWith("oauth:state:do:state-nonce-1", "usr-test-1", {
-      expirationTtl: 600,
-    });
+    expect(kv.put).toHaveBeenCalledWith(
+      "oauth:state:do:state-nonce-1",
+      JSON.stringify({ user_id: "usr-test-1" }),
+      { expirationTtl: 600 },
+    );
     expect(res.headers.get("Location")).toContain("cloud.digitalocean.com/v1/oauth/authorize");
     expect(res.headers.get("Location")).toContain("state=state-nonce-1");
+  });
+
+  it("stores optional post-auth redirect in DO oauth state", async () => {
+    const { env, kv } = makeEnv();
+    env.APP_ENV = "staging";
+    env.STAGING_PAGES_PREVIEW_SUFFIX = "chatcode-app-staging.pages.dev";
+    const req = new Request(
+      "https://cp.staging.chatcode.dev/auth/do?redirect_url=https%3A%2F%2Ffrontend-claude.chatcode-app-staging.pages.dev",
+    );
+
+    const res = await handleDOConnect(req, env, { userId: "usr-test-1" });
+    expect(res.status).toBe(302);
+    expect(kv.put).toHaveBeenCalledWith(
+      "oauth:state:do:state-nonce-1",
+      JSON.stringify({
+        user_id: "usr-test-1",
+        redirect_url: "https://frontend-claude.chatcode-app-staging.pages.dev",
+      }),
+      { expirationTtl: 600 },
+    );
   });
 
   it("returns 400 on callback when code/state is missing", async () => {
@@ -236,10 +258,36 @@ describe("routes/auth", () => {
     expect(res.status).toBe(200);
     expect(kv.put).toHaveBeenCalledWith(
       "auth:email:token:state-nonce-1",
-      "user@example.test",
+      JSON.stringify({ email: "user@example.test" }),
       { expirationTtl: 600 },
     );
     expect(mocks.sendMagicLinkEmail).toHaveBeenCalledOnce();
+  });
+
+  it("stores email magic-link redirect from request origin when allowed", async () => {
+    const { env, kv } = makeEnv();
+    env.APP_ENV = "staging";
+    env.STAGING_PAGES_PREVIEW_SUFFIX = "chatcode-app-staging.pages.dev";
+
+    const req = new Request("https://cp.staging.chatcode.dev/auth/email/start", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Origin: "https://frontend-claude.chatcode-app-staging.pages.dev",
+      },
+      body: JSON.stringify({ email: "user@example.test" }),
+    });
+
+    const res = await handleEmailStart(req, env);
+    expect(res.status).toBe(200);
+    expect(kv.put).toHaveBeenCalledWith(
+      "auth:email:token:state-nonce-1",
+      JSON.stringify({
+        email: "user@example.test",
+        redirect_url: "https://frontend-claude.chatcode-app-staging.pages.dev",
+      }),
+      { expirationTtl: 600 },
+    );
   });
 
   it("returns current user identity summary on /auth/me", async () => {

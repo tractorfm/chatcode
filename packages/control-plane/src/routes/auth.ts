@@ -25,7 +25,7 @@ import { exchangeOAuthCode } from "../lib/do-api.js";
 import { resolveOrCreateUserByIdentity, IdentityConflictError, InvalidEmailError } from "../lib/identity.js";
 import { randomHex } from "../lib/ids.js";
 import { sendMagicLinkEmail } from "../lib/ses.js";
-import { postAuthRedirect } from "../lib/http.js";
+import { postAuthRedirect, resolveRequestedPostAuthRedirect } from "../lib/http.js";
 
 const DO_AUTHORIZE_URL = "https://cloud.digitalocean.com/v1/oauth/authorize";
 const GOOGLE_AUTHORIZE_URL = "https://accounts.google.com/o/oauth2/v2/auth";
@@ -54,6 +54,20 @@ interface GitHubEmail {
   verified?: boolean;
 }
 
+interface EmailTokenState {
+  email: string;
+  redirect_url?: string;
+}
+
+interface OAuthState {
+  redirect_url?: string;
+}
+
+interface DOOAuthState {
+  user_id: string;
+  redirect_url?: string;
+}
+
 /**
  * POST /auth/email/start
  */
@@ -61,9 +75,9 @@ export async function handleEmailStart(
   request: Request,
   env: Env,
 ): Promise<Response> {
-  let body: { email?: string };
+  let body: { email?: string; redirect_url?: string };
   try {
-    body = (await request.json()) as { email?: string };
+    body = (await request.json()) as { email?: string; redirect_url?: string };
   } catch {
     return jsonResponse({ error: "invalid JSON body" }, 400);
   }
@@ -78,8 +92,19 @@ export async function handleEmailStart(
     return jsonResponse({ error: "email delivery is not configured" }, 503);
   }
 
+  const requestedRedirect =
+    resolveRequestedPostAuthRedirect(body.redirect_url, request, env) ??
+    resolveRequestedPostAuthRedirect(request.headers.get("Origin"), request, env);
+
   const token = randomHex(24);
-  await env.KV.put(`auth:email:token:${token}`, email, { expirationTtl: EMAIL_TOKEN_TTL_SEC });
+  await env.KV.put(
+    `auth:email:token:${token}`,
+    JSON.stringify({
+      email,
+      ...(requestedRedirect ? { redirect_url: requestedRedirect } : {}),
+    } satisfies EmailTokenState),
+    { expirationTtl: EMAIL_TOKEN_TTL_SEC },
+  );
 
   const verifyUrl = new URL("/auth/email/verify", request.url);
   verifyUrl.searchParams.set("token", token);
@@ -108,11 +133,13 @@ export async function handleEmailVerify(
   }
 
   const kvKey = `auth:email:token:${token}`;
-  const email = await env.KV.get(kvKey);
-  if (!email) {
+  const tokenStateRaw = await env.KV.get(kvKey);
+  if (!tokenStateRaw) {
     return jsonResponse({ error: "invalid or expired token" }, 400);
   }
   await env.KV.delete(kvKey);
+  const tokenState = decodeEmailTokenState(tokenStateRaw);
+  const email = tokenState.email;
 
   try {
     const identity = await resolveOrCreateUserByIdentity(env.DB, {
@@ -125,7 +152,7 @@ export async function handleEmailVerify(
     return new Response(null, {
       status: 302,
       headers: {
-        Location: postAuthRedirect(request, env),
+        Location: tokenState.redirect_url ?? postAuthRedirect(request, env),
         "Set-Cookie": sessionCookieHeader(sessionToken),
       },
     });
@@ -145,8 +172,19 @@ export async function handleGoogleStart(
     return jsonResponse({ error: "google auth not configured" }, 503);
   }
 
+  const reqURL = new URL(request.url);
+  const requestedRedirect =
+    resolveRequestedPostAuthRedirect(reqURL.searchParams.get("redirect_url"), request, env) ??
+    resolveRequestedPostAuthRedirect(getOriginFromReferrer(request.headers.get("Referer")), request, env);
+
   const state = randomHex(16);
-  await env.KV.put(`oauth:state:google:${state}`, "1", { expirationTtl: OAUTH_STATE_TTL_SEC });
+  await env.KV.put(
+    `oauth:state:google:${state}`,
+    JSON.stringify({
+      ...(requestedRedirect ? { redirect_url: requestedRedirect } : {}),
+    } satisfies OAuthState),
+    { expirationTtl: OAUTH_STATE_TTL_SEC },
+  );
 
   const redirectUri = new URL("/auth/google/callback", request.url).toString();
   const authorizeUrl = new URL(GOOGLE_AUTHORIZE_URL);
@@ -183,6 +221,7 @@ export async function handleGoogleCallback(
     return jsonResponse({ error: "invalid or expired state" }, 400);
   }
   await env.KV.delete(stateKey);
+  const oauthState = decodeOAuthState(stored);
 
   const redirectUri = new URL("/auth/google/callback", request.url).toString();
   const tokenResp = await fetch(GOOGLE_TOKEN_URL, {
@@ -235,7 +274,7 @@ export async function handleGoogleCallback(
     return new Response(null, {
       status: 302,
       headers: {
-        Location: postAuthRedirect(request, env),
+        Location: oauthState.redirect_url ?? postAuthRedirect(request, env),
         "Set-Cookie": sessionCookieHeader(sessionToken),
       },
     });
@@ -255,8 +294,19 @@ export async function handleGitHubStart(
     return jsonResponse({ error: "github auth not configured" }, 503);
   }
 
+  const reqURL = new URL(request.url);
+  const requestedRedirect =
+    resolveRequestedPostAuthRedirect(reqURL.searchParams.get("redirect_url"), request, env) ??
+    resolveRequestedPostAuthRedirect(getOriginFromReferrer(request.headers.get("Referer")), request, env);
+
   const state = randomHex(16);
-  await env.KV.put(`oauth:state:github:${state}`, "1", { expirationTtl: OAUTH_STATE_TTL_SEC });
+  await env.KV.put(
+    `oauth:state:github:${state}`,
+    JSON.stringify({
+      ...(requestedRedirect ? { redirect_url: requestedRedirect } : {}),
+    } satisfies OAuthState),
+    { expirationTtl: OAUTH_STATE_TTL_SEC },
+  );
 
   const redirectUri = new URL("/auth/github/callback", request.url).toString();
   const authorizeUrl = new URL(GITHUB_AUTHORIZE_URL);
@@ -292,6 +342,7 @@ export async function handleGitHubCallback(
     return jsonResponse({ error: "invalid or expired state" }, 400);
   }
   await env.KV.delete(stateKey);
+  const oauthState = decodeOAuthState(stored);
 
   const redirectUri = new URL("/auth/github/callback", request.url).toString();
   const tokenResp = await fetch(GITHUB_TOKEN_URL, {
@@ -359,7 +410,7 @@ export async function handleGitHubCallback(
     return new Response(null, {
       status: 302,
       headers: {
-        Location: postAuthRedirect(request, env),
+        Location: oauthState.redirect_url ?? postAuthRedirect(request, env),
         "Set-Cookie": sessionCookieHeader(sessionToken),
       },
     });
@@ -377,8 +428,20 @@ export async function handleDOConnect(
   env: Env,
   auth: AuthContext,
 ): Promise<Response> {
+  const reqURL = new URL(request.url);
+  const requestedRedirect =
+    resolveRequestedPostAuthRedirect(reqURL.searchParams.get("redirect_url"), request, env) ??
+    resolveRequestedPostAuthRedirect(getOriginFromReferrer(request.headers.get("Referer")), request, env);
+
   const state = randomHex(16);
-  await env.KV.put(`oauth:state:do:${state}`, auth.userId, { expirationTtl: OAUTH_STATE_TTL_SEC });
+  await env.KV.put(
+    `oauth:state:do:${state}`,
+    JSON.stringify({
+      user_id: auth.userId,
+      ...(requestedRedirect ? { redirect_url: requestedRedirect } : {}),
+    } satisfies DOOAuthState),
+    { expirationTtl: OAUTH_STATE_TTL_SEC },
+  );
 
   const redirectUri = new URL("/auth/do/callback", request.url).toString();
   const authorizeUrl = new URL(DO_AUTHORIZE_URL);
@@ -407,11 +470,13 @@ export async function handleDOCallback(
   }
 
   const stateKey = `oauth:state:do:${state}`;
-  const expectedUserId = await env.KV.get(stateKey);
-  if (!expectedUserId) {
+  const storedState = await env.KV.get(stateKey);
+  if (!storedState) {
     return jsonResponse({ error: "invalid or expired state" }, 400);
   }
   await env.KV.delete(stateKey);
+  const doOAuthState = decodeDOOAuthState(storedState);
+  const expectedUserId = doOAuthState.user_id;
 
   // Exchange code for tokens
   const redirectUri = new URL("/auth/do/callback", request.url).toString();
@@ -459,7 +524,7 @@ export async function handleDOCallback(
     return new Response(null, {
       status: 302,
       headers: {
-        Location: postAuthRedirect(request, env),
+        Location: doOAuthState.redirect_url ?? postAuthRedirect(request, env),
         "Set-Cookie": sessionCookieHeader(sessionToken),
       },
     });
@@ -554,6 +619,61 @@ function pickGitHubVerifiedEmail(emails: GitHubEmail[]): GitHubEmail | null {
     emails.find((e) => e.verified && looksLikeEmail(normalizeEmail(e.email))) ??
     null
   );
+}
+
+function decodeEmailTokenState(raw: string): EmailTokenState {
+  try {
+    const data = JSON.parse(raw) as Partial<EmailTokenState>;
+    if (typeof data.email === "string" && data.email.trim()) {
+      return {
+        email: normalizeEmail(data.email),
+        ...(typeof data.redirect_url === "string" && data.redirect_url
+          ? { redirect_url: data.redirect_url }
+          : {}),
+      };
+    }
+  } catch {
+    // Legacy token payload format: plain email string.
+  }
+  return { email: normalizeEmail(raw) };
+}
+
+function decodeOAuthState(raw: string): OAuthState {
+  try {
+    const data = JSON.parse(raw) as Partial<OAuthState>;
+    if (typeof data.redirect_url === "string" && data.redirect_url) {
+      return { redirect_url: data.redirect_url };
+    }
+  } catch {
+    // Legacy state payload format: simple marker value
+  }
+  return {};
+}
+
+function decodeDOOAuthState(raw: string): DOOAuthState {
+  try {
+    const data = JSON.parse(raw) as Partial<DOOAuthState>;
+    if (typeof data.user_id === "string" && data.user_id) {
+      return {
+        user_id: data.user_id,
+        ...(typeof data.redirect_url === "string" && data.redirect_url
+          ? { redirect_url: data.redirect_url }
+          : {}),
+      };
+    }
+  } catch {
+    // Legacy payload: raw value is user id.
+  }
+  return { user_id: raw };
+}
+
+function getOriginFromReferrer(referrer: string | null): string | null {
+  if (!referrer) return null;
+  try {
+    return new URL(referrer).origin;
+  } catch {
+    return null;
+  }
 }
 
 function jsonResponse(data: unknown, status = 200): Response {
