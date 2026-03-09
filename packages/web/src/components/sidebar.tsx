@@ -73,13 +73,20 @@ export function Sidebar({
     setLoading(true);
     try {
       const { sessions: s } = await listSessions(activeVpsId);
-      setSessions(s.filter((s) => !isClosedStatus(s.status)));
+      const openSessions = s.filter((s) => !isClosedStatus(s.status));
+      setSessions(openSessions);
+      if (
+        openSessions.length > 0 &&
+        !openSessions.some((session) => session.id === activeSessionId)
+      ) {
+        onSelectSession(activeVpsId, openSessions[0].id);
+      }
     } catch {
       /* ignore */
     } finally {
       setLoading(false);
     }
-  }, [activeVpsId]);
+  }, [activeSessionId, activeVpsId, onSelectSession]);
 
   useEffect(() => {
     refreshVPS();
