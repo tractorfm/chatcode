@@ -109,4 +109,21 @@ describe("dev header auth", () => {
     );
     expect(result).toEqual({ userId: "usr-dev-1" });
   });
+
+  it("ignores dev headers when AUTH_MODE is not dev", async () => {
+    const req = new Request("https://example.com", {
+      headers: {
+        "X-Dev-User": "usr-dev-1",
+        "X-Dev-Secret": "secret-1",
+      },
+    });
+    const result = await authenticateRequest(
+      req,
+      { AUTH_MODE: "prod", DEV_AUTH_SECRET: "secret-1", JWT_SECRET: "jwt" } as unknown as any,
+    );
+    expect(result).toBeInstanceOf(Response);
+    if (result instanceof Response) {
+      expect(result.status).toBe(401);
+    }
+  });
 });

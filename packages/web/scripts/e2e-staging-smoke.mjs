@@ -9,6 +9,7 @@ const devUser = process.env.E2E_DEV_USER || "";
 const devSecret = process.env.E2E_DEV_SECRET || "";
 const configuredVpsId = process.env.E2E_VPS_ID || "";
 const timeoutMs = Number(process.env.E2E_TIMEOUT_MS || 30000);
+const CLOSED_SESSION_STATUSES = new Set(["ended", "error", "killed"]);
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -40,6 +41,21 @@ async function jsonRequest(context, method, path, body) {
   return { resp, payload };
 }
 
+function isClosedStatus(status) {
+  return CLOSED_SESSION_STATUSES.has(String(status || ""));
+}
+
+async function listOpenSessions(context, vpsId) {
+  const listSessionsResp = await jsonRequest(context, "GET", `/vps/${encodeURIComponent(vpsId)}/sessions`);
+  if (!listSessionsResp.resp.ok()) {
+    throw new Error(`GET sessions failed: ${listSessionsResp.resp.status()}`);
+  }
+  const existingSessions = Array.isArray(listSessionsResp.payload?.sessions)
+    ? listSessionsResp.payload.sessions
+    : [];
+  return existingSessions.filter((s) => !isClosedStatus(s.status));
+}
+
 async function main() {
   if (!devUser || !devSecret) {
     throw new Error("Missing E2E_DEV_USER/E2E_DEV_SECRET");
@@ -48,6 +64,9 @@ async function main() {
   const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext();
   const page = await context.newPage();
+  let vpsId = "";
+  let createdSessionId = null;
+  let sessionDeleted = false;
 
   try {
     const loginResp = await context.request.fetch(`${cpURL}/auth/dev/login`, {
@@ -72,22 +91,13 @@ async function main() {
     if (!targetVps?.id) {
       throw new Error("No active+connected VPS found for smoke run (set E2E_VPS_ID).");
     }
-    const vpsId = targetVps.id;
+    vpsId = targetVps.id;
 
     await page.goto(appURL, { waitUntil: "domcontentloaded", timeout: timeoutMs });
     await page.waitForSelector('[data-testid="sidebar"]', { timeout: timeoutMs });
     await page.click(`[data-testid="vps-item-${vpsId}"]`, { timeout: timeoutMs });
 
-    const listSessionsResp = await jsonRequest(context, "GET", `/vps/${encodeURIComponent(vpsId)}/sessions`);
-    if (!listSessionsResp.resp.ok()) {
-      throw new Error(`GET sessions failed: ${listSessionsResp.resp.status()}`);
-    }
-    const existingSessions = Array.isArray(listSessionsResp.payload?.sessions)
-      ? listSessionsResp.payload.sessions
-      : [];
-    const openSessions = existingSessions.filter((s) =>
-      !["ended", "error", "provisioning_timeout"].includes(String(s.status || "")),
-    );
+    const openSessions = await listOpenSessions(context, vpsId);
     if (openSessions.length >= 5) {
       const victims = openSessions.slice(0, openSessions.length - 4);
       for (const victim of victims) {
@@ -97,7 +107,13 @@ async function main() {
           `/vps/${encodeURIComponent(vpsId)}/sessions/${encodeURIComponent(victim.id)}`,
         );
       }
-      await sleep(1200);
+      const slotsFreed = await pollUntil(async () => {
+        const updatedOpenSessions = await listOpenSessions(context, vpsId);
+        return updatedOpenSessions.length < 5;
+      }, { timeout: 45000, interval: 1000 });
+      if (!slotsFreed) {
+        throw new Error("Timed out waiting for free session slots before creating smoke session");
+      }
     }
 
     const createResp = await jsonRequest(
@@ -113,7 +129,7 @@ async function main() {
     if (!createResp.resp.ok()) {
       throw new Error(`Session create failed: ${createResp.resp.status()} ${JSON.stringify(createResp.payload)}`);
     }
-    const createdSessionId = typeof createResp.payload?.session_id === "string"
+    createdSessionId = typeof createResp.payload?.session_id === "string"
       ? createResp.payload.session_id
       : null;
 
@@ -217,9 +233,17 @@ async function main() {
     if (endResp.resp.status() !== 204) {
       throw new Error(`Failed to end session ${createdSessionId}: ${endResp.resp.status()}`);
     }
+    sessionDeleted = true;
 
     console.log(`Smoke OK on VPS ${vpsId}, session ${createdSessionId}`);
   } finally {
+    if (!sessionDeleted && vpsId && createdSessionId) {
+      await jsonRequest(
+        context,
+        "DELETE",
+        `/vps/${encodeURIComponent(vpsId)}/sessions/${encodeURIComponent(createdSessionId)}`,
+      ).catch(() => {});
+    }
     await context.close();
     await browser.close();
   }

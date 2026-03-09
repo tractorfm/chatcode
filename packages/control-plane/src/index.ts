@@ -90,13 +90,6 @@ export default {
       if (path === "/auth/logout" && method === "POST") {
         return withCORS(await handleLogout(request, env), request, env);
       }
-      if (path === "/auth/dev/login" && method === "POST") {
-        const authResult = await authenticateRequest(request, env);
-        if (authResult instanceof Response) {
-          return withCORS(authResult, request, env);
-        }
-        return withCORS(await handleDevSessionLogin(request, env, authResult), request, env);
-      }
       if (path === "/auth/do/callback" && method === "GET") {
         return handleDOCallback(request, env);
       }
@@ -105,6 +98,17 @@ export default {
       const gwMatch = path.match(/^\/gw\/connect(?:\/([a-zA-Z0-9_-]+))?$/);
       if (gwMatch) {
         return handleGatewayConnect(request, env, gwMatch[1] ?? null);
+      }
+
+      if (path === "/auth/dev/login" && method === "POST" && env.AUTH_MODE !== "dev") {
+        return withCORS(
+          new Response(JSON.stringify({ error: "not found" }), {
+            status: 404,
+            headers: { "Content-Type": "application/json" },
+          }),
+          request,
+          env,
+        );
       }
 
       // --- All remaining routes require user auth ---
@@ -117,6 +121,9 @@ export default {
       // --- Auth (authenticated) ---
       if (path === "/auth/me" && method === "GET") {
         return withCORS(await handleAuthMe(request, env, auth), request, env);
+      }
+      if (path === "/auth/dev/login" && method === "POST") {
+        return withCORS(await handleDevSessionLogin(request, env, auth), request, env);
       }
       if (path === "/staging/cmd" && method === "POST") {
         return withCORS(await handleStagingCommand(request, env, auth), request, env);

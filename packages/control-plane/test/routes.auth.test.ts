@@ -266,17 +266,6 @@ describe("routes/auth", () => {
     });
   });
 
-  it("returns 404 for dev login when AUTH_MODE!=dev", async () => {
-    const { env } = makeEnv();
-    env.AUTH_MODE = "";
-    const res = await handleDevSessionLogin(
-      new Request("https://cp.example.test/auth/dev/login", { method: "POST" }),
-      env,
-      { userId: "usr-test-1" },
-    );
-    expect(res.status).toBe(404);
-  });
-
   it("sets SameSite=None cookie in staging auth callback", async () => {
     const { env } = makeEnv();
     env.APP_ENV = "staging";

@@ -589,17 +589,14 @@ export async function handleLogout(_request: Request, env: Env): Promise<Respons
 
 /**
  * POST /auth/dev/login
- * Staging/dev helper: mint a normal session cookie from authenticated dev header auth.
+ * Staging/dev helper: mint a normal session cookie from authenticated auth context.
+ * Route-level AUTH_MODE=dev gating is handled in index.ts.
  */
 export async function handleDevSessionLogin(
   _request: Request,
   env: Env,
   auth: AuthContext,
 ): Promise<Response> {
-  if (env.AUTH_MODE !== "dev") {
-    return jsonResponse({ error: "not found" }, 404);
-  }
-
   const sessionToken = await signSessionCookie(auth.userId, env.JWT_SECRET);
   return new Response(JSON.stringify({ ok: true, user_id: auth.userId }), {
     status: 200,
