@@ -64,12 +64,15 @@ Use `workflow_dispatch` to redeploy a specific branch manually.
 
 ## 4. App -> CP host mapping
 
-Frontend should call:
+Frontend defaults:
 
 - production app -> `https://cp.chatcode.dev`
 - staging/preview app -> `https://cp.staging.chatcode.dev`
 
-Keep this explicit in web env config (do not infer from window hostname).
+Current web client resolves these by hostname (`packages/web/src/lib/constants.ts`).
+You can override explicitly with:
+
+- `VITE_CP_URL=<https://your-cp-origin>`
 
 ## 5. Control-plane CORS/Auth redirect vars
 
@@ -85,3 +88,8 @@ Optional:
 
 - `CORS_ALLOWED_ORIGINS` (comma-separated extra origins)
 - `POST_AUTH_REDIRECT_URL` (explicit callback landing URL override)
+
+Notes:
+
+- For staging pages previews, auth cookies are issued with `SameSite=None` to support cross-subdomain callback flows.
+- If `POST_AUTH_REDIRECT_URL` is unset, control-plane resolves safe redirect targets from request context and configured allowlists.

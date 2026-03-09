@@ -1,6 +1,6 @@
 # Self-Host in Your Cloudflare Account
 
-This guide makes Chatcode run under your Cloudflare account and your domains.
+This guide makes chatcode.dev run under your Cloudflare account and your domains.
 
 Recommended domain split:
 
@@ -65,7 +65,7 @@ AUTH_MODE = ""
 DEFAULT_DROPLET_REGION = "nyc1"
 DEFAULT_DROPLET_SIZE = "s-1vcpu-512mb-10gb"
 DEFAULT_DROPLET_IMAGE = "ubuntu-24-04-x64"
-GATEWAY_VERSION = "v0.0.2"
+GATEWAY_VERSION = "vX.Y.Z"
 GATEWAY_RELEASE_BASE_URL = "https://releases.example.com/gateway"
 ```
 

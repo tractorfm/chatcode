@@ -180,7 +180,7 @@ function EmptyState({
         ) : (
           <>
             <h2 className="text-lg font-medium text-muted-foreground">
-              Welcome to Chatcode
+              Welcome to chatcode.dev
             </h2>
             <p className="text-sm text-muted-foreground/70">
               Set up a VPS to get started with AI-powered terminal sessions.

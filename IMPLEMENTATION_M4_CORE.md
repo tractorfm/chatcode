@@ -1,4 +1,4 @@
-# VibeCode – Implementation Plan: Milestone 4 (Core)
+# chatcode.dev – Implementation Plan: Milestone 4 (Core)
 
 ## Objective
 Stabilize the terminal runtime path (gateway + control-plane + protocol) so sessions behave like a real terminal under reconnects, long-running agents, and UI restarts.

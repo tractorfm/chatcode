@@ -1,4 +1,4 @@
-# Chatcode
+# chatcode.dev
 
 Provision a VPS, connect a gateway, and use AI agents in a browser terminal.
 
@@ -9,9 +9,9 @@ Provision a VPS, connect a gateway, and use AI agents in a browser terminal.
 - Self-host release model: [`SELFHOSTING.md`](SELFHOSTING.md)
 - Frontend Pages deploy: [`docs/FRONTEND_PAGES.md`](docs/FRONTEND_PAGES.md)
 
-## Why Chatcode
+## Why chatcode.dev
 
-Chatcode focuses on one reliable path for MVP:
+chatcode.dev focuses on one reliable path for MVP:
 
 1. Provision user-owned VPS.
 2. Keep one persistent gateway connection to control plane.
@@ -22,13 +22,20 @@ Current status:
 - `M1` complete (protocol + gateway core).
 - `M2` complete and hardened (control plane + reconciliation).
 - `M3` auth/session staging flows validated.
-- Active work: `M4` terminal reliability and reusable UI components.
+- `M4` in progress: core terminal reliability + app UI integration on `app.staging.chatcode.dev`.
 
 ## Architecture (MVP)
 
 ```text
 Browser <-> Control Plane (Cloudflare Worker + Durable Object) <-> Gateway (user VPS) <-> tmux/PTY <-> AI agent process
 ```
+
+## App URLs
+
+- Production app: `https://app.chatcode.dev`
+- Staging app: `https://app.staging.chatcode.dev`
+- Control plane APIs: `https://cp.chatcode.dev`, `https://cp.staging.chatcode.dev`
+- Staging previews: `https://<branch>.chatcode-app-staging.pages.dev`
 
 ## Quick Start (Developers)
 
@@ -78,6 +85,16 @@ curl -fsSL https://chatcode.dev/cleanup.sh | bash -s -- --yes
 
 Details: [`packages/gateway/deploy/README.md`](packages/gateway/deploy/README.md)
 
+## Gateway Bootstrap Defaults
+
+Linux gateway installs currently:
+
+- create/use `vibe` user and `~/workspace`
+- preinstall `claude-code` and `codex`
+- install reusable agent installers (`claude-code`, `codex`, `gemini`, `opencode`) plus `install-git.sh`
+- enable daily maintenance timer to update gateway + installed agent CLIs
+- enable sudo command logging for `vibe` (root-owned log)
+
 ## Security and Trust Model
 
 Short version:
@@ -101,7 +118,7 @@ Product/runtime trade-offs and deferred hardening items are tracked in:
 
 ## Self-Host in Your Own Cloudflare Account
 
-You can run Chatcode control-plane and release distribution in your own Cloudflare account and domain.
+You can run chatcode.dev control-plane and release distribution in your own Cloudflare account and domain.
 
 Guide:
 
@@ -114,7 +131,7 @@ Guide:
 | `packages/protocol` | Shared schema and typed contract (TS + Go). |
 | `packages/gateway` | Gateway daemon running on user VPS. |
 | `packages/control-plane` | Cloudflare Worker + Durable Object + D1 control plane. |
-| `packages/web` | Browser app (later milestone). |
+| `packages/web` | Browser app (`app.*`) and terminal UI components. |
 
 ## Star History
 

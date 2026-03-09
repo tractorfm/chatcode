@@ -1,4 +1,4 @@
-# VibeCode – Implementation Plan: Milestone 4 (UI)
+# chatcode.dev – Implementation Plan: Milestone 4 (UI)
 
 ## Objective
 Build a minimal but reliable session UI on top of M4 core contracts, without changing gateway/control-plane behavior from the frontend layer.

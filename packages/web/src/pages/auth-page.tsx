@@ -41,7 +41,7 @@ export function AuthPage() {
         {/* Logo */}
         <div className="text-center space-y-2">
           <h1 className="text-2xl font-bold text-foreground tracking-tight">
-            Chatcode
+            chatcode.dev
           </h1>
           <p className="text-sm text-muted-foreground">
             Vibe-code on your own cloud server

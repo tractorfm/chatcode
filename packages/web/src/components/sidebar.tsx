@@ -166,8 +166,8 @@ export function Sidebar({
       {/* Header */}
       <div className="flex items-center justify-between p-3 border-b border-border">
         {!collapsed && (
-          <span className="text-sm font-semibold text-foreground tracking-tight">
-            Chatcode
+          <span className="font-semibold text-foreground tracking-tight">
+            chatcode.dev
           </span>
         )}
         <button
