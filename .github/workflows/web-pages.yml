@@ -46,7 +46,7 @@ jobs:
       - name: Verify Cloudflare Pages auth
         run: |
           set -euo pipefail
-          corepack pnpm --filter @chatcode/control-plane exec wrangler pages project list >/dev/null
+          corepack pnpm --dir packages/control-plane exec wrangler pages project list >/dev/null
 
       - name: Build web app
         run: corepack pnpm --dir packages/web run build
@@ -87,6 +87,7 @@ jobs:
       - name: Deploy to Cloudflare Pages
         run: |
           set -euo pipefail
-          corepack pnpm --filter @chatcode/control-plane exec wrangler pages deploy "${WEB_DIST_DIR}" \
+          corepack pnpm --dir packages/control-plane exec wrangler pages deploy "${GITHUB_WORKSPACE}/${WEB_DIST_DIR}" \
             --project-name "${{ steps.target.outputs.project }}" \
-            --branch "${{ steps.target.outputs.deploy_branch }}"
+            --branch "${{ steps.target.outputs.deploy_branch }}" \
+            --commit-dirty=true
