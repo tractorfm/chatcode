@@ -292,6 +292,28 @@ describe("routes/auth", () => {
     expect(res.headers.get("Set-Cookie")).toContain("SameSite=None");
   });
 
+  it("revalidates stored redirect_url during callback and falls back when no longer allowed", async () => {
+    const { env } = makeEnv();
+    env.APP_ENV = "staging";
+    env.STAGING_APP_ORIGIN = "https://app.staging.chatcode.dev";
+    env.STAGING_PAGES_PREVIEW_SUFFIX = "chatcode-app-staging.pages.dev";
+    env.KV.get = vi.fn(
+      async () =>
+        JSON.stringify({
+          email: "user@example.test",
+          redirect_url: "https://frontend-claude.other-pages.dev",
+        }),
+    );
+
+    const res = await handleEmailVerify(
+      new Request("https://cp.staging.chatcode.dev/auth/email/verify?token=state-nonce-1"),
+      env,
+    );
+
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe("https://app.staging.chatcode.dev");
+  });
+
   it("starts email auth and sends magic link through SES", async () => {
     const { env, kv } = makeEnv();
     const req = new Request("https://cp.example.test/auth/email/start", {

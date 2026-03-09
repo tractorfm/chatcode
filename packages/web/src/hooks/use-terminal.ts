@@ -47,11 +47,14 @@ export function createTerminalHandle(opts: UseTerminalOptions): TerminalHandle {
   let inputDisposable: { dispose: () => void } | null = null;
   let keepaliveTimer: ReturnType<typeof setInterval> | null = null;
   let fitTimer: ReturnType<typeof setTimeout> | null = null;
+  let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let resizeObserver: ResizeObserver | null = null;
   let awaitingInitialSnapshot = false;
   let initialSnapshotTimer: ReturnType<typeof setTimeout> | null = null;
   let lastCols = 0;
   let lastRows = 0;
+  let reconnectAttempts = 0;
+  let sessionEnded = false;
   let disposed = false;
 
   function sendJSON(msg: Record<string, unknown>) {
@@ -128,6 +131,7 @@ export function createTerminalHandle(opts: UseTerminalOptions): TerminalHandle {
 
     ws.addEventListener("open", () => {
       if (ws !== socket) return;
+      reconnectAttempts = 0;
       scheduleFit();
       term.focus();
 
@@ -212,6 +216,7 @@ export function createTerminalHandle(opts: UseTerminalOptions): TerminalHandle {
         }
 
         if (msg.type === "session.ended" && msg.session_id === sessionId) {
+          sessionEnded = true;
           term.writeln("\r\n[session ended]");
           onSessionEnded?.(sessionId);
           return;
@@ -256,6 +261,17 @@ export function createTerminalHandle(opts: UseTerminalOptions): TerminalHandle {
       const reason = ev.reason ? ` reason=${ev.reason}` : "";
       term.writeln(`\r\n[disconnected code=${ev.code}${reason}]`);
       socket = null;
+
+      if (disposed || sessionEnded || ev.code === 1000) return;
+      if (reconnectTimer) return;
+
+      const backoffSec = Math.min(2 ** reconnectAttempts, 10);
+      reconnectAttempts += 1;
+      term.writeln(`\r\n[reconnecting in ${backoffSec}s]`);
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = null;
+        connect();
+      }, backoffSec * 1000);
     });
 
     ws.addEventListener("error", () => {
@@ -288,6 +304,7 @@ export function createTerminalHandle(opts: UseTerminalOptions): TerminalHandle {
       inputDisposable?.dispose();
       if (keepaliveTimer) clearInterval(keepaliveTimer);
       if (fitTimer) clearTimeout(fitTimer);
+      if (reconnectTimer) clearTimeout(reconnectTimer);
       if (initialSnapshotTimer) clearTimeout(initialSnapshotTimer);
       if (socket) {
         try {

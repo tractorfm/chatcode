@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useReducer, useState } from "react";
 import { Sidebar } from "@/components/sidebar";
 import { TerminalView } from "@/components/terminal-view";
 import { X, Plus, Terminal } from "lucide-react";
@@ -17,11 +17,69 @@ interface OpenTab {
   title: string;
 }
 
+interface TabState {
+  tabs: OpenTab[];
+  activeIndex: number;
+}
+
+type TabAction =
+  | { type: "open"; tab: OpenTab }
+  | { type: "close"; index: number }
+  | { type: "setActive"; index: number }
+  | { type: "markEnded"; sessionId: string };
+
+function tabReducer(state: TabState, action: TabAction): TabState {
+  switch (action.type) {
+    case "open": {
+      const existingIndex = state.tabs.findIndex(
+        (t) => t.vpsId === action.tab.vpsId && t.sessionId === action.tab.sessionId,
+      );
+      if (existingIndex >= 0) {
+        return { ...state, activeIndex: existingIndex };
+      }
+      return {
+        tabs: [...state.tabs, action.tab],
+        activeIndex: state.tabs.length,
+      };
+    }
+    case "close": {
+      if (action.index < 0 || action.index >= state.tabs.length) return state;
+      const nextTabs = state.tabs.filter((_, i) => i !== action.index);
+      if (nextTabs.length === 0) {
+        return { tabs: [], activeIndex: 0 };
+      }
+      let nextActive = state.activeIndex;
+      if (state.activeIndex === action.index) {
+        nextActive = Math.min(action.index, nextTabs.length - 1);
+      } else if (state.activeIndex > action.index) {
+        nextActive = state.activeIndex - 1;
+      }
+      return { tabs: nextTabs, activeIndex: nextActive };
+    }
+    case "setActive":
+      if (action.index < 0 || action.index >= state.tabs.length) return state;
+      return { ...state, activeIndex: action.index };
+    case "markEnded":
+      return {
+        ...state,
+        tabs: state.tabs.map((t) =>
+          t.sessionId === action.sessionId && !t.title.endsWith(" (ended)")
+            ? { ...t, title: `${t.title} (ended)` }
+            : t,
+        ),
+      };
+    default:
+      return state;
+  }
+}
+
 export function AppPage({ userEmail, onLogout, onNavigate }: AppPageProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [activeVpsId, setActiveVpsId] = useState<string | null>(null);
-  const [activeTabIndex, setActiveTabIndex] = useState(0);
-  const [tabs, setTabs] = useState<OpenTab[]>([]);
+  const [tabState, dispatchTab] = useReducer(tabReducer, {
+    tabs: [],
+    activeIndex: 0,
+  });
   const [emptyActionBusy, setEmptyActionBusy] = useState(false);
 
   const handleSelectVps = useCallback((vpsId: string) => {
@@ -30,85 +88,68 @@ export function AppPage({ userEmail, onLogout, onNavigate }: AppPageProps) {
 
   const handleSelectSession = useCallback(
     (vpsId: string, sessionId: string) => {
-      // Check if tab already open
-      const existingIdx = tabs.findIndex(
-        (t) => t.vpsId === vpsId && t.sessionId === sessionId,
-      );
-      if (existingIdx >= 0) {
-        setActiveTabIndex(existingIdx);
-        return;
-      }
-      // Open new tab
-      const newTab: OpenTab = {
-        vpsId,
-        sessionId,
-        title: `Session ${tabs.length + 1}`,
-      };
-      setTabs((prev) => [...prev, newTab]);
-      setActiveTabIndex(tabs.length);
+      dispatchTab({
+        type: "open",
+        tab: {
+          vpsId,
+          sessionId,
+          title: `Session ${tabState.tabs.length + 1}`,
+        },
+      });
     },
-    [tabs],
+    [tabState.tabs.length],
   );
 
   const handleNewSession = useCallback(
     (vpsId: string, sessionId: string) => {
-      const newTab: OpenTab = {
-        vpsId,
-        sessionId,
-        title: `Session ${tabs.length + 1}`,
-      };
-      setTabs((prev) => [...prev, newTab]);
-      setActiveTabIndex(tabs.length);
+      dispatchTab({
+        type: "open",
+        tab: {
+          vpsId,
+          sessionId,
+          title: `Session ${tabState.tabs.length + 1}`,
+        },
+      });
       setActiveVpsId(vpsId);
     },
-    [tabs.length],
+    [tabState.tabs.length],
   );
 
-  const handleCloseTab = useCallback(
-    (index: number) => {
-      setTabs((prev) => prev.filter((_, i) => i !== index));
-      if (activeTabIndex >= index && activeTabIndex > 0) {
-        setActiveTabIndex((prev) => prev - 1);
-      }
-    },
-    [activeTabIndex],
-  );
+  const handleCloseTab = useCallback((index: number) => {
+    dispatchTab({ type: "close", index });
+  }, []);
 
-  const handleSessionEnded = useCallback(
-    (sessionId: string) => {
-      // Mark the tab but don't auto-close it
-      setTabs((prev) =>
-        prev.map((t) =>
-          t.sessionId === sessionId ? { ...t, title: t.title + " (ended)" } : t,
-        ),
-      );
-    },
-    [],
-  );
+  const handleSessionEnded = useCallback((sessionId: string) => {
+    dispatchTab({ type: "markEnded", sessionId });
+  }, []);
 
   const handleCreateSessionFromEmpty = useCallback(async () => {
     if (!activeVpsId || emptyActionBusy) return;
     setEmptyActionBusy(true);
     try {
       const res = await createSession(activeVpsId, {
-        title: `Session ${tabs.length + 1}`,
+        title: `Session ${tabState.tabs.length + 1}`,
         agent_type: "claude-code",
       });
-      const newTab: OpenTab = {
-        vpsId: activeVpsId,
-        sessionId: res.session_id,
-        title: `Session ${tabs.length + 1}`,
-      };
-      setTabs((prev) => [...prev, newTab]);
-      setActiveTabIndex(tabs.length);
+      dispatchTab({
+        type: "open",
+        tab: {
+          vpsId: activeVpsId,
+          sessionId: res.session_id,
+          title: `Session ${tabState.tabs.length + 1}`,
+        },
+      });
     } catch (err) {
       console.error("create session from empty state:", err);
     } finally {
       setEmptyActionBusy(false);
     }
-  }, [activeVpsId, emptyActionBusy, tabs.length]);
+  }, [activeVpsId, emptyActionBusy, tabState.tabs.length]);
 
-  const activeTab = tabs[activeTabIndex] ?? null;
+  const activeTab = useMemo(
+    () => tabState.tabs[tabState.activeIndex] ?? null,
+    [tabState.activeIndex, tabState.tabs],
+  );
 
   return (
     <div className="h-screen flex overflow-hidden">
@@ -129,19 +170,19 @@ export function AppPage({ userEmail, onLogout, onNavigate }: AppPageProps) {
       {/* Main content */}
       <main className="flex-1 flex flex-col min-w-0">
         {/* Tab bar */}
-        {tabs.length > 0 && (
+        {tabState.tabs.length > 0 && (
           <div className="flex items-center border-b border-border bg-card">
             <div className="flex-1 flex items-center overflow-x-auto">
-              {tabs.map((tab, i) => (
+              {tabState.tabs.map((tab, i) => (
                 <div
                   key={`${tab.vpsId}-${tab.sessionId}`}
                   className={cn(
                     "group flex items-center gap-1.5 px-3 py-2 text-sm border-r border-border cursor-pointer transition-colors min-w-0 max-w-[200px]",
-                    i === activeTabIndex
+                    i === tabState.activeIndex
                       ? "bg-background text-foreground"
                       : "text-muted-foreground hover:text-foreground hover:bg-accent/50",
                   )}
-                  onClick={() => setActiveTabIndex(i)}
+                  onClick={() => dispatchTab({ type: "setActive", index: i })}
                 >
                   <Terminal className="h-3.5 w-3.5 shrink-0" />
                   <span className="truncate text-xs">{tab.title}</span>
@@ -162,7 +203,7 @@ export function AppPage({ userEmail, onLogout, onNavigate }: AppPageProps) {
 
         {/* Terminal area */}
         <div className="flex-1 relative bg-[#111111] dark:bg-[#111111]">
-          {tabs.length === 0 ? (
+          {tabState.tabs.length === 0 ? (
             <EmptyState
               onNavigate={onNavigate}
               selectedVpsId={activeVpsId}
@@ -170,12 +211,12 @@ export function AppPage({ userEmail, onLogout, onNavigate }: AppPageProps) {
               creatingSession={emptyActionBusy}
             />
           ) : (
-            tabs.map((tab, i) => (
+            tabState.tabs.map((tab, i) => (
               <TerminalView
                 key={`${tab.vpsId}-${tab.sessionId}`}
                 vpsId={tab.vpsId}
                 sessionId={tab.sessionId}
-                active={i === activeTabIndex}
+                active={i === tabState.activeIndex}
                 onSessionEnded={handleSessionEnded}
               />
             ))

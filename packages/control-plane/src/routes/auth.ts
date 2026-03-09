@@ -152,7 +152,7 @@ export async function handleEmailVerify(
     return new Response(null, {
       status: 302,
       headers: {
-        Location: tokenState.redirect_url ?? postAuthRedirect(request, env),
+        Location: resolveSafeStoredRedirect(request, env, tokenState.redirect_url),
         "Set-Cookie": sessionCookieHeader(sessionToken, {
           sameSite: authCookieSameSite(env),
         }),
@@ -276,7 +276,7 @@ export async function handleGoogleCallback(
     return new Response(null, {
       status: 302,
       headers: {
-        Location: oauthState.redirect_url ?? postAuthRedirect(request, env),
+        Location: resolveSafeStoredRedirect(request, env, oauthState.redirect_url),
         "Set-Cookie": sessionCookieHeader(sessionToken, {
           sameSite: authCookieSameSite(env),
         }),
@@ -414,7 +414,7 @@ export async function handleGitHubCallback(
     return new Response(null, {
       status: 302,
       headers: {
-        Location: oauthState.redirect_url ?? postAuthRedirect(request, env),
+        Location: resolveSafeStoredRedirect(request, env, oauthState.redirect_url),
         "Set-Cookie": sessionCookieHeader(sessionToken, {
           sameSite: authCookieSameSite(env),
         }),
@@ -530,7 +530,7 @@ export async function handleDOCallback(
     return new Response(null, {
       status: 302,
       headers: {
-        Location: doOAuthState.redirect_url ?? postAuthRedirect(request, env),
+        Location: resolveSafeStoredRedirect(request, env, doOAuthState.redirect_url),
         "Set-Cookie": sessionCookieHeader(sessionToken, {
           sameSite: authCookieSameSite(env),
         }),
@@ -709,6 +709,14 @@ function getOriginFromReferrer(referrer: string | null): string | null {
   } catch {
     return null;
   }
+}
+
+function resolveSafeStoredRedirect(
+  request: Request,
+  env: Env,
+  storedRedirect: string | undefined,
+): string {
+  return resolveRequestedPostAuthRedirect(storedRedirect ?? null, request, env) ?? postAuthRedirect(request, env);
 }
 
 function authCookieSameSite(env: Env): "Strict" | "None" {

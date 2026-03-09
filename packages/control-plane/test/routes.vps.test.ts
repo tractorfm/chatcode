@@ -271,4 +271,22 @@ describe("routes/vps", () => {
     expect(mocks.createVPS).not.toHaveBeenCalled();
     expect(mocks.createGateway).not.toHaveBeenCalled();
   });
+
+  it("rejects invalid manual label", async () => {
+    const { env } = makeEnv();
+
+    const res = await handleVPSManualCreate(
+      new Request("https://cp.example.test/vps/manual", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ label: "bad<script>" }),
+      }),
+      env,
+      { userId: "usr-1" },
+    );
+
+    expect(res.status).toBe(400);
+    await expect(res.json()).resolves.toMatchObject({ error: "invalid label" });
+    expect(mocks.createVPS).not.toHaveBeenCalled();
+  });
 });

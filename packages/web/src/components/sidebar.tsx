@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Plus,
   Server,
@@ -55,18 +55,30 @@ export function Sidebar({
   const [sessions, setSessions] = useState<Session[]>([]);
   const [loading, setLoading] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
+  const activeSessionIdRef = useRef(activeSessionId);
+
+  useEffect(() => {
+    activeSessionIdRef.current = activeSessionId;
+  }, [activeSessionId]);
+
+  const setOperationError = useCallback((prefix: string, err: unknown) => {
+    const detail = err instanceof Error ? err.message : "unexpected error";
+    setErrorMessage(`${prefix}: ${detail}`);
+  }, []);
 
   const refreshVPS = useCallback(async () => {
     try {
       const { vps } = await listVPS();
       setVpsList(vps);
+      setErrorMessage("");
       if (vps.length > 0 && !activeVpsId) {
         onSelectVps(vps[0].id);
       }
-    } catch {
-      /* ignore */
+    } catch (err) {
+      setOperationError("Failed to load servers", err);
     }
-  }, [activeVpsId, onSelectVps]);
+  }, [activeVpsId, onSelectVps, setOperationError]);
 
   const refreshSessions = useCallback(async () => {
     if (!activeVpsId) return;
@@ -75,26 +87,27 @@ export function Sidebar({
       const { sessions: s } = await listSessions(activeVpsId);
       const openSessions = s.filter((s) => !isClosedStatus(s.status));
       setSessions(openSessions);
+      setErrorMessage("");
       if (
         openSessions.length > 0 &&
-        !openSessions.some((session) => session.id === activeSessionId)
+        !openSessions.some((session) => session.id === activeSessionIdRef.current)
       ) {
         onSelectSession(activeVpsId, openSessions[0].id);
       }
-    } catch {
-      /* ignore */
+    } catch (err) {
+      setOperationError("Failed to load sessions", err);
     } finally {
       setLoading(false);
     }
-  }, [activeSessionId, activeVpsId, onSelectSession]);
+  }, [activeVpsId, onSelectSession, setOperationError]);
 
   useEffect(() => {
-    refreshVPS();
-  }, [refreshVPS]);
+    void refreshVPS();
+  }, []);
 
   useEffect(() => {
-    refreshSessions();
-  }, [refreshSessions]);
+    void refreshSessions();
+  }, [activeVpsId, refreshSessions]);
 
   const handleCreateSession = useCallback(
     async (agentType: AgentType = "claude-code") => {
@@ -107,13 +120,14 @@ export function Sidebar({
         });
         await refreshSessions();
         onNewSession(activeVpsId, res.session_id);
+        setErrorMessage("");
       } catch (err) {
-        console.error("create session:", err);
+        setOperationError("Failed to create session", err);
       } finally {
         setCreating(false);
       }
     },
-    [activeVpsId, creating, sessions.length, refreshSessions, onNewSession],
+    [activeVpsId, creating, sessions.length, refreshSessions, onNewSession, setOperationError],
   );
 
   const handleEndSession = useCallback(
@@ -122,11 +136,12 @@ export function Sidebar({
       try {
         await deleteSession(activeVpsId, sessionId);
         await refreshSessions();
-      } catch {
-        /* ignore */
+        setErrorMessage("");
+      } catch (err) {
+        setOperationError("Failed to end session", err);
       }
     },
-    [activeVpsId, refreshSessions],
+    [activeVpsId, refreshSessions, setOperationError],
   );
 
   const handlePowerAction = useCallback(
@@ -136,11 +151,12 @@ export function Sidebar({
         if (action === "off") await powerOffVPS(activeVpsId);
         else await powerOnVPS(activeVpsId);
         await refreshVPS();
-      } catch {
-        /* ignore */
+        setErrorMessage("");
+      } catch (err) {
+        setOperationError("Power action failed", err);
       }
     },
-    [activeVpsId, refreshVPS],
+    [activeVpsId, refreshVPS, setOperationError],
   );
 
   const handleDeleteVPS = useCallback(async () => {
@@ -149,10 +165,11 @@ export function Sidebar({
     try {
       await deleteVPS(activeVpsId);
       await refreshVPS();
-    } catch {
-      /* ignore */
+      setErrorMessage("");
+    } catch (err) {
+      setOperationError("Failed to destroy VPS", err);
     }
-  }, [activeVpsId, refreshVPS]);
+  }, [activeVpsId, refreshVPS, setOperationError]);
 
   const activeVps = vpsList.find((v) => v.id === activeVpsId);
 
@@ -185,6 +202,13 @@ export function Sidebar({
 
       {!collapsed && (
         <div className="flex-1 overflow-y-auto">
+          {errorMessage && (
+            <div className="px-3 pt-2">
+              <p className="text-xs text-destructive bg-destructive/5 border border-destructive/20 rounded px-2 py-1">
+                {errorMessage}
+              </p>
+            </div>
+          )}
           {/* VPS Section */}
           <div className="p-3 space-y-2">
             <div className="flex items-center justify-between">

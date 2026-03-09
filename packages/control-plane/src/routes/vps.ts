@@ -224,13 +224,18 @@ export async function handleVPSManualCreate(
     // Body is optional; ignore parse errors from empty body
   }
 
+  const manualLabel = normalizeManualLabel(body.label);
+  if (body.label && manualLabel === null) {
+    return jsonResponse({ error: "invalid label" }, 400);
+  }
+
   const vpsId = newVPSId();
   const gatewayId = newGatewayId();
   const authToken = randomHex(32);
   const authTokenHash = await hashGatewayToken(authToken, env.GATEWAY_TOKEN_SALT);
   const now = Math.floor(Date.now() / 1000);
 
-  const size = body.label?.trim() ? `manual:${body.label.trim()}` : "manual";
+  const size = manualLabel ? `manual:${manualLabel}` : "manual";
   const vps: VPSRow = {
     id: vpsId,
     user_id: auth.userId,
@@ -505,6 +510,14 @@ function deriveVPSLabel(vps: VPSRow): string {
     return "manual";
   }
   return `${vps.region} / ${vps.size}`;
+}
+
+function normalizeManualLabel(label: string | undefined): string | null {
+  const trimmed = (label ?? "").trim();
+  if (!trimmed) return "";
+  if (trimmed.length > 64) return null;
+  if (!/^[a-zA-Z0-9._ -]+$/.test(trimmed)) return null;
+  return trimmed;
 }
 
 function buildCloudInit(

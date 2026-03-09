@@ -174,6 +174,7 @@ export function OnboardingPage({ onBack, onComplete }: OnboardingPageProps) {
                   value={doLabel}
                   onChange={(e) => setDoLabel(e.target.value)}
                   placeholder="my-dev-server"
+                  maxLength={64}
                   className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
                 />
               </div>
@@ -266,6 +267,7 @@ export function OnboardingPage({ onBack, onComplete }: OnboardingPageProps) {
                 value={byoLabel}
                 onChange={(e) => setByoLabel(e.target.value)}
                 placeholder="raspi-homelab"
+                maxLength={64}
                 className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
               />
             </div>

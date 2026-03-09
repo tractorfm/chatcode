@@ -15,6 +15,9 @@ function resolveCPURL(): string {
   if (host.startsWith("app.preview-") && host.endsWith(".chatcode.dev")) {
     return "https://cp.staging.chatcode.dev";
   }
+  if (host.startsWith("app.") && host.includes(".")) {
+    return `https://cp.${host.slice(4)}`;
+  }
   return "";
 }
 
@@ -26,6 +29,11 @@ function normalizePath(path: string): string {
 export function apiUrl(path: string): string {
   const normalized = normalizePath(path);
   if (CP_URL) return new URL(normalized, CP_URL).toString();
+  if (!isLocalDevHost(location.hostname)) {
+    throw new Error(
+      `Control plane URL is not configured for host ${location.hostname}. Set VITE_CP_URL.`,
+    );
+  }
   return `/api${normalized}`;
 }
 
@@ -37,8 +45,17 @@ export function wsUrl(path: string): string {
     url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
     return url.toString();
   }
+  if (!isLocalDevHost(location.hostname)) {
+    throw new Error(
+      `Control plane URL is not configured for host ${location.hostname}. Set VITE_CP_URL.`,
+    );
+  }
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
   return `${proto}//${location.host}/api${normalized}`;
+}
+
+function isLocalDevHost(hostname: string): boolean {
+  return hostname === "localhost" || hostname === "127.0.0.1";
 }
 
 /** Generate a request ID for protocol messages. */
