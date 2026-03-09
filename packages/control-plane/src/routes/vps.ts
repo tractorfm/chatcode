@@ -35,7 +35,16 @@ const DEFAULT_DROPLET_REGION = "nyc1";
 const DEFAULT_DROPLET_SIZE = "s-1vcpu-512mb-10gb";
 const DEFAULT_DROPLET_IMAGE = "ubuntu-24-04-x64";
 
-interface VPSResponse extends VPSRow {
+interface VPSResponse {
+  id: string;
+  user_id: string;
+  droplet_id: number;
+  region: string;
+  size: string;
+  ipv4: string | null;
+  status: string;
+  created_at: number;
+  updated_at: number;
   provider: "digitalocean" | "manual";
   label: string;
   gateway_id?: string;
@@ -467,7 +476,15 @@ function getPublicIp(droplet: { networks: { v4: Array<{ ip_address: string; type
 function toVPSResponse(vps: VPSRow, gateway?: GatewayRow): VPSResponse {
   const isManual = vps.droplet_id <= 0;
   return {
-    ...vps,
+    id: vps.id,
+    user_id: vps.user_id,
+    droplet_id: vps.droplet_id,
+    region: vps.region,
+    size: vps.size,
+    ipv4: vps.ipv4,
+    status: vps.status,
+    created_at: vps.created_at,
+    updated_at: vps.updated_at,
     provider: isManual ? "manual" : "digitalocean",
     label: deriveVPSLabel(vps),
     gateway_id: gateway?.id,
