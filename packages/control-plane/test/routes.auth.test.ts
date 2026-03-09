@@ -7,6 +7,7 @@ import {
   handleEmailStart,
   handleEmailVerify,
   handleAuthMe,
+  handleDevSessionLogin,
 } from "../src/routes/auth";
 
 const mocks = vi.hoisted(() => ({
@@ -247,6 +248,33 @@ describe("routes/auth", () => {
     );
     expect(res.status).toBe(200);
     expect(res.headers.get("Set-Cookie")).toContain("Max-Age=0");
+  });
+
+  it("mints session cookie from dev-auth context when AUTH_MODE=dev", async () => {
+    const { env } = makeEnv();
+    env.AUTH_MODE = "dev";
+    const res = await handleDevSessionLogin(
+      new Request("https://cp.example.test/auth/dev/login", { method: "POST" }),
+      env,
+      { userId: "usr-test-1" },
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Set-Cookie")).toContain("session=");
+    await expect(res.json()).resolves.toMatchObject({
+      ok: true,
+      user_id: "usr-test-1",
+    });
+  });
+
+  it("returns 404 for dev login when AUTH_MODE!=dev", async () => {
+    const { env } = makeEnv();
+    env.AUTH_MODE = "";
+    const res = await handleDevSessionLogin(
+      new Request("https://cp.example.test/auth/dev/login", { method: "POST" }),
+      env,
+      { userId: "usr-test-1" },
+    );
+    expect(res.status).toBe(404);
   });
 
   it("sets SameSite=None cookie in staging auth callback", async () => {

@@ -93,3 +93,23 @@ Notes:
 
 - For staging pages previews, auth cookies are issued with `SameSite=None` to support cross-subdomain callback flows.
 - If `POST_AUTH_REDIRECT_URL` is unset, control-plane resolves safe redirect targets from request context and configured allowlists.
+
+## 6. Staging Smoke E2E (main push gate)
+
+CI runs `packages/web/scripts/e2e-staging-smoke.mjs` on each `main` push.
+
+Required repo secrets:
+
+- `E2E_DEV_USER`
+- `E2E_DEV_SECRET`
+
+Optional repo vars:
+
+- `E2E_APP_URL` (default `https://app.staging.chatcode.dev`)
+- `E2E_CP_URL` (default `https://cp.staging.chatcode.dev`)
+- `E2E_VPS_ID` (pin smoke to a known healthy VPS)
+
+Auth bootstrap for smoke:
+
+- CI calls `POST /auth/dev/login` with dev auth headers.
+- Route is enabled only when `AUTH_MODE=dev` and sets a normal session cookie for browser + WS flows.

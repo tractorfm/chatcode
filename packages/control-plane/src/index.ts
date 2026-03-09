@@ -27,6 +27,7 @@ import {
   handleDODisconnect,
   handleAuthMe,
   handleLogout,
+  handleDevSessionLogin,
 } from "./routes/auth.js";
 import {
   handleVPSCreate,
@@ -88,6 +89,13 @@ export default {
       }
       if (path === "/auth/logout" && method === "POST") {
         return withCORS(await handleLogout(request, env), request, env);
+      }
+      if (path === "/auth/dev/login" && method === "POST") {
+        const authResult = await authenticateRequest(request, env);
+        if (authResult instanceof Response) {
+          return withCORS(authResult, request, env);
+        }
+        return withCORS(await handleDevSessionLogin(request, env, authResult), request, env);
       }
       if (path === "/auth/do/callback" && method === "GET") {
         return handleDOCallback(request, env);

@@ -158,6 +158,7 @@ export function Sidebar({
 
   return (
     <aside
+      data-testid="sidebar"
       className={cn(
         "flex flex-col border-r border-border bg-card transition-all duration-200 relative",
         collapsed ? "w-12" : "w-60",
@@ -211,6 +212,7 @@ export function Sidebar({
             {vpsList.map((vps) => (
               <button
                 key={vps.id}
+                data-testid={`vps-item-${vps.id}`}
                 onClick={() => onSelectVps(vps.id)}
                 className={cn(
                   "w-full text-left p-2 rounded-md text-sm transition-colors flex items-center gap-2",
@@ -275,6 +277,7 @@ export function Sidebar({
                   Sessions
                 </span>
                 <button
+                  data-testid="create-session-button"
                   onClick={() => handleCreateSession("claude-code")}
                   disabled={creating}
                   className="p-0.5 rounded hover:bg-accent text-muted-foreground disabled:opacity-50"
@@ -299,6 +302,7 @@ export function Sidebar({
                   )}
                 >
                   <button
+                    data-testid={`session-item-${session.id}`}
                     onClick={() => onSelectSession(activeVpsId, session.id)}
                     className="flex items-center gap-2 flex-1 min-w-0 text-left"
                   >

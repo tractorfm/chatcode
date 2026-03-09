@@ -58,3 +58,45 @@ jobs:
 
       - name: Run control-plane build
         run: pnpm --filter @chatcode/control-plane build
+
+  web-e2e-smoke:
+    name: Web E2E Smoke (staging)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref_name == 'main'
+    timeout-minutes: 20
+    env:
+      E2E_APP_URL: ${{ vars.E2E_APP_URL != '' && vars.E2E_APP_URL || 'https://app.staging.chatcode.dev' }}
+      E2E_CP_URL: ${{ vars.E2E_CP_URL != '' && vars.E2E_CP_URL || 'https://cp.staging.chatcode.dev' }}
+      E2E_VPS_ID: ${{ vars.E2E_VPS_ID }}
+      E2E_DEV_USER: ${{ secrets.E2E_DEV_USER }}
+      E2E_DEV_SECRET: ${{ secrets.E2E_DEV_SECRET }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "pnpm"
+
+      - name: Verify E2E secrets
+        run: |
+          set -euo pipefail
+          [[ -n "${E2E_DEV_USER}" ]] || { echo "::error::missing E2E_DEV_USER secret"; exit 1; }
+          [[ -n "${E2E_DEV_SECRET}" ]] || { echo "::error::missing E2E_DEV_SECRET secret"; exit 1; }
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright browser
+        run: pnpm --filter @chatcode/web exec playwright install --with-deps chromium
+
+      - name: Run staging smoke
+        run: pnpm --filter @chatcode/web run e2e:staging:smoke

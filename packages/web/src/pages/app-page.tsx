@@ -3,6 +3,7 @@ import { Sidebar } from "@/components/sidebar";
 import { TerminalView } from "@/components/terminal-view";
 import { X, Plus, Terminal } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { createSession } from "@/lib/api";
 
 interface AppPageProps {
   userEmail?: string;
@@ -21,6 +22,7 @@ export function AppPage({ userEmail, onLogout, onNavigate }: AppPageProps) {
   const [activeVpsId, setActiveVpsId] = useState<string | null>(null);
   const [activeTabIndex, setActiveTabIndex] = useState(0);
   const [tabs, setTabs] = useState<OpenTab[]>([]);
+  const [emptyActionBusy, setEmptyActionBusy] = useState(false);
 
   const handleSelectVps = useCallback((vpsId: string) => {
     setActiveVpsId(vpsId);
@@ -84,6 +86,28 @@ export function AppPage({ userEmail, onLogout, onNavigate }: AppPageProps) {
     [],
   );
 
+  const handleCreateSessionFromEmpty = useCallback(async () => {
+    if (!activeVpsId || emptyActionBusy) return;
+    setEmptyActionBusy(true);
+    try {
+      const res = await createSession(activeVpsId, {
+        title: `Session ${tabs.length + 1}`,
+        agent_type: "claude-code",
+      });
+      const newTab: OpenTab = {
+        vpsId: activeVpsId,
+        sessionId: res.session_id,
+        title: `Session ${tabs.length + 1}`,
+      };
+      setTabs((prev) => [...prev, newTab]);
+      setActiveTabIndex(tabs.length);
+    } catch (err) {
+      console.error("create session from empty state:", err);
+    } finally {
+      setEmptyActionBusy(false);
+    }
+  }, [activeVpsId, emptyActionBusy, tabs.length]);
+
   const activeTab = tabs[activeTabIndex] ?? null;
 
   return (
@@ -139,7 +163,12 @@ export function AppPage({ userEmail, onLogout, onNavigate }: AppPageProps) {
         {/* Terminal area */}
         <div className="flex-1 relative bg-[#111111] dark:bg-[#111111]">
           {tabs.length === 0 ? (
-            <EmptyState onNavigate={onNavigate} hasVps={!!activeVpsId} />
+            <EmptyState
+              onNavigate={onNavigate}
+              selectedVpsId={activeVpsId}
+              onCreateSession={handleCreateSessionFromEmpty}
+              creatingSession={emptyActionBusy}
+            />
           ) : (
             tabs.map((tab, i) => (
               <TerminalView
@@ -159,23 +188,36 @@ export function AppPage({ userEmail, onLogout, onNavigate }: AppPageProps) {
 
 function EmptyState({
   onNavigate,
-  hasVps,
+  selectedVpsId,
+  onCreateSession,
+  creatingSession,
 }: {
   onNavigate: (page: "onboarding") => void;
-  hasVps: boolean;
+  selectedVpsId: string | null;
+  onCreateSession: () => void;
+  creatingSession: boolean;
 }) {
   return (
     <div className="absolute inset-0 flex items-center justify-center">
       <div className="text-center space-y-4 max-w-sm">
         <Terminal className="h-12 w-12 mx-auto text-muted-foreground/30" />
-        {hasVps ? (
+        {selectedVpsId ? (
           <>
             <h2 className="text-lg font-medium text-muted-foreground">
               No active sessions
             </h2>
             <p className="text-sm text-muted-foreground/70">
-              Create a new session from the sidebar to start coding.
+              Selected server: <code>{selectedVpsId}</code>. Create a session to start coding.
             </p>
+            <button
+              data-testid="empty-create-session-button"
+              onClick={onCreateSession}
+              disabled={creatingSession}
+              className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-60"
+            >
+              <Plus className="h-4 w-4" />
+              {creatingSession ? "Creating..." : "Create Session"}
+            </button>
           </>
         ) : (
           <>

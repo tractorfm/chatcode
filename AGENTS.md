@@ -48,6 +48,10 @@ Ship a reliable MVP path:
 - Gateway runtime/deploy changes:
   - `cd packages/gateway && make test`
   - `cd packages/gateway && make test-deploy`
+- Web changes:
+  - `pnpm --filter @chatcode/web lint`
+  - `pnpm --filter @chatcode/web build`
+  - staging smoke (when creds available): `pnpm --filter @chatcode/web run e2e:staging:smoke`
 
 ## Useful Commands
 

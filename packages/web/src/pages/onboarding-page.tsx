@@ -42,18 +42,17 @@ export function OnboardingPage({ onBack, onComplete }: OnboardingPageProps) {
     setStep("creating");
     setError("");
     try {
-      const vps = await createVPS({
+      const result = await createVPS({
         region,
         size,
         label: doLabel || `chatcode-${region}`,
       });
-      const vpsId = vps.id ?? vps.vps_id;
-      if (vpsId) {
-        onComplete(vpsId);
+      if (result.vps.id) {
+        onComplete(result.vps.id);
         return;
       }
 
-      // Compatibility fallback for minimal create responses.
+      // Fallback safety if create contract regresses.
       const { vps: listed } = await listVPS();
       if (listed[0]?.id) {
         onComplete(listed[0].id);
@@ -100,7 +99,7 @@ export function OnboardingPage({ onBack, onComplete }: OnboardingPageProps) {
   }, [manualPlatform, manualSetup]);
 
   const handleManualContinue = useCallback(() => {
-    const vpsId = manualSetup?.vps?.id ?? manualSetup?.vps_id;
+    const vpsId = manualSetup?.vps?.id;
     if (vpsId) onComplete(vpsId);
   }, [manualSetup, onComplete]);
 

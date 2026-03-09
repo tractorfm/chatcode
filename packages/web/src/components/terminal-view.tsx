@@ -36,6 +36,7 @@ export const TerminalView = memo(function TerminalView({
   return (
     <div
       ref={containerRef}
+      data-testid={`terminal-${sessionId}`}
       className="terminal-container absolute inset-0"
       style={{ display: active ? "block" : "none" }}
     />

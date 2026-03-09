@@ -68,9 +68,9 @@ export function getVPS(id: string) {
   return request<VPS>(`/vps/${encodeURIComponent(id)}`);
 }
 
-export interface CreateVPSResponse extends Partial<VPS> {
-  vps_id?: string;
-  status?: string;
+export interface CreateVPSResponse {
+  status: "provisioning";
+  vps: VPS;
 }
 
 export function createVPS(opts: {
@@ -85,7 +85,6 @@ export function createVPS(opts: {
 }
 
 export interface ManualVPSResponse {
-  vps_id: string;
   gateway_id: string;
   gateway_auth_token: string;
   cp_url: string;
@@ -93,7 +92,7 @@ export interface ManualVPSResponse {
     linux: string;
     macos: string;
   };
-  vps?: VPS;
+  vps: VPS;
 }
 
 export function createManualVPS(opts?: { label?: string }) {

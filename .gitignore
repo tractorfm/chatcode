@@ -15,6 +15,7 @@ packages/*/node_modules/
 # Build outputs
 dist/
 packages/*/dist/
+*.tsbuildinfo
 
 # Editor
 .DS_Store

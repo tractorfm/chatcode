@@ -52,6 +52,11 @@ interface VPSResponse {
   gateway_version?: string | null;
 }
 
+interface VPSCreateResponse {
+  status: "provisioning";
+  vps: VPSResponse;
+}
+
 /**
  * POST /vps – Create droplet + generate gateway credentials.
  */
@@ -191,12 +196,11 @@ export async function handleVPSCreate(
     created_at: now,
   };
 
-  // Keep legacy fields for compatibility while also returning full VPS payload.
   return jsonResponse(
     {
-      ...toVPSResponse(vps, gateway),
-      vps_id: vpsId,
-    },
+      status: "provisioning",
+      vps: toVPSResponse(vps, gateway),
+    } satisfies VPSCreateResponse,
     201,
   );
 }
@@ -257,7 +261,6 @@ export async function handleVPSManualCreate(
 
   return jsonResponse(
     {
-      vps_id: vpsId,
       gateway_id: gatewayId,
       gateway_auth_token: authToken,
       cp_url: cpWsBase,
