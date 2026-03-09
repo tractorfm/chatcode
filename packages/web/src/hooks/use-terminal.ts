@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
-import { decodeTerminalFrame } from "@chatcode/protocol/ts/src/index";
+import { decodeTerminalFrame } from "@chatcode/protocol";
 import { wsUrl, requestId, utf8ToBase64 } from "@/lib/constants";
 import { terminalThemes, getStoredTerminalTheme } from "@/lib/themes";
 import type { ITheme } from "@xterm/xterm";

@@ -31,7 +31,7 @@ export function App() {
   }
 
   if (auth.status === "unauthenticated") {
-    return <AuthPage onAuthenticated={auth.checkAuth} />;
+    return <AuthPage />;
   }
 
   const userEmail = auth.user.email;

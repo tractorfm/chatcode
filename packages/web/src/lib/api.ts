@@ -46,17 +46,18 @@ export function logout() {
 export interface VPS {
   id: string;
   user_id: string;
-  provider: "digitalocean" | "manual";
-  label: string;
+  provider?: "digitalocean" | "manual";
+  label?: string;
   droplet_id?: number;
   region?: string;
   size?: string;
-  ipv4?: string;
+  ipv4?: string | null;
   status: string;
   created_at: number;
+  updated_at?: number;
   gateway_id?: string;
   gateway_connected?: boolean;
-  gateway_version?: string;
+  gateway_version?: string | null;
 }
 
 export function listVPS() {
@@ -67,14 +68,38 @@ export function getVPS(id: string) {
   return request<VPS>(`/vps/${encodeURIComponent(id)}`);
 }
 
+export interface CreateVPSResponse extends Partial<VPS> {
+  vps_id?: string;
+  status?: string;
+}
+
 export function createVPS(opts: {
   region?: string;
   size?: string;
   label?: string;
 }) {
-  return request<VPS>("/vps", {
+  return request<CreateVPSResponse>("/vps", {
     method: "POST",
     body: JSON.stringify(opts),
+  });
+}
+
+export interface ManualVPSResponse {
+  vps_id: string;
+  gateway_id: string;
+  gateway_auth_token: string;
+  cp_url: string;
+  install: {
+    linux: string;
+    macos: string;
+  };
+  vps?: VPS;
+}
+
+export function createManualVPS(opts?: { label?: string }) {
+  return request<ManualVPSResponse>("/vps/manual", {
+    method: "POST",
+    body: JSON.stringify(opts ?? {}),
   });
 }
 

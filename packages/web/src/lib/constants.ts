@@ -1,19 +1,44 @@
 /** Base URL for the control plane API. */
-export const CP_URL = import.meta.env.VITE_CP_URL ?? "";
+export const CP_URL = resolveCPURL();
+
+function resolveCPURL(): string {
+  const explicit = (import.meta.env.VITE_CP_URL ?? "").trim();
+  if (explicit) return explicit;
+  if (typeof window === "undefined") return "";
+
+  const host = window.location.hostname;
+  if (host === "app.chatcode.dev") return "https://cp.chatcode.dev";
+  if (host === "app.staging.chatcode.dev") return "https://cp.staging.chatcode.dev";
+  if (host.endsWith(".chatcode-app-staging.pages.dev")) {
+    return "https://cp.staging.chatcode.dev";
+  }
+  if (host.startsWith("app.preview-") && host.endsWith(".chatcode.dev")) {
+    return "https://cp.staging.chatcode.dev";
+  }
+  return "";
+}
+
+function normalizePath(path: string): string {
+  return path.startsWith("/") ? path : `/${path}`;
+}
 
 /** Build a full API URL. In dev mode, requests are proxied via Vite. */
 export function apiUrl(path: string): string {
-  if (CP_URL) return CP_URL + path;
-  return "/api" + path;
+  const normalized = normalizePath(path);
+  if (CP_URL) return new URL(normalized, CP_URL).toString();
+  return `/api${normalized}`;
 }
 
 /** Build a WebSocket URL from an API path. */
 export function wsUrl(path: string): string {
+  const normalized = normalizePath(path);
   if (CP_URL) {
-    return CP_URL.replace(/^http/, "ws") + path;
+    const url = new URL(normalized, CP_URL);
+    url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+    return url.toString();
   }
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
-  return proto + "//" + location.host + "/api" + path;
+  return `${proto}//${location.host}/api${normalized}`;
 }
 
 /** Generate a request ID for protocol messages. */

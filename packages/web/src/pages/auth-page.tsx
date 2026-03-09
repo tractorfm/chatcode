@@ -2,11 +2,7 @@ import { useCallback, useState } from "react";
 import { Mail, Github, ArrowRight } from "lucide-react";
 import { startEmailLogin, getOAuthURL } from "@/lib/api";
 
-interface AuthPageProps {
-  onAuthenticated: () => void;
-}
-
-export function AuthPage({ onAuthenticated }: AuthPageProps) {
+export function AuthPage() {
   const [email, setEmail] = useState("");
   const [sent, setSent] = useState(false);
   const [error, setError] = useState("");
@@ -38,14 +34,6 @@ export function AuthPage({ onAuthenticated }: AuthPageProps) {
     },
     [],
   );
-
-  // Listen for auth callback (magic link opens in same window)
-  // After email verify redirect, check auth
-  if (window.location.pathname === "/auth/verify") {
-    // The CP redirects back after verification; check auth state
-    onAuthenticated();
-    return null;
-  }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-4">

@@ -1,6 +1,6 @@
-import { memo, useMemo } from "react";
+import { memo, useEffect, useMemo } from "react";
 import { useTerminalRef } from "@/hooks/use-terminal";
-import "../../node_modules/@xterm/xterm/css/xterm.css";
+import "@xterm/xterm/css/xterm.css";
 
 interface TerminalViewProps {
   vpsId: string;
@@ -24,14 +24,14 @@ export const TerminalView = memo(function TerminalView({
 
   const { containerRef, handleRef } = useTerminalRef(opts);
 
-  // When tab becomes active, trigger fit + focus
-  if (active && handleRef.current) {
-    // Use microtask to avoid calling during render
-    queueMicrotask(() => {
+  useEffect(() => {
+    if (!active || !handleRef.current) return;
+    const timer = setTimeout(() => {
       handleRef.current?.fit();
       handleRef.current?.focus();
-    });
-  }
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [active, sessionId, vpsId, handleRef]);
 
   return (
     <div

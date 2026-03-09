@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
-import { ArrowLeft, Cloud, Server, Check, Loader2 } from "lucide-react";
-import { createVPS } from "@/lib/api";
+import { ArrowLeft, Cloud, Server, Check, Loader2, Copy } from "lucide-react";
+import { createManualVPS, createVPS, listVPS, type ManualVPSResponse } from "@/lib/api";
 
 interface OnboardingPageProps {
   onBack: () => void;
@@ -30,7 +30,13 @@ export function OnboardingPage({ onBack, onComplete }: OnboardingPageProps) {
   const [region, setRegion] = useState("nyc1");
   const [size, setSize] = useState("s-1vcpu-512mb-10gb");
   const [error, setError] = useState("");
-  const [label, setLabel] = useState("");
+  const [doLabel, setDoLabel] = useState("");
+  const [byoLabel, setByoLabel] = useState("");
+  const [manualSetup, setManualSetup] = useState<ManualVPSResponse | null>(null);
+  const [manualPlatform, setManualPlatform] = useState<"linux" | "macos">("linux");
+  const [manualLoading, setManualLoading] = useState(false);
+  const [manualError, setManualError] = useState("");
+  const [copiedCommand, setCopiedCommand] = useState(false);
 
   const handleCreateDO = useCallback(async () => {
     setStep("creating");
@@ -39,15 +45,64 @@ export function OnboardingPage({ onBack, onComplete }: OnboardingPageProps) {
       const vps = await createVPS({
         region,
         size,
-        label: label || `chatcode-${region}`,
+        label: doLabel || `chatcode-${region}`,
       });
-      onComplete(vps.id);
+      const vpsId = vps.id ?? vps.vps_id;
+      if (vpsId) {
+        onComplete(vpsId);
+        return;
+      }
+
+      // Compatibility fallback for minimal create responses.
+      const { vps: listed } = await listVPS();
+      if (listed[0]?.id) {
+        onComplete(listed[0].id);
+        return;
+      }
+      throw new Error("VPS created but id could not be resolved");
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Failed to create VPS";
       setError(msg);
       setStep("do-setup");
     }
-  }, [region, size, label, onComplete]);
+  }, [region, size, doLabel, onComplete]);
+
+  const handlePrepareManualSetup = useCallback(async () => {
+    setManualLoading(true);
+    setManualError("");
+    setCopiedCommand(false);
+    try {
+      const setup = await createManualVPS({
+        label: byoLabel.trim() || undefined,
+      });
+      setManualSetup(setup);
+    } catch (err: unknown) {
+      const msg =
+        err instanceof Error
+          ? err.message
+          : "Failed to generate manual install command";
+      setManualError(msg);
+    } finally {
+      setManualLoading(false);
+    }
+  }, [byoLabel]);
+
+  const handleCopyCommand = useCallback(async () => {
+    if (!manualSetup) return;
+    const cmd = manualSetup.install[manualPlatform];
+    try {
+      await navigator.clipboard.writeText(cmd);
+      setCopiedCommand(true);
+      setTimeout(() => setCopiedCommand(false), 1500);
+    } catch {
+      setCopiedCommand(false);
+    }
+  }, [manualPlatform, manualSetup]);
+
+  const handleManualContinue = useCallback(() => {
+    const vpsId = manualSetup?.vps?.id ?? manualSetup?.vps_id;
+    if (vpsId) onComplete(vpsId);
+  }, [manualSetup, onComplete]);
 
   return (
     <div className="min-h-screen bg-background p-6">
@@ -117,8 +172,8 @@ export function OnboardingPage({ onBack, onComplete }: OnboardingPageProps) {
                 </label>
                 <input
                   type="text"
-                  value={label}
-                  onChange={(e) => setLabel(e.target.value)}
+                  value={doLabel}
+                  onChange={(e) => setDoLabel(e.target.value)}
                   placeholder="my-dev-server"
                   className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
                 />
@@ -203,20 +258,99 @@ export function OnboardingPage({ onBack, onComplete }: OnboardingPageProps) {
             <h3 className="font-medium text-foreground">
               Connect your server
             </h3>
-            <p className="text-sm text-muted-foreground">
-              Run this command on your Linux or macOS machine:
-            </p>
-            <div className="bg-background rounded-md border border-border p-3">
-              <code className="text-xs font-mono text-foreground break-all">
-                curl -fsSL https://chatcode.dev/install | sh
-              </code>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-foreground">
+                Label (optional)
+              </label>
+              <input
+                type="text"
+                value={byoLabel}
+                onChange={(e) => setByoLabel(e.target.value)}
+                placeholder="raspi-homelab"
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+              />
             </div>
+
+            <button
+              onClick={handlePrepareManualSetup}
+              disabled={manualLoading}
+              className="w-full inline-flex items-center justify-center gap-2 rounded-md bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-60"
+            >
+              {manualLoading ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Generating command...
+                </>
+              ) : (
+                <>
+                  <Server className="h-4 w-4" />
+                  Generate install command
+                </>
+              )}
+            </button>
+
+            {manualError && (
+              <p className="text-sm text-destructive">{manualError}</p>
+            )}
+
+            {manualSetup && (
+              <div className="space-y-3">
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setManualPlatform("linux")}
+                    className={`px-2 py-1 rounded-md text-xs border ${
+                      manualPlatform === "linux"
+                        ? "border-primary bg-primary/5 text-primary"
+                        : "border-border text-muted-foreground"
+                    }`}
+                  >
+                    Linux
+                  </button>
+                  <button
+                    onClick={() => setManualPlatform("macos")}
+                    className={`px-2 py-1 rounded-md text-xs border ${
+                      manualPlatform === "macos"
+                        ? "border-primary bg-primary/5 text-primary"
+                        : "border-border text-muted-foreground"
+                    }`}
+                  >
+                    macOS
+                  </button>
+                </div>
+
+                <p className="text-sm text-muted-foreground">
+                  Run this command on your server:
+                </p>
+                <div className="bg-background rounded-md border border-border p-3">
+                  <code className="text-xs font-mono text-foreground break-all">
+                    {manualSetup.install[manualPlatform]}
+                  </code>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleCopyCommand}
+                    className="inline-flex items-center gap-2 rounded-md border border-border px-3 py-2 text-xs text-foreground hover:bg-accent"
+                  >
+                    <Copy className="h-3.5 w-3.5" />
+                    {copiedCommand ? "Copied" : "Copy command"}
+                  </button>
+                  <button
+                    onClick={handleManualContinue}
+                    className="inline-flex items-center gap-2 rounded-md bg-primary px-3 py-2 text-xs text-primary-foreground hover:bg-primary/90"
+                  >
+                    Continue
+                  </button>
+                </div>
+              </div>
+            )}
+
             <div className="space-y-2 text-sm text-muted-foreground">
-              <p>The install script will:</p>
+              <p>The install command will:</p>
               <ul className="list-disc pl-5 space-y-1">
                 <li>Install tmux and the gateway daemon</li>
-                <li>Set up a systemd service (Linux) or launchd plist (macOS)</li>
-                <li>Connect your server to Chatcode</li>
+                <li>Set up a service (systemd/launchd)</li>
+                <li>Register the server to your account</li>
               </ul>
             </div>
             <p className="text-xs text-muted-foreground">
