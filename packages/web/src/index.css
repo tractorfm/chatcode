@@ -1,0 +1,64 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 40 6% 97%;
+    --foreground: 240 10% 6%;
+    --card: 0 0% 100%;
+    --card-foreground: 240 10% 6%;
+    --primary: 168 55% 38%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 220 9% 94%;
+    --secondary-foreground: 240 6% 25%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+    --muted: 220 9% 94%;
+    --muted-foreground: 220 6% 44%;
+    --accent: 220 9% 94%;
+    --accent-foreground: 240 6% 25%;
+    --border: 220 9% 87%;
+    --input: 220 9% 87%;
+    --ring: 168 55% 38%;
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    --background: 220 14% 7%;
+    --foreground: 220 6% 90%;
+    --card: 220 14% 10%;
+    --card-foreground: 220 6% 90%;
+    --primary: 168 55% 45%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 220 12% 15%;
+    --secondary-foreground: 220 6% 80%;
+    --destructive: 0 62% 55%;
+    --destructive-foreground: 0 0% 100%;
+    --muted: 220 12% 15%;
+    --muted-foreground: 220 6% 50%;
+    --accent: 220 12% 15%;
+    --accent-foreground: 220 6% 80%;
+    --border: 220 12% 18%;
+    --input: 220 12% 18%;
+    --ring: 168 55% 45%;
+    --radius: 0.5rem;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+  }
+}
+
+/* Terminal container: fill available space, no overflow */
+.terminal-container .xterm {
+  height: 100%;
+}
+.terminal-container .xterm-viewport {
+  overflow-y: auto !important;
+}
