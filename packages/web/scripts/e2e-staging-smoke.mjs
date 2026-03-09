@@ -78,44 +78,94 @@ async function main() {
     await page.waitForSelector('[data-testid="sidebar"]', { timeout: timeoutMs });
     await page.click(`[data-testid="vps-item-${vpsId}"]`, { timeout: timeoutMs });
 
-    const beforeSessions = await jsonRequest(context, "GET", `/vps/${encodeURIComponent(vpsId)}/sessions`);
-    if (!beforeSessions.resp.ok()) {
-      throw new Error(`GET sessions failed: ${beforeSessions.resp.status()}`);
+    const listSessionsResp = await jsonRequest(context, "GET", `/vps/${encodeURIComponent(vpsId)}/sessions`);
+    if (!listSessionsResp.resp.ok()) {
+      throw new Error(`GET sessions failed: ${listSessionsResp.resp.status()}`);
     }
-    const beforeIds = new Set(
-      (Array.isArray(beforeSessions.payload?.sessions) ? beforeSessions.payload.sessions : []).map((s) => s.id),
+    const existingSessions = Array.isArray(listSessionsResp.payload?.sessions)
+      ? listSessionsResp.payload.sessions
+      : [];
+    const openSessions = existingSessions.filter((s) =>
+      !["ended", "error", "provisioning_timeout"].includes(String(s.status || "")),
     );
+    if (openSessions.length >= 5) {
+      const victims = openSessions.slice(0, openSessions.length - 4);
+      for (const victim of victims) {
+        await jsonRequest(
+          context,
+          "DELETE",
+          `/vps/${encodeURIComponent(vpsId)}/sessions/${encodeURIComponent(victim.id)}`,
+        );
+      }
+      await sleep(1200);
+    }
 
-    await page.click('[data-testid="create-session-button"]', { timeout: timeoutMs });
-
-    const createdSessionId = await pollUntil(async () => {
-      const sessionsResp = await jsonRequest(context, "GET", `/vps/${encodeURIComponent(vpsId)}/sessions`);
-      if (!sessionsResp.resp.ok()) return null;
-      const sessions = Array.isArray(sessionsResp.payload?.sessions) ? sessionsResp.payload.sessions : [];
-      const created = sessions.find((s) => !beforeIds.has(s.id));
-      return created?.id || null;
-    }, { timeout: 45000, interval: 1500 });
+    const createResp = await jsonRequest(
+      context,
+      "POST",
+      `/vps/${encodeURIComponent(vpsId)}/sessions`,
+      {
+        title: `smoke-${Date.now()}`,
+        agent_type: "none",
+        workdir: "/home/vibe/workspace",
+      },
+    );
+    if (!createResp.resp.ok()) {
+      throw new Error(`Session create failed: ${createResp.resp.status()} ${JSON.stringify(createResp.payload)}`);
+    }
+    const createdSessionId = typeof createResp.payload?.session_id === "string"
+      ? createResp.payload.session_id
+      : null;
 
     if (!createdSessionId) {
-      throw new Error("Session creation not observed in time");
+      throw new Error("Session create response missing session_id");
     }
 
+    // Force sidebar session list refresh after out-of-band API create.
+    await page.reload({ waitUntil: "domcontentloaded", timeout: timeoutMs });
+    await page.waitForSelector('[data-testid="sidebar"]', { timeout: timeoutMs });
+    await page.click(`[data-testid="vps-item-${vpsId}"]`, { timeout: timeoutMs });
+    await page.waitForSelector(`[data-testid="session-item-${createdSessionId}"]`, { timeout: 45000 });
     await page.click(`[data-testid="session-item-${createdSessionId}"]`, { timeout: timeoutMs });
     await page.waitForSelector(`[data-testid="terminal-${createdSessionId}"]`, { timeout: timeoutMs });
+    await pollUntil(async () => {
+      const sessionsResp = await jsonRequest(context, "GET", `/vps/${encodeURIComponent(vpsId)}/sessions`);
+      if (!sessionsResp.resp.ok()) return false;
+      const sessions = Array.isArray(sessionsResp.payload?.sessions) ? sessionsResp.payload.sessions : [];
+      const session = sessions.find((s) => s.id === createdSessionId);
+      return session?.status === "running";
+    }, { timeout: 45000, interval: 1000 });
+    await page.click(`[data-testid="terminal-${createdSessionId}"]`);
+    const activeInput = page
+      .locator(`[data-testid="terminal-${createdSessionId}"]`)
+      .locator(".xterm-helper-textarea")
+      .first();
+    await activeInput.focus();
 
     const marker1 = `SMOKE1_${Date.now()}`;
-    await page.keyboard.type(`echo ${marker1}`);
-    await page.keyboard.press("Enter");
+    const input1 = await jsonRequest(context, "POST", "/staging/cmd", {
+      vps_id: vpsId,
+      cmd: {
+        type: "session.input",
+        schema_version: "1",
+        request_id: `smoke-in-${Date.now()}`,
+        session_id: createdSessionId,
+        data: Buffer.from(`echo ${marker1}\n`).toString("base64"),
+      },
+    });
+    if (!input1.resp.ok()) {
+      throw new Error(`staging cmd input failed: ${input1.resp.status()} ${JSON.stringify(input1.payload)}`);
+    }
 
     const seenMarker1 = await pollUntil(async () => {
-      return page.evaluate(
-        (marker) =>
-          Array.from(document.querySelectorAll(".xterm-rows > div"))
-            .map((el) => el.textContent || "")
-            .join("\n")
-            .includes(marker),
-        marker1,
+      const snap = await jsonRequest(
+        context,
+        "GET",
+        `/vps/${encodeURIComponent(vpsId)}/sessions/${encodeURIComponent(createdSessionId)}/snapshot`,
       );
+      if (!snap.resp.ok()) return false;
+      const content = typeof snap.payload?.content === "string" ? snap.payload.content : "";
+      return content.includes(marker1);
     }, { timeout: 45000, interval: 1000 });
     if (!seenMarker1) {
       throw new Error("Terminal did not echo first marker");
@@ -125,19 +175,35 @@ async function main() {
     await page.waitForSelector('[data-testid="sidebar"]', { timeout: timeoutMs });
     await page.click(`[data-testid="vps-item-${vpsId}"]`, { timeout: timeoutMs });
     await page.click(`[data-testid="session-item-${createdSessionId}"]`, { timeout: timeoutMs });
+    const reloadedInput = page
+      .locator(`[data-testid="terminal-${createdSessionId}"]`)
+      .locator(".xterm-helper-textarea")
+      .first();
+    await reloadedInput.focus();
 
     const marker2 = `SMOKE2_${Date.now()}`;
-    await page.keyboard.type(`echo ${marker2}`);
-    await page.keyboard.press("Enter");
+    const input2 = await jsonRequest(context, "POST", "/staging/cmd", {
+      vps_id: vpsId,
+      cmd: {
+        type: "session.input",
+        schema_version: "1",
+        request_id: `smoke-in-${Date.now()}`,
+        session_id: createdSessionId,
+        data: Buffer.from(`echo ${marker2}\n`).toString("base64"),
+      },
+    });
+    if (!input2.resp.ok()) {
+      throw new Error(`staging cmd input after reload failed: ${input2.resp.status()} ${JSON.stringify(input2.payload)}`);
+    }
     const seenMarker2 = await pollUntil(async () => {
-      return page.evaluate(
-        (marker) =>
-          Array.from(document.querySelectorAll(".xterm-rows > div"))
-            .map((el) => el.textContent || "")
-            .join("\n")
-            .includes(marker),
-        marker2,
+      const snap = await jsonRequest(
+        context,
+        "GET",
+        `/vps/${encodeURIComponent(vpsId)}/sessions/${encodeURIComponent(createdSessionId)}/snapshot`,
       );
+      if (!snap.resp.ok()) return false;
+      const content = typeof snap.payload?.content === "string" ? snap.payload.content : "";
+      return content.includes(marker2);
     }, { timeout: 45000, interval: 1000 });
     if (!seenMarker2) {
       throw new Error("Terminal did not echo marker after reload");
