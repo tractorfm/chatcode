@@ -14,6 +14,11 @@ export interface Env {
   GOOGLE_CLIENT_ID?: string;
   GITHUB_CLIENT_ID?: string;
   APP_ENV?: "dev" | "staging" | "prod";
+  APP_ORIGIN?: string;
+  STAGING_APP_ORIGIN?: string;
+  CORS_ALLOWED_ORIGINS?: string; // comma-separated allowlist
+  STAGING_PAGES_PREVIEW_SUFFIX?: string; // e.g. .chatcode-app-staging.pages.dev
+  POST_AUTH_REDIRECT_URL?: string; // optional absolute/relative override
   DEFAULT_DROPLET_REGION?: string;
   DEFAULT_DROPLET_SIZE?: string;
   DEFAULT_DROPLET_IMAGE?: string;

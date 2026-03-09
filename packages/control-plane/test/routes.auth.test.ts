@@ -164,6 +164,45 @@ describe("routes/auth", () => {
     expect(res.headers.get("Set-Cookie")).toContain("session=");
   });
 
+  it("redirects auth callback to staging app origin when APP_ENV=staging", async () => {
+    const { env, kv } = makeEnv();
+    env.APP_ENV = "staging";
+    env.STAGING_APP_ORIGIN = "https://app.staging.chatcode.dev";
+
+    mocks.exchangeOAuthCode.mockResolvedValue({
+      access_token: "access-abc",
+      refresh_token: "refresh-xyz",
+      expires_in: 3600,
+    });
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            account: {
+              uuid: "do-account-1",
+              email: "user@example.test",
+              team: { uuid: "team-123" },
+            },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      ),
+    );
+
+    const res = await handleDOCallback(
+      new Request(
+        "https://cp.example.test/auth/do/callback?code=code-1&state=state-nonce-1",
+      ),
+      env,
+    );
+
+    expect(res.status).toBe(302);
+    expect(kv.delete).toHaveBeenCalledWith("oauth:state:do:state-nonce-1");
+    expect(res.headers.get("Location")).toBe("https://app.staging.chatcode.dev");
+  });
+
   it("deletes stored DO connection on disconnect", async () => {
     const { env } = makeEnv();
 

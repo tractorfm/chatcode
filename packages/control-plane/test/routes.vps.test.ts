@@ -132,6 +132,14 @@ describe("routes/vps", () => {
     );
 
     expect(res.status).toBe(201);
+    await expect(res.json()).resolves.toMatchObject({
+      vps_id: "vps-test-1",
+      status: "provisioning",
+      id: "vps-test-1",
+      provider: "digitalocean",
+      gateway_id: "gw-test-1",
+      gateway_connected: false,
+    });
     expect(mocks.createDroplet).toHaveBeenCalledWith(
       "do-access-token",
       expect.objectContaining({
@@ -219,6 +227,11 @@ describe("routes/vps", () => {
       gateway_id: "gw-test-1",
       gateway_auth_token: "abcdef123456",
       cp_url: "wss://cp.example.test/gw/connect",
+      vps: {
+        id: "vps-test-1",
+        provider: "manual",
+        label: "raspi",
+      },
     });
     expect(mocks.createVPS).toHaveBeenCalledWith(
       env.DB,

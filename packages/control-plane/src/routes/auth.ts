@@ -25,6 +25,7 @@ import { exchangeOAuthCode } from "../lib/do-api.js";
 import { resolveOrCreateUserByIdentity, IdentityConflictError, InvalidEmailError } from "../lib/identity.js";
 import { randomHex } from "../lib/ids.js";
 import { sendMagicLinkEmail } from "../lib/ses.js";
+import { postAuthRedirect } from "../lib/http.js";
 
 const DO_AUTHORIZE_URL = "https://cloud.digitalocean.com/v1/oauth/authorize";
 const GOOGLE_AUTHORIZE_URL = "https://accounts.google.com/o/oauth2/v2/auth";
@@ -37,8 +38,6 @@ const GITHUB_EMAILS_URL = "https://api.github.com/user/emails";
 
 const OAUTH_STATE_TTL_SEC = 600;
 const EMAIL_TOKEN_TTL_SEC = 600;
-const DEFAULT_POST_AUTH_REDIRECT = "/staging/test";
-
 interface GoogleUserInfo {
   sub?: string;
   email?: string;
@@ -126,7 +125,7 @@ export async function handleEmailVerify(
     return new Response(null, {
       status: 302,
       headers: {
-        Location: DEFAULT_POST_AUTH_REDIRECT,
+        Location: postAuthRedirect(request, env),
         "Set-Cookie": sessionCookieHeader(sessionToken),
       },
     });
@@ -236,7 +235,7 @@ export async function handleGoogleCallback(
     return new Response(null, {
       status: 302,
       headers: {
-        Location: DEFAULT_POST_AUTH_REDIRECT,
+        Location: postAuthRedirect(request, env),
         "Set-Cookie": sessionCookieHeader(sessionToken),
       },
     });
@@ -360,7 +359,7 @@ export async function handleGitHubCallback(
     return new Response(null, {
       status: 302,
       headers: {
-        Location: DEFAULT_POST_AUTH_REDIRECT,
+        Location: postAuthRedirect(request, env),
         "Set-Cookie": sessionCookieHeader(sessionToken),
       },
     });
@@ -460,7 +459,7 @@ export async function handleDOCallback(
     return new Response(null, {
       status: 302,
       headers: {
-        Location: DEFAULT_POST_AUTH_REDIRECT,
+        Location: postAuthRedirect(request, env),
         "Set-Cookie": sessionCookieHeader(sessionToken),
       },
     });

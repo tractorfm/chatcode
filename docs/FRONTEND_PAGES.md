@@ -70,3 +70,18 @@ Frontend should call:
 - staging/preview app -> `https://cp.staging.chatcode.dev`
 
 Keep this explicit in web env config (do not infer from window hostname).
+
+## 5. Control-plane CORS/Auth redirect vars
+
+For app-domain auth + credentialed API calls, control-plane now uses origin allowlists.
+
+Recommended `wrangler.toml` vars:
+
+- `APP_ORIGIN=https://app.chatcode.dev`
+- `STAGING_APP_ORIGIN=https://app.staging.chatcode.dev`
+- `STAGING_PAGES_PREVIEW_SUFFIX=.chatcode-app-staging.pages.dev`
+
+Optional:
+
+- `CORS_ALLOWED_ORIGINS` (comma-separated extra origins)
+- `POST_AUTH_REDIRECT_URL` (explicit callback landing URL override)

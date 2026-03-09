@@ -46,6 +46,7 @@ import {
   handleTerminalUpgrade,
 } from "./routes/sessions.js";
 import { handleStagingCommand, handleStagingTestPage } from "./routes/staging.js";
+import { withCORS, corsHeaders } from "./lib/http.js";
 
 export { GatewayHub } from "./durables/GatewayHub.js";
 
@@ -58,7 +59,7 @@ export default {
     try {
       // --- CORS preflight ---
       if (method === "OPTIONS") {
-        return handleCORS();
+        return handleCORS(request, env);
       }
 
       // --- Minimal staging test UI ---
@@ -68,7 +69,7 @@ export default {
 
       // --- Auth routes (unauthenticated entrypoints/callbacks) ---
       if (path === "/auth/email/start" && method === "POST") {
-        return withCORS(await handleEmailStart(request, env));
+        return withCORS(await handleEmailStart(request, env), request, env);
       }
       if (path === "/auth/email/verify" && method === "GET") {
         return handleEmailVerify(request, env);
@@ -86,7 +87,7 @@ export default {
         return handleGitHubCallback(request, env);
       }
       if (path === "/auth/logout" && method === "POST") {
-        return withCORS(await handleLogout(request));
+        return withCORS(await handleLogout(request), request, env);
       }
       if (path === "/auth/do/callback" && method === "GET") {
         return handleDOCallback(request, env);
@@ -101,63 +102,63 @@ export default {
       // --- All remaining routes require user auth ---
       const authResult = await authenticateRequest(request, env);
       if (authResult instanceof Response) {
-        return withCORS(authResult);
+        return withCORS(authResult, request, env);
       }
       const auth: AuthContext = authResult;
 
       // --- Auth (authenticated) ---
       if (path === "/auth/me" && method === "GET") {
-        return withCORS(await handleAuthMe(request, env, auth));
+        return withCORS(await handleAuthMe(request, env, auth), request, env);
       }
       if (path === "/staging/cmd" && method === "POST") {
-        return withCORS(await handleStagingCommand(request, env, auth));
+        return withCORS(await handleStagingCommand(request, env, auth), request, env);
       }
       if (path === "/auth/do" && method === "GET") {
         return handleDOConnect(request, env, auth);
       }
       if (path === "/auth/do/disconnect" && method === "POST") {
-        return withCORS(await handleDODisconnect(request, env, auth));
+        return withCORS(await handleDODisconnect(request, env, auth), request, env);
       }
 
       // --- VPS routes ---
       if (path === "/vps" && method === "GET") {
-        return withCORS(await handleVPSList(request, env, auth));
+        return withCORS(await handleVPSList(request, env, auth), request, env);
       }
       if (path === "/vps" && method === "POST") {
-        return withCORS(await handleVPSCreate(request, env, auth));
+        return withCORS(await handleVPSCreate(request, env, auth), request, env);
       }
       if (path === "/vps/manual" && method === "POST") {
-        return withCORS(await handleVPSManualCreate(request, env, auth));
+        return withCORS(await handleVPSManualCreate(request, env, auth), request, env);
       }
 
       const vpsMatch = path.match(/^\/vps\/([a-zA-Z0-9_-]+)$/);
       if (vpsMatch) {
         const vpsId = vpsMatch[1];
-        if (method === "GET") return withCORS(await handleVPSGet(request, env, auth, vpsId));
-        if (method === "DELETE") return withCORS(await handleVPSDelete(request, env, auth, vpsId));
+        if (method === "GET") return withCORS(await handleVPSGet(request, env, auth, vpsId), request, env);
+        if (method === "DELETE") return withCORS(await handleVPSDelete(request, env, auth, vpsId), request, env);
       }
 
       const vpsPowerOff = path.match(/^\/vps\/([a-zA-Z0-9_-]+)\/power-off$/);
       if (vpsPowerOff && method === "POST") {
-        return withCORS(await handleVPSPowerOff(request, env, auth, vpsPowerOff[1]));
+        return withCORS(await handleVPSPowerOff(request, env, auth, vpsPowerOff[1]), request, env);
       }
 
       const vpsPowerOn = path.match(/^\/vps\/([a-zA-Z0-9_-]+)\/power-on$/);
       if (vpsPowerOn && method === "POST") {
-        return withCORS(await handleVPSPowerOn(request, env, auth, vpsPowerOn[1]));
+        return withCORS(await handleVPSPowerOn(request, env, auth, vpsPowerOn[1]), request, env);
       }
 
       // --- Session routes ---
       const sessionsMatch = path.match(/^\/vps\/([a-zA-Z0-9_-]+)\/sessions$/);
       if (sessionsMatch) {
         const vpsId = sessionsMatch[1];
-        if (method === "GET") return withCORS(await handleSessionList(request, env, auth, vpsId));
-        if (method === "POST") return withCORS(await handleSessionCreate(request, env, auth, vpsId));
+        if (method === "GET") return withCORS(await handleSessionList(request, env, auth, vpsId), request, env);
+        if (method === "POST") return withCORS(await handleSessionCreate(request, env, auth, vpsId), request, env);
       }
 
       const agentsMatch = path.match(/^\/vps\/([a-zA-Z0-9_-]+)\/agents$/);
       if (agentsMatch && method === "GET") {
-        return withCORS(await handleAgentList(request, env, auth, agentsMatch[1]));
+        return withCORS(await handleAgentList(request, env, auth, agentsMatch[1]), request, env);
       }
 
       const sessionDeleteMatch = path.match(
@@ -166,6 +167,8 @@ export default {
       if (sessionDeleteMatch && method === "DELETE") {
         return withCORS(
           await handleSessionDelete(request, env, auth, sessionDeleteMatch[1], sessionDeleteMatch[2]),
+          request,
+          env,
         );
       }
 
@@ -175,6 +178,8 @@ export default {
       if (snapshotMatch && method === "GET") {
         return withCORS(
           await handleSessionSnapshot(request, env, auth, snapshotMatch[1], snapshotMatch[2]),
+          request,
+          env,
         );
       }
 
@@ -189,6 +194,8 @@ export default {
           status: 404,
           headers: { "Content-Type": "application/json" },
         }),
+        request,
+        env,
       );
     } catch (err) {
       console.error("unhandled error:", err);
@@ -197,6 +204,8 @@ export default {
           JSON.stringify({ error: "internal server error" }),
           { status: 500, headers: { "Content-Type": "application/json" } },
         ),
+        request,
+        env,
       );
     }
   },
@@ -319,30 +328,9 @@ async function handleGatewayConnect(
 // CORS helpers
 // ---------------------------------------------------------------------------
 
-function handleCORS(): Response {
+function handleCORS(request: Request, env: Env): Response {
   return new Response(null, {
     status: 204,
-    headers: corsHeaders(),
+    headers: corsHeaders(request, env),
   });
-}
-
-function withCORS(response: Response): Response {
-  const headers = new Headers(response.headers);
-  for (const [key, value] of Object.entries(corsHeaders())) {
-    headers.set(key, value);
-  }
-  return new Response(response.body, {
-    status: response.status,
-    statusText: response.statusText,
-    headers,
-  });
-}
-
-function corsHeaders(): Record<string, string> {
-  return {
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Dev-User, X-Dev-Secret",
-    "Access-Control-Max-Age": "86400",
-  };
 }

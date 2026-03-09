@@ -12,7 +12,9 @@ import {
   deleteVPSCascade,
   createGateway,
   getGatewayByVPS,
+  listGatewaysByVPSIds,
   getDOConnection,
+  type GatewayRow,
   type VPSRow,
 } from "../db/schema.js";
 import {
@@ -32,6 +34,14 @@ const DEFAULT_GATEWAY_RELEASE_BASE_URL = "https://releases.chatcode.dev/gateway"
 const DEFAULT_DROPLET_REGION = "nyc1";
 const DEFAULT_DROPLET_SIZE = "s-1vcpu-512mb-10gb";
 const DEFAULT_DROPLET_IMAGE = "ubuntu-24-04-x64";
+
+interface VPSResponse extends VPSRow {
+  provider: "digitalocean" | "manual";
+  label: string;
+  gateway_id?: string;
+  gateway_connected?: boolean;
+  gateway_version?: string | null;
+}
 
 /**
  * POST /vps – Create droplet + generate gateway credentials.
@@ -150,7 +160,37 @@ export async function handleVPSCreate(
     return jsonResponse({ error: "failed to persist vps state" }, 500);
   }
 
-  return jsonResponse({ vps_id: vpsId, status: "provisioning" }, 201);
+  const vps: VPSRow = {
+    id: vpsId,
+    user_id: auth.userId,
+    droplet_id: droplet.id,
+    region,
+    size,
+    ipv4: getPublicIp(droplet) ?? null,
+    status: "provisioning",
+    provisioning_deadline_at: now + PROVISIONING_TIMEOUT_SEC,
+    created_at: now,
+    updated_at: now,
+  };
+  const gateway: GatewayRow = {
+    id: gatewayId,
+    vps_id: vpsId,
+    auth_token_hash: authTokenHash,
+    version: null,
+    last_seen_at: null,
+    connected: 0,
+    created_at: now,
+  };
+
+  // Keep legacy fields for compatibility while also returning full VPS payload.
+  return jsonResponse(
+    {
+      ...toVPSResponse(vps, gateway),
+      vps_id: vpsId,
+      status: "provisioning",
+    },
+    201,
+  );
 }
 
 /**
@@ -178,20 +218,22 @@ export async function handleVPSManualCreate(
   const authTokenHash = await hashGatewayToken(authToken, env.GATEWAY_TOKEN_SALT);
   const now = Math.floor(Date.now() / 1000);
 
-  await createVPS(env.DB, {
+  const size = body.label?.trim() ? `manual:${body.label.trim()}` : "manual";
+  const vps: VPSRow = {
     id: vpsId,
     user_id: auth.userId,
     droplet_id: 0,
     region: "manual",
-    size: body.label?.trim() ? `manual:${body.label.trim()}` : "manual",
+    size,
     ipv4: null,
     status: "provisioning",
     provisioning_deadline_at: now + PROVISIONING_TIMEOUT_SEC,
     created_at: now,
     updated_at: now,
-  });
+  };
+  await createVPS(env.DB, vps);
 
-  await createGateway(env.DB, {
+  const gateway: GatewayRow = {
     id: gatewayId,
     vps_id: vpsId,
     auth_token_hash: authTokenHash,
@@ -199,7 +241,8 @@ export async function handleVPSManualCreate(
     last_seen_at: null,
     connected: 0,
     created_at: now,
-  });
+  };
+  await createGateway(env.DB, gateway);
 
   const cp = new URL(request.url);
   const cpWsBase = `wss://${cp.hostname}/gw/connect`;
@@ -214,6 +257,7 @@ export async function handleVPSManualCreate(
         linux: `curl -fsSL https://chatcode.dev/install.sh | sudo bash -s -- --version latest --gateway-id ${gatewayId} --gateway-auth-token ${authToken} --cp-url ${cpWsBase}`,
         macos: `curl -fsSL https://chatcode.dev/install.sh | bash -s -- --version latest --gateway-id ${gatewayId} --gateway-auth-token ${authToken} --cp-url ${cpWsBase}`,
       },
+      vps: toVPSResponse(vps, gateway),
     },
     201,
   );
@@ -229,7 +273,13 @@ export async function handleVPSList(
 ): Promise<Response> {
   const vpsList = await listVPSByUser(env.DB, auth.userId);
   await hydrateMissingIPv4(env, auth.userId, vpsList);
-  return jsonResponse({ vps: vpsList });
+  const gatewayByVPS = await listGatewaysByVPSIds(
+    env.DB,
+    vpsList.map((v) => v.id),
+  );
+  return jsonResponse({
+    vps: vpsList.map((v) => toVPSResponse(v, gatewayByVPS[v.id])),
+  });
 }
 
 /**
@@ -246,7 +296,8 @@ export async function handleVPSGet(
     return jsonResponse({ error: "not found" }, 404);
   }
   await hydrateMissingIPv4(env, auth.userId, [vps]);
-  return jsonResponse(vps);
+  const gateway = await getGatewayByVPS(env.DB, vps.id);
+  return jsonResponse(toVPSResponse(vps, gateway ?? undefined));
 }
 
 /**
@@ -412,6 +463,29 @@ async function hydrateMissingIPv4(
 
 function getPublicIp(droplet: { networks: { v4: Array<{ ip_address: string; type: string }> } }): string | undefined {
   return droplet.networks.v4.find((n) => n.type === "public")?.ip_address;
+}
+
+function toVPSResponse(vps: VPSRow, gateway?: GatewayRow): VPSResponse {
+  const isManual = vps.droplet_id <= 0;
+  return {
+    ...vps,
+    provider: isManual ? "manual" : "digitalocean",
+    label: deriveVPSLabel(vps),
+    gateway_id: gateway?.id,
+    gateway_connected: Boolean(gateway?.connected),
+    gateway_version: gateway?.version ?? null,
+  };
+}
+
+function deriveVPSLabel(vps: VPSRow): string {
+  if (vps.droplet_id <= 0) {
+    if (vps.size.startsWith("manual:")) {
+      const label = vps.size.slice("manual:".length).trim();
+      if (label) return label;
+    }
+    return "manual";
+  }
+  return `${vps.region} / ${vps.size}`;
 }
 
 function buildCloudInit(

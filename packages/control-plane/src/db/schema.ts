@@ -378,6 +378,25 @@ export async function getGatewayByVPS(
     .first<GatewayRow>();
 }
 
+export async function listGatewaysByVPSIds(
+  db: D1Database,
+  vpsIds: string[],
+): Promise<Record<string, GatewayRow>> {
+  if (vpsIds.length === 0) return {};
+
+  const placeholders = vpsIds.map(() => "?").join(", ");
+  const result = await db
+    .prepare(`SELECT * FROM gateways WHERE vps_id IN (${placeholders})`)
+    .bind(...vpsIds)
+    .all<GatewayRow>();
+
+  const byVPS: Record<string, GatewayRow> = {};
+  for (const row of result.results) {
+    byVPS[row.vps_id] = row;
+  }
+  return byVPS;
+}
+
 export async function updateGatewayConnected(
   db: D1Database,
   id: string,
