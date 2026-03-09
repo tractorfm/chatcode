@@ -383,16 +383,21 @@ export async function listGatewaysByVPSIds(
   vpsIds: string[],
 ): Promise<Record<string, GatewayRow>> {
   if (vpsIds.length === 0) return {};
-
-  const placeholders = vpsIds.map(() => "?").join(", ");
-  const result = await db
-    .prepare(`SELECT * FROM gateways WHERE vps_id IN (${placeholders})`)
-    .bind(...vpsIds)
-    .all<GatewayRow>();
-
   const byVPS: Record<string, GatewayRow> = {};
-  for (const row of result.results) {
-    byVPS[row.vps_id] = row;
+
+  // SQLite parameter limit is typically 999. Keep headroom for portability.
+  const chunkSize = 900;
+  for (let i = 0; i < vpsIds.length; i += chunkSize) {
+    const chunk = vpsIds.slice(i, i + chunkSize);
+    const placeholders = chunk.map(() => "?").join(", ");
+    const result = await db
+      .prepare(`SELECT * FROM gateways WHERE vps_id IN (${placeholders})`)
+      .bind(...chunk)
+      .all<GatewayRow>();
+
+    for (const row of result.results) {
+      byVPS[row.vps_id] = row;
+    }
   }
   return byVPS;
 }

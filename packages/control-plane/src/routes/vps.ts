@@ -187,7 +187,6 @@ export async function handleVPSCreate(
     {
       ...toVPSResponse(vps, gateway),
       vps_id: vpsId,
-      status: "provisioning",
     },
     201,
   );

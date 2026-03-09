@@ -79,7 +79,7 @@ Recommended `wrangler.toml` vars:
 
 - `APP_ORIGIN=https://app.chatcode.dev`
 - `STAGING_APP_ORIGIN=https://app.staging.chatcode.dev`
-- `STAGING_PAGES_PREVIEW_SUFFIX=.chatcode-app-staging.pages.dev`
+- `STAGING_PAGES_PREVIEW_SUFFIX=chatcode-app-staging.pages.dev`
 
 Optional:
 

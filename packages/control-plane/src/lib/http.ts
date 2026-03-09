@@ -2,14 +2,19 @@ import type { Env } from "../types.js";
 
 const DEFAULT_APP_ORIGIN = "https://app.chatcode.dev";
 const DEFAULT_STAGING_APP_ORIGIN = "https://app.staging.chatcode.dev";
-const DEFAULT_STAGING_PAGES_PREVIEW_SUFFIX = ".chatcode-app-staging.pages.dev";
+const DEFAULT_STAGING_PAGES_PREVIEW_SUFFIX = "chatcode-app-staging.pages.dev";
 
 /**
  * Resolve where OAuth/email auth callbacks should land after session cookie issuance.
  */
 export function postAuthRedirect(request: Request, env: Env): string {
   const override = env.POST_AUTH_REDIRECT_URL?.trim();
-  if (override) return override;
+  if (override) {
+    if (isSafeRedirectTarget(override, request, env)) {
+      return override;
+    }
+    console.warn("invalid POST_AUTH_REDIRECT_URL override, using default fallback");
+  }
 
   if (env.APP_ENV === "prod") {
     return env.APP_ORIGIN?.trim() || DEFAULT_APP_ORIGIN;
@@ -68,10 +73,7 @@ function isAllowedOrigin(origin: string, request: Request, env: Env): boolean {
   if (originURL.origin === requestURL.origin) return true;
 
   // Local dev convenience.
-  if (
-    env.APP_ENV === "dev" &&
-    (originURL.hostname === "localhost" || originURL.hostname === "127.0.0.1")
-  ) {
+  if (env.APP_ENV === "dev" && isLocalDevHost(originURL.hostname)) {
     return true;
   }
 
@@ -80,14 +82,10 @@ function isAllowedOrigin(origin: string, request: Request, env: Env): boolean {
 
   // Allow Cloudflare Pages preview subdomains in staging.
   if (env.APP_ENV === "staging" && originURL.protocol === "https:") {
-    const previewSuffixRaw =
-      env.STAGING_PAGES_PREVIEW_SUFFIX?.trim() || DEFAULT_STAGING_PAGES_PREVIEW_SUFFIX;
-    const previewSuffix = previewSuffixRaw.replace(/^\./, "");
-    if (
-      previewSuffix &&
-      (originURL.hostname === previewSuffix ||
-        originURL.hostname.endsWith(`.${previewSuffix}`))
-    ) {
+    const previewSuffix = normalizeDomainSuffix(
+      env.STAGING_PAGES_PREVIEW_SUFFIX?.trim() || DEFAULT_STAGING_PAGES_PREVIEW_SUFFIX,
+    );
+    if (previewSuffix && isHostWithinSuffix(originURL.hostname, previewSuffix)) {
       return true;
     }
   }
@@ -114,3 +112,46 @@ function configuredOrigins(env: Env): Set<string> {
   return values;
 }
 
+function isSafeRedirectTarget(target: string, request: Request, env: Env): boolean {
+  if (target.startsWith("/")) return true;
+
+  let targetURL: URL;
+  let requestURL: URL;
+  try {
+    targetURL = new URL(target);
+    requestURL = new URL(request.url);
+  } catch {
+    return false;
+  }
+
+  if (!["http:", "https:"].includes(targetURL.protocol)) return false;
+
+  if (targetURL.origin === requestURL.origin) return true;
+
+  if (env.APP_ENV === "dev" && isLocalDevHost(targetURL.hostname)) return true;
+
+  if (configuredOrigins(env).has(targetURL.origin)) return true;
+
+  if (env.APP_ENV === "staging" && targetURL.protocol === "https:") {
+    const previewSuffix = normalizeDomainSuffix(
+      env.STAGING_PAGES_PREVIEW_SUFFIX?.trim() || DEFAULT_STAGING_PAGES_PREVIEW_SUFFIX,
+    );
+    if (previewSuffix && isHostWithinSuffix(targetURL.hostname, previewSuffix)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function normalizeDomainSuffix(value: string): string {
+  return value.replace(/^\./, "");
+}
+
+function isHostWithinSuffix(hostname: string, suffix: string): boolean {
+  return hostname === suffix || hostname.endsWith(`.${suffix}`);
+}
+
+function isLocalDevHost(hostname: string): boolean {
+  return hostname === "localhost" || hostname === "127.0.0.1";
+}

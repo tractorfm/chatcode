@@ -25,9 +25,20 @@ describe("postAuthRedirect", () => {
     const env = makeEnv({
       APP_ENV: "staging",
       POST_AUTH_REDIRECT_URL: "https://custom.example.dev/welcome",
+      CORS_ALLOWED_ORIGINS: "https://custom.example.dev",
     });
     const request = new Request("https://cp.staging.chatcode.dev/auth/google/callback");
     expect(postAuthRedirect(request, env)).toBe("https://custom.example.dev/welcome");
+  });
+
+  it("ignores unsafe override and falls back to env default", () => {
+    const env = makeEnv({
+      APP_ENV: "staging",
+      POST_AUTH_REDIRECT_URL: "javascript:alert(1)",
+      STAGING_APP_ORIGIN: "https://app.staging.chatcode.dev",
+    });
+    const request = new Request("https://cp.staging.chatcode.dev/auth/google/callback");
+    expect(postAuthRedirect(request, env)).toBe("https://app.staging.chatcode.dev");
   });
 });
 
@@ -79,6 +90,19 @@ describe("corsHeaders", () => {
     expect(headers["Access-Control-Allow-Origin"]).toBe("http://localhost:5173");
     expect(headers["Access-Control-Allow-Credentials"]).toBe("true");
   });
+
+  it("allows origins from explicit CORS_ALLOWED_ORIGINS list", () => {
+    const env = makeEnv({
+      APP_ENV: "staging",
+      CORS_ALLOWED_ORIGINS: "https://one.example.com, https://two.example.com",
+    });
+    const request = new Request("https://cp.staging.chatcode.dev/auth/me", {
+      headers: { Origin: "https://two.example.com" },
+    });
+    const headers = corsHeaders(request, env);
+    expect(headers["Access-Control-Allow-Origin"]).toBe("https://two.example.com");
+    expect(headers["Access-Control-Allow-Credentials"]).toBe("true");
+  });
 });
 
 describe("withCORS", () => {
@@ -98,4 +122,3 @@ describe("withCORS", () => {
     await expect(wrapped.json()).resolves.toEqual({ ok: true });
   });
 });
-
