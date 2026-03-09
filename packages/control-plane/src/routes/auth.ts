@@ -153,7 +153,9 @@ export async function handleEmailVerify(
       status: 302,
       headers: {
         Location: tokenState.redirect_url ?? postAuthRedirect(request, env),
-        "Set-Cookie": sessionCookieHeader(sessionToken),
+        "Set-Cookie": sessionCookieHeader(sessionToken, {
+          sameSite: authCookieSameSite(env),
+        }),
       },
     });
   } catch (err) {
@@ -275,7 +277,9 @@ export async function handleGoogleCallback(
       status: 302,
       headers: {
         Location: oauthState.redirect_url ?? postAuthRedirect(request, env),
-        "Set-Cookie": sessionCookieHeader(sessionToken),
+        "Set-Cookie": sessionCookieHeader(sessionToken, {
+          sameSite: authCookieSameSite(env),
+        }),
       },
     });
   } catch (err) {
@@ -411,7 +415,9 @@ export async function handleGitHubCallback(
       status: 302,
       headers: {
         Location: oauthState.redirect_url ?? postAuthRedirect(request, env),
-        "Set-Cookie": sessionCookieHeader(sessionToken),
+        "Set-Cookie": sessionCookieHeader(sessionToken, {
+          sameSite: authCookieSameSite(env),
+        }),
       },
     });
   } catch (err) {
@@ -525,7 +531,9 @@ export async function handleDOCallback(
       status: 302,
       headers: {
         Location: doOAuthState.redirect_url ?? postAuthRedirect(request, env),
-        "Set-Cookie": sessionCookieHeader(sessionToken),
+        "Set-Cookie": sessionCookieHeader(sessionToken, {
+          sameSite: authCookieSameSite(env),
+        }),
       },
     });
   } catch (err) {
@@ -567,12 +575,14 @@ export async function handleAuthMe(
 /**
  * POST /auth/logout
  */
-export async function handleLogout(_request: Request): Promise<Response> {
+export async function handleLogout(_request: Request, env: Env): Promise<Response> {
   return new Response(JSON.stringify({ ok: true }), {
     status: 200,
     headers: {
       "Content-Type": "application/json",
-      "Set-Cookie": clearSessionCookieHeader(),
+      "Set-Cookie": clearSessionCookieHeader({
+        sameSite: authCookieSameSite(env),
+      }),
     },
   });
 }
@@ -674,6 +684,12 @@ function getOriginFromReferrer(referrer: string | null): string | null {
   } catch {
     return null;
   }
+}
+
+function authCookieSameSite(env: Env): "Strict" | "None" {
+  // Staging supports cross-site Pages previews (*.pages.dev -> cp.staging.chatcode.dev).
+  if (env.APP_ENV === "staging") return "None";
+  return "Strict";
 }
 
 function jsonResponse(data: unknown, status = 200): Response {

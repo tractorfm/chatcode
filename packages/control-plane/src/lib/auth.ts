@@ -59,13 +59,20 @@ export async function verifySessionCookie(
 }
 
 /** Build Set-Cookie header value. */
-export function sessionCookieHeader(token: string): string {
-  return `${COOKIE_NAME}=${token}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=${COOKIE_MAX_AGE}`;
+export function sessionCookieHeader(
+  token: string,
+  opts?: { sameSite?: "Strict" | "Lax" | "None" },
+): string {
+  const sameSite = opts?.sameSite ?? "Strict";
+  return `${COOKIE_NAME}=${token}; HttpOnly; Secure; SameSite=${sameSite}; Path=/; Max-Age=${COOKIE_MAX_AGE}`;
 }
 
 /** Build Set-Cookie header to clear the session cookie. */
-export function clearSessionCookieHeader(): string {
-  return `${COOKIE_NAME}=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0`;
+export function clearSessionCookieHeader(
+  opts?: { sameSite?: "Strict" | "Lax" | "None" },
+): string {
+  const sameSite = opts?.sameSite ?? "Strict";
+  return `${COOKIE_NAME}=; HttpOnly; Secure; SameSite=${sameSite}; Path=/; Max-Age=0`;
 }
 
 /** Parse session cookie from Cookie header. */

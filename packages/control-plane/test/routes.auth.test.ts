@@ -5,6 +5,7 @@ import {
   handleDODisconnect,
   handleLogout,
   handleEmailStart,
+  handleEmailVerify,
   handleAuthMe,
 } from "../src/routes/auth";
 
@@ -239,11 +240,28 @@ describe("routes/auth", () => {
   });
 
   it("clears session cookie on logout", async () => {
+    const { env } = makeEnv();
     const res = await handleLogout(
       new Request("https://cp.example.test/auth/logout", { method: "POST" }),
+      env,
     );
     expect(res.status).toBe(200);
     expect(res.headers.get("Set-Cookie")).toContain("Max-Age=0");
+  });
+
+  it("sets SameSite=None cookie in staging auth callback", async () => {
+    const { env } = makeEnv();
+    env.APP_ENV = "staging";
+    env.STAGING_APP_ORIGIN = "https://app.staging.chatcode.dev";
+    env.KV.get = vi.fn(async () => JSON.stringify({ email: "user@example.test" }));
+
+    const res = await handleEmailVerify(
+      new Request("https://cp.staging.chatcode.dev/auth/email/verify?token=state-nonce-1"),
+      env,
+    );
+
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Set-Cookie")).toContain("SameSite=None");
   });
 
   it("starts email auth and sends magic link through SES", async () => {

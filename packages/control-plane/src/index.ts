@@ -87,7 +87,7 @@ export default {
         return handleGitHubCallback(request, env);
       }
       if (path === "/auth/logout" && method === "POST") {
-        return withCORS(await handleLogout(request), request, env);
+        return withCORS(await handleLogout(request, env), request, env);
       }
       if (path === "/auth/do/callback" && method === "GET") {
         return handleDOCallback(request, env);
