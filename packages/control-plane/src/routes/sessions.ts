@@ -168,8 +168,15 @@ export async function handleSessionCreate(
   if (!cmdResp.ok) {
     // Mark session as failed
     await updateSessionStatus(env.DB, sessionId, "error");
-    const errBody = await cmdResp.text();
-    return jsonResponse({ error: `gateway command failed: ${errBody}` }, 502);
+    const errPayload = await cmdResp.json().catch(() => null) as { error?: string } | null;
+    const error = errPayload?.error || "gateway command failed";
+
+    if (error === "gateway not connected") {
+      await updateGatewayConnected(env.DB, gateway.id, false);
+      return jsonResponse({ error }, 503);
+    }
+
+    return jsonResponse({ error }, cmdResp.status === 504 ? 504 : 502);
   }
 
   return jsonResponse(

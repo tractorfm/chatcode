@@ -176,6 +176,41 @@ describe("routes/sessions", () => {
     );
   });
 
+  it("returns 503 and clears gateway connected when command relay loses gateway", async () => {
+    const { env } = makeEnv([
+      new Response(
+        JSON.stringify({
+          type: "agents.status",
+          schema_version: "1",
+          request_id: "agents-1",
+          agents: [{ agent: "claude-code", binary: "claude", installed: true, version: "1.0.0" }],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+      new Response(JSON.stringify({ error: "gateway not connected" }), {
+        status: 503,
+        headers: { "Content-Type": "application/json" },
+      }),
+    ]);
+
+    const req = new Request("https://cp.example.test/vps/vps-1/sessions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: "Test Session",
+        agent_type: "claude-code",
+        workdir: "/home/vibe",
+      }),
+    });
+
+    const res = await handleSessionCreate(req, env, { userId: "usr-1" }, "vps-1");
+
+    expect(res.status).toBe(503);
+    await expect(res.json()).resolves.toMatchObject({ error: "gateway not connected" });
+    expect(mocks.updateGatewayConnected).toHaveBeenCalledWith(env.DB, "gw-1", false);
+    expect(mocks.updateSessionStatus).toHaveBeenCalledWith(env.DB, "ses-test-1", "error");
+  });
+
   it("returns 409 when selected managed agent is not installed", async () => {
     const { env } = makeEnv(
       new Response(

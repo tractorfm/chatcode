@@ -740,8 +740,14 @@ export class GatewayHub {
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : "unknown error";
+      const status =
+        message === "gateway not connected"
+          ? 503
+          : message.includes("timed out after")
+            ? 504
+            : 502;
       return new Response(JSON.stringify({ error: message }), {
-        status: 502,
+        status,
         headers: { "Content-Type": "application/json" },
       });
     }
