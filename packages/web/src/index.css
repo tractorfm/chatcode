@@ -55,6 +55,10 @@
   }
 }
 
+.terminal-shell {
+  box-sizing: border-box;
+}
+
 /* Terminal container: fill available space, no overflow */
 .terminal-container .xterm {
   height: 100%;

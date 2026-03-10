@@ -1,5 +1,6 @@
 import { memo, useEffect, useMemo } from "react";
 import { useTerminalRef } from "@/hooks/use-terminal";
+import { getStoredTerminalTheme, terminalThemes } from "@/lib/themes";
 import "@xterm/xterm/css/xterm.css";
 
 interface TerminalViewProps {
@@ -17,6 +18,9 @@ export const TerminalView = memo(function TerminalView({
   onSessionEnded,
   onSessionError,
 }: TerminalViewProps) {
+  const themeName = getStoredTerminalTheme();
+  const terminalBackground =
+    terminalThemes[themeName]?.background ?? terminalThemes.default.background ?? "#111111";
   const opts = useMemo(
     () => ({ vpsId, sessionId, onSessionEnded, onSessionError }),
     [vpsId, sessionId, onSessionEnded, onSessionError],
@@ -35,10 +39,14 @@ export const TerminalView = memo(function TerminalView({
 
   return (
     <div
-      ref={containerRef}
       data-testid={`terminal-${sessionId}`}
-      className="terminal-container absolute inset-0"
-      style={{ display: active ? "block" : "none" }}
-    />
+      className="terminal-shell absolute inset-0 p-2"
+      style={{ display: active ? "block" : "none", backgroundColor: terminalBackground }}
+    >
+      <div
+        ref={containerRef}
+        className="terminal-container h-full w-full"
+      />
+    </div>
   );
 });
