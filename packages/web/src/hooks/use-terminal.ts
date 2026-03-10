@@ -102,15 +102,6 @@ export function createTerminalHandle(opts: UseTerminalOptions): TerminalHandle {
     });
   }
 
-  function requestSnapshot() {
-    sendJSON({
-      type: "session.snapshot",
-      schema_version: "1",
-      request_id: requestId("snapshot"),
-      session_id: sessionId,
-    });
-  }
-
   function scheduleFit() {
     if (fitTimer) clearTimeout(fitTimer);
     fitTimer = setTimeout(() => {
@@ -123,13 +114,6 @@ export function createTerminalHandle(opts: UseTerminalOptions): TerminalHandle {
       }
       sendResize(term.cols || 80, term.rows || 24);
     }, 16);
-  }
-
-  function scheduleInitialFits() {
-    scheduleFit();
-    window.setTimeout(scheduleFit, 80);
-    window.setTimeout(scheduleFit, 220);
-    window.setTimeout(scheduleFit, 500);
   }
 
   // Arrow key handler: force application cursor sequences for curses apps
@@ -159,7 +143,7 @@ export function createTerminalHandle(opts: UseTerminalOptions): TerminalHandle {
     ws.addEventListener("open", () => {
       if (ws !== socket) return;
       reconnectAttempts = 0;
-      scheduleInitialFits();
+      scheduleFit();
       if (interactive) {
         term.focus();
       }
@@ -178,24 +162,13 @@ export function createTerminalHandle(opts: UseTerminalOptions): TerminalHandle {
         awaitingInitialSnapshot = false;
       }, 1500);
 
+      sendJSON({
+        type: "session.snapshot",
+        schema_version: "1",
+        request_id: requestId("snapshot"),
+        session_id: sessionId,
+      });
       sendResize(term.cols || 80, term.rows || 24);
-      window.setTimeout(() => {
-        if (!disposed && ws === socket) requestSnapshot();
-      }, 80);
-      window.setTimeout(() => {
-        if (!disposed && ws === socket && awaitingInitialSnapshot) {
-          scheduleFit();
-          requestSnapshot();
-        }
-      }, 320);
-      // Late reconciliation pass: if tmux resized after the first snapshot,
-      // force one more snapshot so first paint matches the fitted viewport.
-      window.setTimeout(() => {
-        if (!disposed && ws === socket) {
-          scheduleFit();
-          requestSnapshot();
-        }
-      }, 900);
     });
 
     ws.addEventListener("message", (event) => {
@@ -221,13 +194,12 @@ export function createTerminalHandle(opts: UseTerminalOptions): TerminalHandle {
         ) {
           const rowsHint =
             typeof msg.rows === "number" && msg.rows > 0 ? msg.rows : 80;
-          const targetRows = Math.max(rowsHint, term.rows || rowsHint);
           const normalized = msg.content
             .replace(/\r\n/g, "\n")
             .replace(/\r/g, "\n");
           const lines = normalized.split("\n");
           if (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
-          const tail = lines.slice(-targetRows).join("\r\n");
+          const tail = lines.slice(-rowsHint).join("\r\n");
           term.reset();
           term.write(tail);
 
@@ -236,16 +208,13 @@ export function createTerminalHandle(opts: UseTerminalOptions): TerminalHandle {
             typeof msg.cursor_y === "number"
           ) {
             const col = Math.max(0, Math.floor(msg.cursor_x as number)) + 1;
-            const rowShift = Math.max(0, targetRows - rowsHint);
-            const rowRaw = Math.max(0, Math.floor(msg.cursor_y as number)) + 1 + rowShift;
-            const row = Math.min(Math.max(1, rowRaw), Math.max(1, targetRows));
+            const row = Math.max(0, Math.floor(msg.cursor_y as number)) + 1;
             term.write(`\x1b[${row};${col}H`);
           }
           if (msg.cursor_visible === false) term.write("\x1b[?25l");
           else if (msg.cursor_visible === true) term.write("\x1b[?25h");
 
           awaitingInitialSnapshot = false;
-          scheduleFit();
           if (initialSnapshotTimer) {
             clearTimeout(initialSnapshotTimer);
             initialSnapshotTimer = null;
@@ -331,9 +300,10 @@ export function createTerminalHandle(opts: UseTerminalOptions): TerminalHandle {
   const handle: TerminalHandle = {
     mount(el: HTMLDivElement) {
       term.open(el);
-      scheduleInitialFits();
+      scheduleFit();
+      setTimeout(scheduleFit, 120);
       if (document.fonts?.ready) {
-        document.fonts.ready.then(() => scheduleInitialFits()).catch(() => {});
+        document.fonts.ready.then(() => scheduleFit()).catch(() => {});
       }
       window.addEventListener("resize", scheduleFit);
       resizeObserver = new ResizeObserver(() => scheduleFit());
