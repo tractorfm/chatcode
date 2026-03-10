@@ -11,7 +11,7 @@ export function handleStagingTestPage(_request: Request, env: Env): Response {
     return new Response("not found", { status: 404 });
   }
 
-  return new Response(htmlPage(), {
+  return new Response(htmlPage(env), {
     status: 200,
     headers: { "Content-Type": "text/html; charset=utf-8" },
   });
@@ -91,6 +91,104 @@ export async function handleStagingCommand(
   }
 }
 
+
+const GATEWAY_UPDATE_TARGETS = new Set([
+  "linux-amd64",
+  "linux-arm64",
+  "darwin-arm64",
+]);
+
+export async function handleStagingGatewayUpdatePayload(
+  request: Request,
+  env: Env,
+  auth: AuthContext,
+): Promise<Response> {
+  if (!isStagingEnabled(env)) {
+    return jsonResponse({ error: "not found" }, 404);
+  }
+
+  const url = new URL(request.url);
+  const vpsId = (url.searchParams.get("vps_id") || "").trim();
+  const target = (url.searchParams.get("target") || "linux-amd64").trim();
+  const version = (url.searchParams.get("version") || env.GATEWAY_VERSION || "").trim();
+  const baseUrl = (env.GATEWAY_RELEASE_BASE_URL || "").trim().replace(/\/+$/, "");
+
+  if (!vpsId) {
+    return jsonResponse({ error: "vps_id is required" }, 400);
+  }
+  if (!GATEWAY_UPDATE_TARGETS.has(target)) {
+    return jsonResponse({ error: "invalid target" }, 400);
+  }
+  if (!version || !/^v[0-9A-Za-z._-]+$/.test(version)) {
+    return jsonResponse({ error: "invalid version" }, 400);
+  }
+  if (!baseUrl) {
+    return jsonResponse({ error: "gateway release base URL is not configured" }, 500);
+  }
+
+  const vps = await getVPS(env.DB, vpsId);
+  if (!vps || vps.user_id !== auth.userId) {
+    return jsonResponse({ error: "not found" }, 404);
+  }
+
+  const gateway = await getGatewayByVPS(env.DB, vpsId);
+  if (!gateway) {
+    return jsonResponse({ error: "gateway not found" }, 404);
+  }
+
+  const filename = `chatcode-gateway-${target}`;
+  const checksumsUrl = `${baseUrl}/${version}/checksums.txt`;
+
+  let checksumsText = "";
+  try {
+    const resp = await fetch(checksumsUrl);
+    if (!resp.ok) {
+      return jsonResponse({ error: `failed to fetch checksums (${resp.status})` }, 502);
+    }
+    checksumsText = await resp.text();
+  } catch (err) {
+    return jsonResponse(
+      { error: `failed to fetch checksums: ${err instanceof Error ? err.message : "unknown"}` },
+      502,
+    );
+  }
+
+  const sha256 = parseChecksumEntry(checksumsText, filename);
+  if (!sha256) {
+    return jsonResponse({ error: `checksum not found for ${filename}` }, 404);
+  }
+
+  const cmd = {
+    type: "gateway.update",
+    schema_version: "1",
+    request_id: `gw-update-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    url: `${baseUrl}/${version}/${filename}`,
+    sha256,
+    version,
+  };
+
+  return jsonResponse({
+    gateway_id: gateway.id,
+    target,
+    version,
+    cmd,
+  });
+}
+
+export function parseChecksumEntry(checksumsText: string, filename: string): string | null {
+  const lines = checksumsText.split(/\r?\n/);
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const match = trimmed.match(/^([a-f0-9]{64})\s+\*?(.+)$/i);
+    if (!match) continue;
+    if (match[2].trim() === filename) {
+      return match[1].toLowerCase();
+    }
+  }
+  return null;
+}
+
 function isStagingEnabled(env: Env): boolean {
   return env.APP_ENV === "staging" || env.APP_ENV === "dev";
 }
@@ -102,7 +200,17 @@ function jsonResponse(data: unknown, status = 200): Response {
   });
 }
 
-function htmlPage(): string {
+function htmlEscape(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function htmlPage(env: Env): string {
+  const gatewayVersion = htmlEscape(env.GATEWAY_VERSION || "");
   return `<!doctype html>
 <html>
 <head>
@@ -164,6 +272,15 @@ ${STAGING_TERMINAL_STYLE}
       <button id="vps-manual">Add VPS (Manual)</button>
       <button id="vps-list">List VPS</button>
     </div>
+    <div class="row">
+      <label for="gateway-update-target">Gateway update target:</label>
+      <select id="gateway-update-target">
+        <option value="linux-amd64">linux-amd64</option>
+        <option value="linux-arm64">linux-arm64</option>
+        <option value="darwin-arm64">darwin-arm64</option>
+      </select>
+      <input id="gateway-update-version" value="${gatewayVersion}" placeholder="gateway version (default staging version)" />
+    </div>
     <div id="vps-list-panel"></div>
   </div>
 
@@ -208,6 +325,7 @@ ${STAGING_TERMINAL_SECTION}
         <option value="ssh.list">ssh.list</option>
         <option value="agents.list">agents.list</option>
         <option value="agents.install">agents.install</option>
+        <option value="gateway.update">gateway.update</option>
       </select>
       <input id="schema-session-id" placeholder="session_id" style="min-width: 240px" />
       <input id="schema-input-text" placeholder="input text for session.input" style="min-width: 260px" />
@@ -263,6 +381,8 @@ ${STAGING_TERMINAL_SECTION}
     const schemaSSHFingerprint = document.getElementById("schema-ssh-fingerprint");
     const schemaSSHPublicKey = document.getElementById("schema-ssh-public-key");
     const schemaJson = document.getElementById("schema-json");
+    const gatewayUpdateTarget = document.getElementById("gateway-update-target");
+    const gatewayUpdateVersion = document.getElementById("gateway-update-version");
 
     let vpsRows = [];
     let activeVpsId = "";
@@ -367,6 +487,12 @@ ${STAGING_TERMINAL_SECTION}
         cmd.fingerprint = (schemaSSHFingerprint.value || "").trim();
       }
 
+      if (type === "gateway.update") {
+        cmd.url = "https://releases.chatcode.dev/gateway/<version>/chatcode-gateway-linux-amd64";
+        cmd.sha256 = "<sha256>";
+        cmd.version = (gatewayUpdateVersion && gatewayUpdateVersion.value.trim()) || "${gatewayVersion}";
+      }
+
       return cmd;
     }
 
@@ -436,15 +562,25 @@ ${STAGING_TERMINAL_SECTION}
 
       const html = rows.map((row) => {
         const id = escapeHtml(row.id);
+        const label = escapeHtml(row.label || row.id);
         const status = escapeHtml(row.status || "unknown");
         const region = escapeHtml(row.region || "");
         const size = escapeHtml(row.size || "");
         const ip = escapeHtml(row.ipv4 || "-");
+        const provider = escapeHtml(row.provider || "");
+        const gatewayVersion = escapeHtml(row.gateway_version || "-");
+        const gatewayState = row.gateway_connected ? "connected" : "disconnected";
         return (
           "<div class='vps-card'>" +
-          "<div><strong>" + id + "</strong></div>" +
+          "<div><strong>" + label + "</strong> <span class='muted'>(" + id + ")</span></div>" +
           "<div>Status: " + status + " | Region: " + region + " | Size: " + size + " | IPv4: " + ip + "</div>" +
+          "<div class='muted'>Provider: " + provider + " | Gateway: " + gatewayVersion + " (" + gatewayState + ")</div>" +
           "<button data-id='" + id + "' class='use-vps'>Use for Sessions</button>" +
+          "<button data-id='" + id + "' data-label='" + label + "' class='rename-vps'>Rename</button>" +
+          (row.provider === "digitalocean"
+            ? "<button data-id='" + id + "' data-status='" + status + "' class='power-vps'>" + (row.status === "active" ? "Power Off" : "Power On") + "</button>"
+            : "") +
+          "<button data-id='" + id + "' class='update-gateway'>Update Gateway</button>" +
           "<button data-id='" + id + "' class='destroy-vps'>Destroy VPS</button>" +
           "</div>"
         );
@@ -555,6 +691,7 @@ ${STAGING_TERMINAL_SECTION}
           attachLine +
           "<div class='session-actions'>" +
           "<button data-vps='" + escapeHtml(vpsId) + "' data-sid='" + sid + "' class='connect-session'>Connect</button>" +
+          "<button data-vps='" + escapeHtml(vpsId) + "' data-sid='" + sid + "' data-title='" + title + "' class='rename-session'>Rename</button>" +
           "<button data-vps='" + escapeHtml(vpsId) + "' data-sid='" + sid + "' class='snapshot-session'>Snapshot</button>" +
           "<button data-vps='" + escapeHtml(vpsId) + "' data-sid='" + sid + "' class='end-session'>End</button>" +
           "</div>" +
@@ -613,6 +750,46 @@ ${STAGING_TERMINAL_SECTION}
         agentsListPanel.textContent = JSON.stringify(body.agents, null, 2);
       }
       return { res, body };
+    }
+
+    async function renameVPS(id, currentLabel) {
+      const nextLabel = prompt("Rename server", currentLabel || "");
+      if (nextLabel === null) return;
+      await call("/vps/" + encodeURIComponent(id), {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ label: nextLabel }),
+      });
+      await listVPS();
+    }
+
+    async function renameSession(vpsId, sessionId, currentTitle) {
+      const nextTitle = prompt("Rename session", currentTitle || "");
+      if (nextTitle === null) return;
+      await call("/vps/" + encodeURIComponent(vpsId) + "/sessions/" + encodeURIComponent(sessionId), {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: nextTitle }),
+      });
+      await listSessions(vpsId);
+    }
+
+    async function updateGateway(vpsId) {
+      const target = (gatewayUpdateTarget && gatewayUpdateTarget.value) || "linux-amd64";
+      const version = (gatewayUpdateVersion && gatewayUpdateVersion.value.trim()) || "";
+      const query = new URLSearchParams({ vps_id: vpsId, target: target });
+      if (version) query.set("version", version);
+      const payload = await call("/staging/gateway-update-payload?" + query.toString(), { method: "GET" });
+      if (!payload.res.ok || !payload.body || !payload.body.cmd) {
+        return payload;
+      }
+      const result = await call("/staging/cmd", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ vps_id: vpsId, cmd: payload.body.cmd }),
+      });
+      await listVPS();
+      return result;
     }
 
     document.getElementById("email-form").addEventListener("submit", async (e) => {
@@ -717,6 +894,36 @@ ${STAGING_TERMINAL_SECTION}
         activeVpsId = id;
         vpsSelect.value = id;
         await listSessions(id);
+        return;
+      }
+
+      if (target.classList.contains("rename-vps")) {
+        const id = target.dataset.id;
+        if (!id) return;
+        await renameVPS(id, target.dataset.label || "");
+        return;
+      }
+
+      if (target.classList.contains("power-vps")) {
+        const id = target.dataset.id;
+        const status = target.dataset.status || "";
+        if (!id) return;
+        const path = status === "active" ? "/power-off" : "/power-on";
+        await call("/vps/" + encodeURIComponent(id) + path, { method: "POST" });
+        await listVPS();
+        return;
+      }
+
+      if (target.classList.contains("update-gateway")) {
+        const id = target.dataset.id;
+        if (!id) return;
+        target.disabled = true;
+        try {
+          await updateGateway(id);
+        } finally {
+          target.disabled = false;
+        }
+        return;
       }
     });
 
@@ -797,6 +1004,11 @@ ${STAGING_TERMINAL_SECTION}
       if (target.classList.contains("connect-session")) {
         syncActiveSession(sessionId);
         await terminalComponent.connect(vpsId, sessionId);
+        return;
+      }
+
+      if (target.classList.contains("rename-session")) {
+        await renameSession(vpsId, sessionId, target.dataset.title || "");
         return;
       }
 

@@ -48,7 +48,11 @@ import {
   handleSessionSnapshot,
   handleTerminalUpgrade,
 } from "./routes/sessions.js";
-import { handleStagingCommand, handleStagingTestPage } from "./routes/staging.js";
+import {
+  handleStagingCommand,
+  handleStagingGatewayUpdatePayload,
+  handleStagingTestPage,
+} from "./routes/staging.js";
 import { withCORS, corsHeaders } from "./lib/http.js";
 
 export { GatewayHub } from "./durables/GatewayHub.js";
@@ -129,6 +133,13 @@ export default {
       }
       if (path === "/staging/cmd" && method === "POST") {
         return withCORS(await handleStagingCommand(request, env, auth), request, env);
+      }
+      if (path === "/staging/gateway-update-payload" && method === "GET") {
+        return withCORS(
+          await handleStagingGatewayUpdatePayload(request, env, auth),
+          request,
+          env,
+        );
       }
       if (path === "/auth/do" && method === "GET") {
         return handleDOConnect(request, env, auth);
