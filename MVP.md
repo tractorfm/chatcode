@@ -445,6 +445,7 @@ Planned flow for connecting any user-owned machine (Linux or macOS):
 ### Milestone 5 – CLI foundation (`chatcode.sh`)
 - `chatcode` CLI bootstrap via `chatcode.sh`.
 - Device/user auth flow from terminal (magic-link assisted sign-in).
+- Auth design constraint: use explicit device/CLI token flow; do not rely on browser cookie/session assumptions across domains.
 - Core operations from CLI:
   - account login/status/logout
   - VPS list/create/destroy/power on/off
