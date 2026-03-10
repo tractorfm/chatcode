@@ -1,21 +1,22 @@
 # CLAUDE.md – chatcode monorepo
 
 ## What this is
-The implementation repo for Chatcode.dev: a free VPS provisioning + browser terminal with AI agent integration.
+The implementation repo for Chatcode.dev: a user-owned VPS agent platform that provisions a VM, installs a gateway daemon, and exposes persistent terminal sessions across clients (web first, then CLI/Telegram).
 
 ## Milestone status
 - ✅ **M1**: Protocol schemas + Go gateway daemon
-- **M2** (current): Control plane + hardening implemented; now in staging validation phase
-- **M3**: Static landing + magic link auth
-- **M4**: Full web app (React + xterm.js)
+- ✅ **M2**: Control plane + hardening
+- ✅ **M3**: Static landing + magic link auth
+- **M4** (active): Reliability + UI polish (`docs/IMPLEMENTATION_M4.md`)
+- Next: CLI foundation (`chatcode.sh`) after M4 gate
 
 ## Monorepo layout
 ```
 packages/
 ├── protocol/       # JSON Schema source of truth → hand-written TS + Go types
-├── control-plane/  # TypeScript – Cloudflare Workers + Durable Objects (M2)
-├── web/            # React + Vite + Tailwind + shadcn/ui (M4)
-└── gateway/        # Go static binary – runs on user VPS (M1)
+├── control-plane/  # TypeScript – Cloudflare Workers + Durable Objects
+├── web/            # React + Vite + Tailwind + shadcn/ui (Cloudflare Pages)
+└── gateway/        # Go static binary – runs on user VPS
 ```
 
 ## Tech stack
@@ -27,30 +28,18 @@ packages/
 | web | React, Vite, Tailwind CSS, shadcn/ui, Cloudflare Pages |
 
 ## Key architectural decisions
-
-### Protocol + Gateway (M1)
-- One droplet per user (Linux user `vibe`, passwordless sudo)
-- One tmux session per Session (max 5 concurrent per VPS at MVP)
+- One DO droplet per user (Linux user `vibe`, passwordless sudo)
+- Gateway keeps one persistent WebSocket to control-plane
+- One session = one tmux-backed workspace terminal (max 5 concurrent per VPS at MVP)
 - No private SSH keys stored in control plane
-- Gateway connects out to control plane via persistent WebSocket: `<CPURL>/<gateway_id>` (e.g. `wss://cp.chatcode.dev/gw/connect/gw-abc123`)
 - Binary frames for terminal output, JSON text frames for commands/events
-- Protocol types are hand-written (not codegen) – add codegen when schemas stabilize
-- All protocol messages carry `schema_version: "1"`
-- `session.ack` sent by CP to relay browser acknowledgement of terminal output seq to gateway
-
-### Control plane (M2)
-- One **GatewayHub** Durable Object per gateway, keyed by `idFromName(gateway_id)` – WS terminus + fan-out hub
-- Gateway auth: `Authorization: Bearer <token>` header; Worker verifies via timing-safe HMAC-SHA256 against hash stored in D1
-- Worker forwards authenticated `gateway_id` into GatewayHub and GatewayHub rejects mismatched `gateway.hello` payload IDs
-- `session.input` / `session.resize` / `session.ack` are **fire-and-forget** (`sendRealtime`); all other commands use ack-tracked `sendCommand` with 10s timeout and pending map
-- `session.snapshot` now resolves command path with snapshot payload (not just ack) for HTTP snapshot route behavior
-- All pending map entries rejected on gateway disconnect
-- Provisioning timeout: Scheduled Worker (cron `* * * * *`) + `provisioning_deadline_at` column in D1 – durable, no in-memory state
-- VPS status transitions: `provisioning` → `active` on first `gateway.hello`; `active` → `deleting` when destroy is initiated
-- VPS destroy is **cloud-first, DB-second**: droplet deleted via DO API before D1 rows are removed; rows retained on API failure for reconciliation
-- Auth: HttpOnly HMAC session cookie in prod; `X-Dev-User` header accepted only when `AUTH_MODE=dev` – no global bypass
-- DO OAuth tokens: AES-256-GCM encrypted in D1; key (`DO_TOKEN_KEK`) stored as Wrangler secret, never in D1
-- Standard DO WebSocket API for M2 (hibernation mode deferred post-M2)
+- Protocol types are hand-written (not codegen); all messages carry `schema_version`
+- Protocol schema source of truth: `packages/protocol/schema/`
+- `session.input` / `session.resize` / `session.ack` are fire-and-forget; all other commands use ack-tracked `sendCommand` with 10s timeout
+- Auth: HttpOnly HMAC session cookie in prod; `X-Dev-User` header only when `AUTH_MODE=dev`
+- DO OAuth tokens: AES-256-GCM encrypted in D1; key (`DO_TOKEN_KEK`) as Wrangler secret
+- One GatewayHub Durable Object per gateway, keyed by `idFromName(gateway_id)`
+- VPS destroy is cloud-first, DB-second (droplet deleted via DO API before D1 rows removed)
 - Control-plane toolchain pinned to Wrangler v4
 
 ## Go module path
@@ -58,13 +47,20 @@ packages/
 
 ## Commands
 ```bash
+# Monorepo
+pnpm install
+pnpm build              # turbo build all packages
+
 # Gateway
 cd packages/gateway
 make build              # build for current OS
 make build-linux        # cross-compile for linux/amd64
 make test               # run all tests
+make test-deploy        # test deploy scripts
 make lint               # golangci-lint
 make mock-cp            # start mock control plane on :8080
+./deploy/gateway-install.sh --help
+sudo ./deploy/gateway-cleanup.sh --help
 
 # Control plane
 cd packages/control-plane
@@ -74,14 +70,16 @@ npm run migrate         # apply D1 migrations (local)
 npm run migrate:remote  # apply D1 migrations (production)
 npm run test            # vitest unit tests
 
-# Protocol (TypeScript types)
+# Protocol
 cd packages/protocol
 npm run build           # tsc compile
-
-# Full monorepo (from chatcode/)
-pnpm install
-pnpm build              # turbo build all packages
 ```
+
+## Required checks before merge
+- Control-plane: `pnpm --filter @chatcode/control-plane test` + `build`
+- Gateway: `cd packages/gateway && make test` + `make test-deploy`
+- Web: `pnpm --filter @chatcode/web lint` + `build`
+- Staging smoke (when creds available): `pnpm --filter @chatcode/web run e2e:staging:smoke`
 
 ## Rules
 - **Never read or commit `.env`**
@@ -89,3 +87,7 @@ pnpm build              # turbo build all packages
 - Security-first: no root for agents, SSH keys only, no private keys in control plane
 - Gateway writes `CLAUDE.md` + `AGENTS.md` into session workdir before starting agent
 - Agent install scripts are embedded in the gateway binary via `go:embed`
+- Prefer stdlib/min deps in `packages/gateway`
+- Keep fixes inside package boundaries; avoid cross-cut shortcuts
+- Update/add tests when behavior changes
+- If push is non-fast-forward, rebase on `origin/main` and push again
