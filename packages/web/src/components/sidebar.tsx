@@ -98,7 +98,7 @@ export function Sidebar({
       const { sessions: s } = await listSessions(activeVpsId);
       const openSessions = s.filter((s) => !isClosedStatus(s.status));
       setSessions(openSessions);
-        setErrorMessage("");
+      setErrorMessage("");
       if (
         openSessions.length > 0 &&
         !openSessions.some((session) => session.id === activeSessionIdRef.current)

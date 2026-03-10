@@ -190,8 +190,8 @@ export function AppPage({ userEmail, onLogout, onNavigate }: AppPageProps) {
                 <div
                   key={`${tab.vpsId}-${tab.sessionId}`}
                   className={cn(
-                  "group flex items-center gap-1.5 px-3 py-2 text-sm border-r border-border cursor-pointer transition-colors min-w-0 max-w-[200px]",
-                  i === tabState.activeIndex
+                    "group flex items-center gap-1.5 px-3 py-2 text-sm border-r border-border cursor-pointer transition-colors min-w-0 max-w-[200px]",
+                    i === tabState.activeIndex
                       ? "bg-background text-foreground font-medium"
                       : "text-muted-foreground hover:text-foreground hover:bg-accent/50 font-normal",
                   )}

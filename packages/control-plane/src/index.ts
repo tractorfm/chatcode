@@ -179,19 +179,19 @@ export default {
         return withCORS(await handleAgentList(request, env, auth, agentsMatch[1]), request, env);
       }
 
-      const sessionDeleteMatch = path.match(
+      const sessionMatch = path.match(
         /^\/vps\/([a-zA-Z0-9_-]+)\/sessions\/([a-zA-Z0-9_-]+)$/,
       );
-      if (sessionDeleteMatch && method === "DELETE") {
+      if (sessionMatch && method === "DELETE") {
         return withCORS(
-          await handleSessionDelete(request, env, auth, sessionDeleteMatch[1], sessionDeleteMatch[2]),
+          await handleSessionDelete(request, env, auth, sessionMatch[1], sessionMatch[2]),
           request,
           env,
         );
       }
-      if (sessionDeleteMatch && method === "PATCH") {
+      if (sessionMatch && method === "PATCH") {
         return withCORS(
-          await handleSessionUpdate(request, env, auth, sessionDeleteMatch[1], sessionDeleteMatch[2]),
+          await handleSessionUpdate(request, env, auth, sessionMatch[1], sessionMatch[2]),
           request,
           env,
         );
