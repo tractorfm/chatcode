@@ -40,6 +40,7 @@ interface SidebarProps {
   onSelectSession: (vpsId: string, sessionId: string, title: string) => void;
   onNewSession: (vpsId: string, sessionId: string, title: string) => void;
   onSessionRenamed: (sessionId: string, title: string) => void;
+  onVpsDeleted: (deletedVpsId: string, nextVpsId: string | null) => void;
   onNavigate: (page: "settings" | "status" | "onboarding") => void;
   onLogout: () => void;
   userEmail?: string;
@@ -57,6 +58,7 @@ export function Sidebar({
   onSelectSession,
   onNewSession,
   onSessionRenamed,
+  onVpsDeleted,
   onNavigate,
   onLogout,
   userEmail,
@@ -103,8 +105,10 @@ export function Sidebar({
       } else if (vps.length > 0 && !activeVpsId) {
         onSelectVps(vps[0].id);
       }
+      return vps;
     } catch (err) {
       setOperationError("Failed to load servers", err);
+      return [];
     }
   }, [activeVpsId, onSelectVps, selectedVpsIdHint, setOperationError]);
 
@@ -240,13 +244,16 @@ export function Sidebar({
   const doDeleteVPS = useCallback(async () => {
     if (!activeVpsId) return;
     try {
+      const deletedVpsId = activeVpsId;
       await deleteVPS(activeVpsId);
-      await refreshVPS();
+      const vps = await refreshVPS();
+      const nextVpsId = vps.find((entry) => entry.id !== deletedVpsId)?.id ?? null;
+      onVpsDeleted(deletedVpsId, nextVpsId);
       setErrorMessage("");
     } catch (err) {
       setOperationError("Failed to destroy VPS", err);
     }
-  }, [activeVpsId, refreshVPS, setOperationError]);
+  }, [activeVpsId, onVpsDeleted, refreshVPS, setOperationError]);
 
   const handleDeleteVPS = useCallback(() => {
     if (!activeVpsId) return;

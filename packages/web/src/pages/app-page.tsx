@@ -31,7 +31,8 @@ type TabAction =
   | { type: "close"; index: number }
   | { type: "setActive"; index: number }
   | { type: "markEnded"; sessionId: string }
-  | { type: "rename"; sessionId: string; title: string };
+  | { type: "rename"; sessionId: string; title: string }
+  | { type: "removeVps"; vpsId: string };
 
 function tabReducer(state: TabState, action: TabAction): TabState {
   switch (action.type) {
@@ -85,6 +86,22 @@ function tabReducer(state: TabState, action: TabAction): TabState {
           t.sessionId === action.sessionId ? { ...t, title: action.title } : t,
         ),
       };
+    case "removeVps": {
+      const nextTabs = state.tabs.filter((t) => t.vpsId !== action.vpsId);
+      if (nextTabs.length === 0) {
+        return { tabs: [], activeIndex: 0 };
+      }
+      let nextActive = state.activeIndex;
+      if (state.tabs[state.activeIndex]?.vpsId === action.vpsId) {
+        nextActive = Math.min(nextActive, nextTabs.length - 1);
+      } else {
+        const removedBeforeActive = state.tabs
+          .slice(0, state.activeIndex)
+          .filter((t) => t.vpsId === action.vpsId).length;
+        nextActive = Math.max(0, state.activeIndex - removedBeforeActive);
+      }
+      return { tabs: nextTabs, activeIndex: nextActive };
+    }
     default:
       return state;
   }
@@ -160,6 +177,13 @@ export function AppPage({
     dispatchTab({ type: "rename", sessionId, title });
   }, []);
 
+  const handleVpsDeleted = useCallback((deletedVpsId: string, nextVpsId: string | null) => {
+    dispatchTab({ type: "removeVps", vpsId: deletedVpsId });
+    setActiveVpsId(nextVpsId);
+    setSidebarErrorMessage("");
+    setSessionRefreshSignal((value) => value + 1);
+  }, []);
+
   const handleCreateSessionFromEmpty = useCallback(async () => {
     if (!activeVpsId || emptyActionBusy) return;
     setEmptyActionBusy(true);
@@ -227,6 +251,7 @@ export function AppPage({
         onSelectSession={handleSelectSession}
         onNewSession={handleNewSession}
         onSessionRenamed={handleSessionRenamed}
+        onVpsDeleted={handleVpsDeleted}
         onNavigate={onNavigate}
         onLogout={onLogout}
         userEmail={userEmail}
