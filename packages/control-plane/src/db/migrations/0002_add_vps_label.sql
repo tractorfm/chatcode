@@ -1,1 +1,0 @@
-ALTER TABLE vps ADD COLUMN label TEXT;
