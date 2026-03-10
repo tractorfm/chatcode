@@ -511,21 +511,23 @@ export function Sidebar({
                 />
               )}
 
-              {visibleError && (
-                <div className="rounded-md border border-yellow-500/30 bg-yellow-500/10 px-3 py-2 text-xs text-yellow-900 dark:text-yellow-200">
-                  <div className="flex items-start justify-between gap-3">
-                    <span>{visibleError}</span>
-                    <button
-                      type="button"
-                      onClick={() => setDismissedError(visibleError)}
-                      className="shrink-0 rounded px-1 text-yellow-800/80 hover:bg-yellow-500/10 hover:text-yellow-950 dark:text-yellow-100/80 dark:hover:text-yellow-50"
-                      aria-label="Dismiss error"
-                    >
-                      ×
-                    </button>
-                  </div>
+            </div>
+          )}
+          {visibleError && (
+            <div className="sticky bottom-0 border-t border-yellow-500/20 bg-card/95 px-3 py-2 backdrop-blur">
+              <div className="rounded-md border border-yellow-500/30 bg-yellow-500/10 px-3 py-2 text-xs text-yellow-900 dark:text-yellow-200">
+                <div className="flex items-start justify-between gap-3">
+                  <span>{visibleError}</span>
+                  <button
+                    type="button"
+                    onClick={() => setDismissedError(visibleError)}
+                    className="shrink-0 rounded px-1 text-yellow-800/80 hover:bg-yellow-500/10 hover:text-yellow-950 dark:text-yellow-100/80 dark:hover:text-yellow-50"
+                    aria-label="Dismiss error"
+                  >
+                    ×
+                  </button>
                 </div>
-              )}
+              </div>
             </div>
           )}
         </div>

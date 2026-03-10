@@ -35,6 +35,15 @@ func ListStatus() []Status {
 	return out
 }
 
+// IsInstalled reports whether the selected supported agent binary is available on PATH.
+func IsInstalled(agent AgentName) (bool, error) {
+	binary, err := binaryForAgent(agent)
+	if err != nil {
+		return false, err
+	}
+	return verifyInPath(binary) == nil, nil
+}
+
 func shouldProbeVersion(agent AgentName) bool {
 	// Intentionally allow-list only fast version probes so agents.list stays
 	// responsive on low-memory VPSes. New agents default to "installed" without

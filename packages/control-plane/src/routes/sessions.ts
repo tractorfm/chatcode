@@ -172,6 +172,12 @@ export async function handleSessionCreate(
       await updateGatewayConnected(env.DB, gateway.id, false);
       return jsonResponse({ error }, 503);
     }
+    if (error.endsWith("is not installed. Run agents.install first.")) {
+      return jsonResponse(
+        { error, code: "agent_not_installed", agent: agentType },
+        409,
+      );
+    }
     if (error.includes("already exists")) {
       return jsonResponse(
         { session_id: sessionId, status: "starting" },

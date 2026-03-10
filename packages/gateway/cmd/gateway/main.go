@@ -370,6 +370,16 @@ func (g *gateway) handleSessionCreate(ctx context.Context, raw json.RawMessage) 
 		opts.AgentsMD = cmd.AgentConfig.AgentsMD
 	}
 
+	if cmd.Agent != "" && cmd.Agent != "none" {
+		installed, err := agents.IsInstalled(agents.AgentName(cmd.Agent))
+		if err != nil {
+			return err
+		}
+		if !installed {
+			return fmt.Errorf("%s is not installed. Run agents.install first.", cmd.Agent)
+		}
+	}
+
 	s, err := g.sessions.Create(opts)
 	if err != nil {
 		return err

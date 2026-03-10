@@ -102,6 +102,15 @@ export function createTerminalHandle(opts: UseTerminalOptions): TerminalHandle {
     });
   }
 
+  function requestSnapshot() {
+    sendJSON({
+      type: "session.snapshot",
+      schema_version: "1",
+      request_id: requestId("snapshot"),
+      session_id: sessionId,
+    });
+  }
+
   function scheduleFit() {
     if (fitTimer) clearTimeout(fitTimer);
     fitTimer = setTimeout(() => {
@@ -169,13 +178,16 @@ export function createTerminalHandle(opts: UseTerminalOptions): TerminalHandle {
         awaitingInitialSnapshot = false;
       }, 1500);
 
-      sendJSON({
-        type: "session.snapshot",
-        schema_version: "1",
-        request_id: requestId("snapshot"),
-        session_id: sessionId,
-      });
       sendResize(term.cols || 80, term.rows || 24);
+      window.setTimeout(() => {
+        if (!disposed && ws === socket) requestSnapshot();
+      }, 80);
+      window.setTimeout(() => {
+        if (!disposed && ws === socket && awaitingInitialSnapshot) {
+          scheduleFit();
+          requestSnapshot();
+        }
+      }, 320);
     });
 
     ws.addEventListener("message", (event) => {
