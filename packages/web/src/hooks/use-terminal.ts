@@ -107,6 +107,10 @@ export function createTerminalHandle(opts: UseTerminalOptions): TerminalHandle {
   }
 
   function sendResize(cols: number, rows: number, reason = "unknown") {
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      debugLog("defer-resize-no-socket", { reason, cols, rows });
+      return;
+    }
     if (cols === lastCols && rows === lastRows) {
       debugLog("skip-resize", { reason, cols, rows });
       return;
@@ -199,6 +203,8 @@ export function createTerminalHandle(opts: UseTerminalOptions): TerminalHandle {
     ws.addEventListener("open", () => {
       if (ws !== socket) return;
       reconnectAttempts = 0;
+      lastCols = 0;
+      lastRows = 0;
       debugLog("ws-open");
       if (interactive) {
         term.focus();
