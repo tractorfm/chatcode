@@ -5,7 +5,7 @@ This document reflects the revised MVP recommendations after a critical review.
 ---
 
 ## 0) One-sentence summary
-chatcode.dev is a user-owned VPS agent platform: it provisions a user VM, installs a lightweight gateway daemon, and exposes persistent terminal sessions that can be continued across clients (web first, then Telegram/miniapp/native) with portable output experiences for smaller screens.
+chatcode.dev is a user-owned VPS agent platform: it provisions a user VM, installs a lightweight gateway daemon, and exposes persistent terminal sessions that can be continued across clients (web first, then CLI/Telegram/miniapp/native) with portable output experiences for smaller screens.
 
 ---
 
@@ -13,6 +13,7 @@ chatcode.dev is a user-owned VPS agent platform: it provisions a user VM, instal
 
 ### In scope (Phase 1)
 - chatcode.dev web app (landing + email magic link auth)
+- Domain strategy: `chatcode.dev` as canonical product domain, `chatcode.sh` for CLI/install shortcuts
 - DigitalOcean OAuth + droplet provisioning (create / destroy / power off/on)
 - Gateway daemon on the VPS (session management + raw terminal streaming)
 - Minimal session model (one session = one workspace)
@@ -81,6 +82,16 @@ Rationale: keep the first release focused on “create VPS → open terminal →
   - SSH authorized_keys management
   - idle cleanup policy
   - installer hooks for terminal agents (Claude Code / Codex CLI / Gemini CLI)
+
+4) **CLI surface (`chatcode`) via chatcode.sh**
+- Purpose: authenticate and operate chatcode.dev flows from terminal.
+- Initial distribution: `chatcode.sh` install endpoint and shortcuts.
+- Product API target: `cp.chatcode.dev` (same auth/session model as web).
+
+### Domain policy
+- `chatcode.dev`: canonical app/auth/api/docs domain.
+- `chatcode.sh`: CLI/install shortcut domain.
+- `chatcode.sh` web requests should redirect to equivalent `chatcode.dev` pages by default.
 
 ---
 
@@ -430,6 +441,15 @@ Planned flow for connecting any user-owned machine (Linux or macOS):
 - Idle notification banner.
 - Polish/reliability pass: error surfaces, reconnect behavior, session consistency.
 - Simple landing page integrated with auth funnel.
+
+### Milestone 5 – CLI foundation (`chatcode.sh`)
+- `chatcode` CLI bootstrap via `chatcode.sh`.
+- Device/user auth flow from terminal (magic-link assisted sign-in).
+- Core operations from CLI:
+  - account login/status/logout
+  - VPS list/create/destroy/power on/off
+  - session list/create/end/attach metadata
+- Keep parity with web control-plane permissions and audit logging.
 
 ### Phase 2 – Telegram bot
 - Workers webhook + Queues.
