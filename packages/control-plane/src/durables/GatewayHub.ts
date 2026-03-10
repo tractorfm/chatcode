@@ -130,6 +130,10 @@ export class GatewayHub {
     this.restoreHibernatedSockets();
   }
 
+  private isStagingDebug(): boolean {
+    return this.env.APP_ENV === "staging" || this.env.APP_ENV === "dev";
+  }
+
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
     const path = url.pathname;
@@ -492,6 +496,18 @@ export class GatewayHub {
   }
 
   private onSessionSnapshot(msg: SessionSnapshotEvent): void {
+    if (this.isStagingDebug()) {
+      console.info("GatewayHub gateway session.snapshot", {
+        gatewayId: this.gatewayId,
+        vpsId: this.vpsId,
+        sessionId: msg.session_id,
+        requestId: msg.request_id,
+        cols: typeof msg.cols === "number" ? msg.cols : null,
+        rows: typeof msg.rows === "number" ? msg.rows : null,
+        cursorX: typeof msg.cursor_x === "number" ? msg.cursor_x : null,
+        cursorY: typeof msg.cursor_y === "number" ? msg.cursor_y : null,
+      });
+    }
     // If there's a pending request for this snapshot, resolve it
     if (msg.request_id) {
       const entry = this.pending.get(msg.request_id);
@@ -645,7 +661,24 @@ export class GatewayHub {
     switch (msg.type) {
       case "session.input":
       case "session.resize":
+        if (msg.type === "session.resize" && this.isStagingDebug()) {
+          console.info("GatewayHub browser session.resize", {
+            gatewayId: this.gatewayId,
+            vpsId: this.vpsId,
+            sessionId,
+            requestId: typeof msg.request_id === "string" ? msg.request_id : null,
+            cols: typeof msg.cols === "number" ? msg.cols : null,
+            rows: typeof msg.rows === "number" ? msg.rows : null,
+          });
+        }
         if (!this.tryAcquireSessionControl(sessionId, ws)) {
+          if (msg.type === "session.resize" && this.isStagingDebug()) {
+            console.warn("GatewayHub rejected session.resize (read-only)", {
+              gatewayId: this.gatewayId,
+              vpsId: this.vpsId,
+              sessionId,
+            });
+          }
           this.sendReadOnlyError(ws, msg);
           return;
         }

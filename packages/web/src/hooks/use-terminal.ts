@@ -54,19 +54,48 @@ export function createTerminalHandle(opts: UseTerminalOptions): TerminalHandle {
   term.loadAddon(fitAddon);
 
   let socket: WebSocket | null = null;
+  let mountEl: HTMLDivElement | null = null;
   let inputDisposable: { dispose: () => void } | null = null;
   let keepaliveTimer: ReturnType<typeof setInterval> | null = null;
   let fitTimer: ReturnType<typeof setTimeout> | null = null;
+  let fitFrameA: number | null = null;
+  let fitFrameB: number | null = null;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let resizeObserver: ResizeObserver | null = null;
+  let windowResizeHandler: (() => void) | null = null;
   let awaitingInitialSnapshot = false;
   let initialSnapshotTimer: ReturnType<typeof setTimeout> | null = null;
+  let initialSnapshotRetryTimer: ReturnType<typeof setTimeout> | null = null;
   let lastCols = 0;
   let lastRows = 0;
   let reconnectAttempts = 0;
   let sessionEnded = false;
   let disposed = false;
   let interactive = opts.interactive !== false;
+  const debugTerminal =
+    typeof window !== "undefined" &&
+    (window.location.hostname === "app.staging.chatcode.dev" ||
+      window.location.hostname === "localhost" ||
+      window.location.search.includes("debugTerm=1"));
+
+  function debugLog(event: string, detail: Record<string, unknown> = {}) {
+    if (!debugTerminal) return;
+    const rect = mountEl?.getBoundingClientRect();
+    console.info("[terminal-debug]", {
+      event,
+      vpsId,
+      sessionId,
+      termCols: term.cols,
+      termRows: term.rows,
+      mountRect: rect
+        ? {
+            width: Math.round(rect.width),
+            height: Math.round(rect.height),
+          }
+        : null,
+      ...detail,
+    });
+  }
 
   function sendJSON(msg: Record<string, unknown>) {
     if (!socket || socket.readyState !== WebSocket.OPEN) return;
@@ -77,10 +106,14 @@ export function createTerminalHandle(opts: UseTerminalOptions): TerminalHandle {
     }
   }
 
-  function sendResize(cols: number, rows: number) {
-    if (cols === lastCols && rows === lastRows) return;
+  function sendResize(cols: number, rows: number, reason = "unknown") {
+    if (cols === lastCols && rows === lastRows) {
+      debugLog("skip-resize", { reason, cols, rows });
+      return;
+    }
     lastCols = cols;
     lastRows = rows;
+    debugLog("send-resize", { reason, cols, rows });
     sendJSON({
       type: "session.resize",
       schema_version: "1",
@@ -102,18 +135,41 @@ export function createTerminalHandle(opts: UseTerminalOptions): TerminalHandle {
     });
   }
 
-  function scheduleFit() {
+  function requestSnapshot(reason: string) {
+    debugLog("send-snapshot", { reason });
+    sendJSON({
+      type: "session.snapshot",
+      schema_version: "1",
+      request_id: requestId("snapshot"),
+      session_id: sessionId,
+    });
+  }
+
+  function scheduleFit(reason = "unknown", afterFit?: () => void) {
     if (fitTimer) clearTimeout(fitTimer);
+    if (fitFrameA !== null) cancelAnimationFrame(fitFrameA);
+    if (fitFrameB !== null) cancelAnimationFrame(fitFrameB);
     fitTimer = setTimeout(() => {
       fitTimer = null;
       if (disposed) return;
-      try {
-        fitAddon.fit();
-      } catch {
-        /* ignore */
-      }
-      sendResize(term.cols || 80, term.rows || 24);
-    }, 16);
+      fitFrameA = requestAnimationFrame(() => {
+        fitFrameA = null;
+        fitFrameB = requestAnimationFrame(() => {
+          fitFrameB = null;
+          if (disposed) return;
+          try {
+            fitAddon.fit();
+          } catch {
+            /* ignore */
+          }
+          const cols = term.cols || 80;
+          const rows = term.rows || 24;
+          debugLog("fit", { reason, cols, rows });
+          sendResize(cols, rows, reason);
+          afterFit?.();
+        });
+      });
+    }, 0);
   }
 
   // Arrow key handler: force application cursor sequences for curses apps
@@ -143,7 +199,7 @@ export function createTerminalHandle(opts: UseTerminalOptions): TerminalHandle {
     ws.addEventListener("open", () => {
       if (ws !== socket) return;
       reconnectAttempts = 0;
-      scheduleFit();
+      debugLog("ws-open");
       if (interactive) {
         term.focus();
       }
@@ -162,13 +218,23 @@ export function createTerminalHandle(opts: UseTerminalOptions): TerminalHandle {
         awaitingInitialSnapshot = false;
       }, 1500);
 
-      sendJSON({
-        type: "session.snapshot",
-        schema_version: "1",
-        request_id: requestId("snapshot"),
-        session_id: sessionId,
+      if (initialSnapshotRetryTimer) {
+        clearTimeout(initialSnapshotRetryTimer);
+        initialSnapshotRetryTimer = null;
+      }
+
+      scheduleFit("ws-open", () => {
+        if (disposed || ws !== socket) return;
+        requestSnapshot("initial-post-fit");
       });
-      sendResize(term.cols || 80, term.rows || 24);
+
+      initialSnapshotRetryTimer = setTimeout(() => {
+        if (disposed || ws !== socket || !awaitingInitialSnapshot) return;
+        scheduleFit("initial-retry", () => {
+          if (disposed || ws !== socket || !awaitingInitialSnapshot) return;
+          requestSnapshot("initial-retry");
+        });
+      }, 250);
     });
 
     ws.addEventListener("message", (event) => {
@@ -200,6 +266,12 @@ export function createTerminalHandle(opts: UseTerminalOptions): TerminalHandle {
           const lines = normalized.split("\n");
           if (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
           const tail = lines.slice(-rowsHint).join("\r\n");
+          debugLog("recv-snapshot", {
+            cols: typeof msg.cols === "number" ? msg.cols : null,
+            rows: rowsHint,
+            cursorX: typeof msg.cursor_x === "number" ? msg.cursor_x : null,
+            cursorY: typeof msg.cursor_y === "number" ? msg.cursor_y : null,
+          });
           term.reset();
           term.write(tail);
 
@@ -218,6 +290,10 @@ export function createTerminalHandle(opts: UseTerminalOptions): TerminalHandle {
           if (initialSnapshotTimer) {
             clearTimeout(initialSnapshotTimer);
             initialSnapshotTimer = null;
+          }
+          if (initialSnapshotRetryTimer) {
+            clearTimeout(initialSnapshotRetryTimer);
+            initialSnapshotRetryTimer = null;
           }
           return;
         }
@@ -295,22 +371,28 @@ export function createTerminalHandle(opts: UseTerminalOptions): TerminalHandle {
     });
   }
 
-  term.onResize(({ cols, rows }) => sendResize(cols, rows));
+  term.onResize(({ cols, rows }) => {
+    debugLog("term-onResize", { cols, rows });
+    sendResize(cols, rows, "term.onResize");
+  });
 
   const handle: TerminalHandle = {
     mount(el: HTMLDivElement) {
+      mountEl = el;
+      windowResizeHandler = () => scheduleFit("window-resize");
       term.open(el);
-      scheduleFit();
-      setTimeout(scheduleFit, 120);
+      debugLog("mount");
+      scheduleFit("mount");
+      setTimeout(() => scheduleFit("mount-120"), 120);
       if (document.fonts?.ready) {
-        document.fonts.ready.then(() => scheduleFit()).catch(() => {});
+        document.fonts.ready.then(() => scheduleFit("fonts-ready")).catch(() => {});
       }
-      window.addEventListener("resize", scheduleFit);
-      resizeObserver = new ResizeObserver(() => scheduleFit());
+      window.addEventListener("resize", windowResizeHandler);
+      resizeObserver = new ResizeObserver(() => scheduleFit("resize-observer"));
       resizeObserver.observe(el);
       connect();
     },
-    fit: scheduleFit,
+    fit: () => scheduleFit("handle.fit"),
     setTheme(theme: ITheme) {
       term.options.theme = theme;
     },
@@ -325,8 +407,11 @@ export function createTerminalHandle(opts: UseTerminalOptions): TerminalHandle {
       inputDisposable?.dispose();
       if (keepaliveTimer) clearInterval(keepaliveTimer);
       if (fitTimer) clearTimeout(fitTimer);
+      if (fitFrameA !== null) cancelAnimationFrame(fitFrameA);
+      if (fitFrameB !== null) cancelAnimationFrame(fitFrameB);
       if (reconnectTimer) clearTimeout(reconnectTimer);
       if (initialSnapshotTimer) clearTimeout(initialSnapshotTimer);
+      if (initialSnapshotRetryTimer) clearTimeout(initialSnapshotRetryTimer);
       if (socket) {
         try {
           socket.close(1000, "disposed");
@@ -334,8 +419,12 @@ export function createTerminalHandle(opts: UseTerminalOptions): TerminalHandle {
           /* ignore */
         }
       }
-      window.removeEventListener("resize", scheduleFit);
+      if (windowResizeHandler) {
+        window.removeEventListener("resize", windowResizeHandler);
+        windowResizeHandler = null;
+      }
       resizeObserver?.disconnect();
+      mountEl = null;
       term.dispose();
     },
     focus() {

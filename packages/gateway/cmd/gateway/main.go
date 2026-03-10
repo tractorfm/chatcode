@@ -433,6 +433,9 @@ func (g *gateway) handleSessionResize(ctx context.Context, raw json.RawMessage) 
 	if s == nil {
 		return fmt.Errorf("session %q not found", cmd.SessionID)
 	}
+	if g.cfg.CPURL == config.CPURLStaging {
+		g.log.Info("session resize command", "session_id", cmd.SessionID, "cols", cmd.Cols, "rows", cmd.Rows)
+	}
 	if err := s.Resize(cmd.Cols, cmd.Rows); err != nil {
 		return err
 	}
@@ -491,6 +494,17 @@ func (g *gateway) handleSessionSnapshot(ctx context.Context, raw json.RawMessage
 	content, cols, rows, cursorX, cursorY, cursorVisible, err := s.Snapshot()
 	if err != nil {
 		return err
+	}
+	if g.cfg.CPURL == config.CPURLStaging {
+		g.log.Info(
+			"session snapshot",
+			"session_id", cmd.SessionID,
+			"cols", cols,
+			"rows", rows,
+			"cursor_x", cursorX,
+			"cursor_y", cursorY,
+			"cursor_visible", cursorVisible,
+		)
 	}
 	content = trimSnapshotTail(content, maxSnapshotBytes)
 	evt := map[string]any{
