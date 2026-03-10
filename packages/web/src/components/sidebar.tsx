@@ -81,6 +81,8 @@ export function Sidebar({
   } | null>(null);
   const activeSessionIdRef = useRef(activeSessionId);
   const activeVps = vpsList.find((v) => v.id === activeVpsId);
+  const activeVpsName = activeVps?.label || activeVps?.id || "this server";
+  const isManagedVps = activeVps?.provider === "digitalocean";
 
   useEffect(() => {
     activeSessionIdRef.current = activeSessionId;
@@ -226,19 +228,18 @@ export function Sidebar({
 
   const handlePowerAction = useCallback(
     (action: "off" | "on") => {
-      const serverName = activeVps?.label || activeVps?.id || "this server";
       if (action === "on") {
         doPowerAction("on");
         return;
       }
       setConfirmAction({
         title: "Power off server",
-        description: `This will shut down "${serverName}" and disconnect all sessions.`,
+        description: `This will shut down "${activeVpsName}" and disconnect all sessions.`,
         destructive: true,
         onConfirm: () => doPowerAction("off"),
       });
     },
-    [activeVps, doPowerAction],
+    [activeVpsName, doPowerAction],
   );
 
   const doDeleteVPS = useCallback(async () => {
@@ -251,19 +252,24 @@ export function Sidebar({
       onVpsDeleted(deletedVpsId, nextVpsId);
       setErrorMessage("");
     } catch (err) {
-      setOperationError("Failed to destroy VPS", err);
+      setOperationError(
+        isManagedVps ? "Failed to destroy server" : "Failed to remove server",
+        err,
+      );
     }
-  }, [activeVpsId, onVpsDeleted, refreshVPS, setOperationError]);
+  }, [activeVpsId, isManagedVps, onVpsDeleted, refreshVPS, setOperationError]);
 
   const handleDeleteVPS = useCallback(() => {
     if (!activeVpsId) return;
     setConfirmAction({
-      title: "Destroy server",
-      description: `This will permanently destroy "${activeVps?.label || activeVps?.id || activeVpsId}" and all its data. This cannot be undone.`,
+      title: isManagedVps ? "Destroy server" : "Remove server",
+      description: isManagedVps
+        ? `This will permanently destroy "${activeVpsName}" and all its data. This cannot be undone.`
+        : `This will remove "${activeVpsName}" from chatcode and stop reconnect attempts. This does not power off the host.`,
       destructive: true,
       onConfirm: doDeleteVPS,
     });
-  }, [activeVps, activeVpsId, doDeleteVPS]);
+  }, [activeVpsId, activeVpsName, doDeleteVPS, isManagedVps]);
 
   const handleRenameVps = useCallback(
     async (vpsId: string, label: string) => {
@@ -382,10 +388,12 @@ export function Sidebar({
                 <Circle
                   className={cn(
                     "h-2 w-2 ml-auto shrink-0 fill-current",
-                    vps.status === "active"
-                      ? "text-green-500"
-                      : vps.status === "provisioning"
+                    vps.status === "provisioning"
                         ? "text-yellow-500"
+                      : vps.status === "active" && vps.gateway_connected
+                        ? "text-green-500"
+                        : vps.status === "active"
+                          ? "text-yellow-500"
                         : "text-muted-foreground",
                   )}
                 />
@@ -396,30 +404,30 @@ export function Sidebar({
           {/* VPS Actions */}
           {activeVps && (
             <div className="px-3 pb-2 flex gap-1">
-              {activeVps.provider === "digitalocean" && (
-                <>
-                  <button
-                    onClick={() =>
-                      handlePowerAction(
-                        activeVps.status === "active" ? "off" : "on",
-                      )
-                    }
-                    className="p-1.5 rounded hover:bg-accent text-muted-foreground"
-                    title={
-                      activeVps.status === "active" ? "Power off" : "Power on"
-                    }
-                  >
-                    <Power className="h-3.5 w-3.5" />
-                  </button>
-                  <button
-                    onClick={handleDeleteVPS}
-                    className="p-1.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive"
-                    title="Destroy VPS"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
-                </>
-              )}
+              <button
+                onClick={() => {
+                  if (!isManagedVps) return;
+                  handlePowerAction(activeVps.status === "active" ? "off" : "on");
+                }}
+                disabled={!isManagedVps}
+                className="p-1.5 rounded hover:bg-accent text-muted-foreground disabled:cursor-not-allowed disabled:opacity-40"
+                title={
+                  isManagedVps
+                    ? activeVps.status === "active"
+                      ? "Power off"
+                      : "Power on"
+                    : "Power control is not available for manual servers yet"
+                }
+              >
+                <Power className="h-3.5 w-3.5" />
+              </button>
+              <button
+                onClick={handleDeleteVPS}
+                className="p-1.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive"
+                title={isManagedVps ? "Destroy server" : "Remove server"}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
             </div>
           )}
 

@@ -9,10 +9,12 @@ import {
   getGateway,
   listProvisioningTimedOut,
   listDeletingVPS,
+  listStaleConnectedGateways,
   listVPSMissingIPv4,
   updateVPSStatus,
   updateVPSIpv4,
   deleteVPSCascade,
+  markGatewayDisconnected,
 } from "./db/schema.js";
 import { getAccessToken, getDroplet, deleteDroplet } from "./lib/do-api.js";
 import {
@@ -56,6 +58,8 @@ import {
 import { withCORS, corsHeaders } from "./lib/http.js";
 
 export { GatewayHub } from "./durables/GatewayHub.js";
+
+const GATEWAY_STALE_AFTER_SEC = 150;
 
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
@@ -247,7 +251,8 @@ export default {
   },
 
   /**
-   * Scheduled Worker: provisioning timeout + deleting-VPS reconciliation.
+   * Scheduled Worker: provisioning timeout + gateway heartbeat expiry +
+   * deleting-VPS reconciliation.
    * Runs every minute via cron.
    */
   async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
@@ -265,7 +270,16 @@ export default {
       }
     }
 
-    // 2. Retry deleting VPS cleanup
+    // 2. Expire stale gateway heartbeat state
+    const staleGateways = await listStaleConnectedGateways(
+      env.DB,
+      Math.floor(Date.now() / 1000) - GATEWAY_STALE_AFTER_SEC,
+    );
+    for (const gateway of staleGateways) {
+      await markGatewayDisconnected(env.DB, gateway.id);
+    }
+
+    // 3. Retry deleting VPS cleanup
     const deletingList = await listDeletingVPS(env.DB);
     for (const vps of deletingList) {
       try {
@@ -283,7 +297,7 @@ export default {
       }
     }
 
-    // 3. Backfill missing public IPv4 after droplet assignment.
+    // 4. Backfill missing public IPv4 after droplet assignment.
     const missingIPv4 = await listVPSMissingIPv4(env.DB);
     for (const vps of missingIPv4) {
       try {

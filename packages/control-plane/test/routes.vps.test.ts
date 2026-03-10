@@ -224,6 +224,36 @@ describe("routes/vps", () => {
     expect(mocks.deleteVPSCascade).toHaveBeenCalledWith(env.DB, "vps-1");
   });
 
+  it("unlinks manual servers without calling DigitalOcean", async () => {
+    const { env, doShutdownFetch } = makeEnv();
+    mocks.getVPS.mockResolvedValue({
+      id: "vps-manual-1",
+      user_id: "usr-1",
+      droplet_id: 0,
+      label: "raspi",
+      region: "manual",
+      size: "manual:raspi",
+      ipv4: null,
+      status: "active",
+      provisioning_deadline_at: null,
+      created_at: 1,
+      updated_at: 1,
+    });
+
+    const res = await handleVPSDelete(
+      new Request("https://cp.example.test/vps/vps-manual-1", { method: "DELETE" }),
+      env,
+      { userId: "usr-1" },
+      "vps-manual-1",
+    );
+
+    expect(res.status).toBe(204);
+    expect(doShutdownFetch).toHaveBeenCalledOnce();
+    expect(mocks.updateVPSStatus).toHaveBeenCalledWith(env.DB, "vps-manual-1", "deleting");
+    expect(mocks.deleteDroplet).not.toHaveBeenCalled();
+    expect(mocks.deleteVPSCascade).toHaveBeenCalledWith(env.DB, "vps-manual-1");
+  });
+
   it("mints manual gateway credentials in staging", async () => {
     const { env } = makeEnv();
 

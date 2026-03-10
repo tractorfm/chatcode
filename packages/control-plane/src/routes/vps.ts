@@ -379,7 +379,13 @@ export async function handleVPSDelete(
     }
   }
 
-  // 3. Delete cloud droplet
+  // 3. Manual/BYO servers are just unlinked from chatcode metadata.
+  if (vps.droplet_id <= 0) {
+    await deleteVPSCascade(env.DB, vpsId);
+    return new Response(null, { status: 204 });
+  }
+
+  // 4. Delete cloud droplet
   try {
     const accessToken = await getAccessToken(
       env.DB,
@@ -397,7 +403,7 @@ export async function handleVPSDelete(
     );
   }
 
-  // 4. Delete DB rows in order
+  // 5. Delete DB rows in order
   await deleteVPSCascade(env.DB, vpsId);
 
   return new Response(null, { status: 204 });

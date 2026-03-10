@@ -415,6 +415,22 @@ export async function listGatewaysByVPSIds(
   return byVPS;
 }
 
+export async function listStaleConnectedGateways(
+  db: D1Database,
+  staleBefore: number,
+): Promise<GatewayRow[]> {
+  const result = await db
+    .prepare(
+      `SELECT * FROM gateways
+       WHERE connected = 1
+         AND last_seen_at IS NOT NULL
+         AND last_seen_at < ?`,
+    )
+    .bind(staleBefore)
+    .all<GatewayRow>();
+  return result.results;
+}
+
 export async function updateGatewayConnected(
   db: D1Database,
   id: string,
@@ -441,6 +457,13 @@ export async function updateGatewayLastSeen(db: D1Database, id: string): Promise
   await db
     .prepare("UPDATE gateways SET last_seen_at = ? WHERE id = ?")
     .bind(nowSec(), id)
+    .run();
+}
+
+export async function markGatewayDisconnected(db: D1Database, id: string): Promise<void> {
+  await db
+    .prepare("UPDATE gateways SET connected = 0 WHERE id = ?")
+    .bind(id)
     .run();
 }
 
