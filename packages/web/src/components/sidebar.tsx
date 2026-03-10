@@ -205,13 +205,6 @@ export function Sidebar({
 
       {!collapsed && (
         <div className="flex-1 overflow-y-auto">
-          {displayedError && (
-            <div className="px-3 pt-2">
-              <p className="text-xs text-destructive bg-destructive/5 border border-destructive/20 rounded px-2 py-1">
-                {displayedError}
-              </p>
-            </div>
-          )}
           {/* VPS Section */}
           <div className="p-3 space-y-2">
             <div className="flex items-center justify-between">
@@ -357,6 +350,14 @@ export function Sidebar({
               )}
             </div>
           )}
+
+          {displayedError && (
+            <div className="px-3 py-2">
+              <p className="text-xs text-muted-foreground/80 rounded px-2 py-1.5 bg-accent/50">
+                {displayedError}
+              </p>
+            </div>
+          )}
         </div>
       )}
 
@@ -388,6 +389,19 @@ export function Sidebar({
             >
               <LogOut className="h-3.5 w-3.5" />
             </button>
+          </div>
+          <div className="flex items-center justify-between px-2 pb-1">
+            <a
+              href="https://github.com/tractorfm/chatcode"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[10px] text-muted-foreground/50 hover:text-muted-foreground transition-colors"
+            >
+              GitHub
+            </a>
+            <span className="text-[10px] text-muted-foreground/40">
+              {__BUILD_BRANCH__}@{__BUILD_SHA__}
+            </span>
           </div>
         </div>
       )}
