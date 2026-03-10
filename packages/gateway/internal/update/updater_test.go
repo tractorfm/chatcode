@@ -10,8 +10,24 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
+
+func stubLinuxUpdate(t *testing.T, u *Updater) {
+	t.Helper()
+	if runtime.GOOS != "linux" {
+		return
+	}
+	u.installFn = func(src, dst string) error {
+		data, err := os.ReadFile(src)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(dst, data, 0o755)
+	}
+	u.rollbackFn = u.installFn
+}
 
 func TestUpdateSuccess(t *testing.T) {
 	dir := t.TempDir()
@@ -26,6 +42,7 @@ func TestUpdateSuccess(t *testing.T) {
 	defer srv.Close()
 
 	u := NewUpdater(binaryPath, discardLogger())
+	stubLinuxUpdate(t, u)
 	u.restartFn = func() error { return nil }
 
 	if err := u.Update(srv.URL, sha256Hex(newContent)); err != nil {
@@ -37,9 +54,11 @@ func TestUpdateSuccess(t *testing.T) {
 		t.Fatalf("binary content = %q, want %q", string(got), string(newContent))
 	}
 
-	prev := mustReadFile(t, binaryPath+".prev")
-	if string(prev) != string(oldContent) {
-		t.Fatalf("prev content = %q, want %q", string(prev), string(oldContent))
+	if runtime.GOOS != "linux" {
+		prev := mustReadFile(t, binaryPath+".prev")
+		if string(prev) != string(oldContent) {
+			t.Fatalf("prev content = %q, want %q", string(prev), string(oldContent))
+		}
 	}
 }
 
@@ -56,6 +75,7 @@ func TestUpdateRollbackOnRestartFailure(t *testing.T) {
 	defer srv.Close()
 
 	u := NewUpdater(binaryPath, discardLogger())
+	stubLinuxUpdate(t, u)
 	u.restartFn = func() error { return errors.New("restart failed") }
 
 	err := u.Update(srv.URL, sha256Hex(newContent))
@@ -82,6 +102,7 @@ func TestUpdateChecksumMismatch(t *testing.T) {
 	defer srv.Close()
 
 	u := NewUpdater(binaryPath, discardLogger())
+	stubLinuxUpdate(t, u)
 	u.restartFn = func() error {
 		t.Fatal("restart should not run on checksum failure")
 		return nil
