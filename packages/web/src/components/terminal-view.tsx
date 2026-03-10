@@ -41,7 +41,14 @@ export const TerminalView = memo(function TerminalView({
     <div
       data-testid={`terminal-${sessionId}`}
       className="terminal-shell absolute inset-0 p-2"
-      style={{ display: active ? "block" : "none", backgroundColor: terminalBackground }}
+      style={{
+        backgroundColor: terminalBackground,
+        visibility: active ? "visible" : "hidden",
+        opacity: active ? 1 : 0,
+        pointerEvents: active ? "auto" : "none",
+        zIndex: active ? 1 : 0,
+      }}
+      aria-hidden={!active}
     >
       <div
         ref={containerRef}
