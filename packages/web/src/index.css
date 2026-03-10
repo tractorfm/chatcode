@@ -64,5 +64,9 @@
   height: 100%;
 }
 .terminal-container .xterm-viewport {
+  background-color: transparent !important;
   overflow-y: auto !important;
+}
+.terminal-container .xterm-scrollable-element {
+  background-color: transparent !important;
 }
