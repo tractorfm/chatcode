@@ -58,7 +58,6 @@
 /* Terminal container: fill available space, no overflow */
 .terminal-container .xterm {
   height: 100%;
-  padding: 6px;
 }
 .terminal-container .xterm-viewport {
   overflow-y: auto !important;
