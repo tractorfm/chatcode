@@ -317,7 +317,7 @@ export function Sidebar({
       </div>
 
       {!collapsed && (
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex h-full flex-1 flex-col overflow-y-auto">
           {/* VPS Section */}
           <div className="p-3 space-y-2">
             <div className="flex items-center justify-between">
@@ -514,7 +514,7 @@ export function Sidebar({
             </div>
           )}
           {visibleError && (
-            <div className="sticky bottom-0 border-t border-yellow-500/20 bg-card/95 px-3 py-2 backdrop-blur">
+            <div className="mt-auto px-3 pb-2">
               <div className="rounded-md border border-yellow-500/30 bg-yellow-500/10 px-3 py-2 text-xs text-yellow-900 dark:text-yellow-200">
                 <div className="flex items-start justify-between gap-3">
                   <span>{visibleError}</span>

@@ -188,6 +188,14 @@ export function createTerminalHandle(opts: UseTerminalOptions): TerminalHandle {
           requestSnapshot();
         }
       }, 320);
+      // Late reconciliation pass: if tmux resized after the first snapshot,
+      // force one more snapshot so first paint matches the fitted viewport.
+      window.setTimeout(() => {
+        if (!disposed && ws === socket) {
+          scheduleFit();
+          requestSnapshot();
+        }
+      }, 900);
     });
 
     ws.addEventListener("message", (event) => {
@@ -213,12 +221,13 @@ export function createTerminalHandle(opts: UseTerminalOptions): TerminalHandle {
         ) {
           const rowsHint =
             typeof msg.rows === "number" && msg.rows > 0 ? msg.rows : 80;
+          const targetRows = Math.max(rowsHint, term.rows || rowsHint);
           const normalized = msg.content
             .replace(/\r\n/g, "\n")
             .replace(/\r/g, "\n");
           const lines = normalized.split("\n");
           if (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
-          const tail = lines.slice(-rowsHint).join("\r\n");
+          const tail = lines.slice(-targetRows).join("\r\n");
           term.reset();
           term.write(tail);
 
@@ -227,7 +236,9 @@ export function createTerminalHandle(opts: UseTerminalOptions): TerminalHandle {
             typeof msg.cursor_y === "number"
           ) {
             const col = Math.max(0, Math.floor(msg.cursor_x as number)) + 1;
-            const row = Math.max(0, Math.floor(msg.cursor_y as number)) + 1;
+            const rowShift = Math.max(0, targetRows - rowsHint);
+            const rowRaw = Math.max(0, Math.floor(msg.cursor_y as number)) + 1 + rowShift;
+            const row = Math.min(Math.max(1, rowRaw), Math.max(1, targetRows));
             term.write(`\x1b[${row};${col}H`);
           }
           if (msg.cursor_visible === false) term.write("\x1b[?25l");
