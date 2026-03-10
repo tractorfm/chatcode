@@ -110,19 +110,20 @@ export async function handleSessionCreate(
   if (MANAGED_AGENT_TYPES.has(agentType)) {
     const doId = env.GATEWAY_HUB.idFromName(gateway.id);
     const agents = await fetchGatewayAgents(env, doId);
-    if (!agents) {
-      return jsonResponse({ error: "agents.list failed" }, 502);
-    }
-    const target = agents.find((item) => item.agent === agentType);
-    if (!target?.installed) {
-      return jsonResponse(
-        {
-          error: `${agentType} is not installed. Run agents.install first.`,
-          code: "agent_not_installed",
-          agent: agentType,
-        },
-        409,
-      );
+    if (agents) {
+      const target = agents.find((item) => item.agent === agentType);
+      if (!target?.installed) {
+        return jsonResponse(
+          {
+            error: `${agentType} is not installed. Run agents.install first.`,
+            code: "agent_not_installed",
+            agent: agentType,
+          },
+          409,
+        );
+      }
+    } else {
+      console.warn(`agents.list unavailable for ${gateway.id}; proceeding with session.create`);
     }
   }
 
