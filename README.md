@@ -114,9 +114,9 @@ Security details, verification checklist, and roadmap:
 
 Product/runtime trade-offs and deferred hardening items are tracked in:
 
-- [`IMPLEMENTATION_M4.md`](IMPLEMENTATION_M4.md)
-- [`IMPLEMENTATION_M4_CORE.md`](IMPLEMENTATION_M4_CORE.md) (detailed core reference)
-- [`IMPLEMENTATION_M4_UI.md`](IMPLEMENTATION_M4_UI.md) (detailed UI reference)
+- [`docs/IMPLEMENTATION_M4.md`](docs/IMPLEMENTATION_M4.md)
+- [`docs/IMPLEMENTATION_M4_CORE.md`](docs/IMPLEMENTATION_M4_CORE.md) (detailed core reference)
+- [`docs/IMPLEMENTATION_M4_UI.md`](docs/IMPLEMENTATION_M4_UI.md) (detailed UI reference)
 
 ## Self-Host in Your Own Cloudflare Account
 

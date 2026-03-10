@@ -23,7 +23,7 @@ What that means in practice:
 
 This is a deliberate MVP tradeoff for reliability, debuggability, and simple operations.
 Broader non-security runtime trade-offs are tracked in:
-`IMPLEMENTATION_M4_CORE.md` ("Trade-offs & Deferred Improvements").
+`docs/IMPLEMENTATION_M4_CORE.md` ("Trade-offs & Deferred Improvements").
 
 ## Threat Model Notes
 

@@ -85,7 +85,7 @@ pnpm build              # turbo build all packages
 
 ## Rules
 - **Never read or commit `.env`**
-- `MVP.md` is architecture source of truth; `IMPLEMENTATION_M2.md` is the current milestone plan (M1 is complete)
+- `MVP.md` is architecture source of truth; execution plans live under `docs/IMPLEMENTATION_M*.md`
 - Security-first: no root for agents, SSH keys only, no private keys in control plane
 - Gateway writes `CLAUDE.md` + `AGENTS.md` into session workdir before starting agent
 - Agent install scripts are embedded in the gateway binary via `go:embed`

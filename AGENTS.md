@@ -38,7 +38,7 @@ Ship a reliable MVP path:
 - Keep fixes inside package boundaries; avoid cross-cut shortcuts.
 - Update/add tests when behavior changes.
 - Never commit secrets.
-- Keep `MVP.md` as architecture source; `IMPLEMENTATION_M*.md` as execution docs.
+- Keep `MVP.md` as architecture source; `docs/IMPLEMENTATION_M*.md` as execution docs.
 
 ## Required Checks Before Merge
 
