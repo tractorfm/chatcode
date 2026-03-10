@@ -232,6 +232,7 @@ export function Sidebar({
         await refreshVPS();
       } catch (err) {
         setOperationError("Failed to rename server", err);
+        throw err;
       }
     },
     [refreshVPS, setOperationError],
@@ -246,6 +247,7 @@ export function Sidebar({
         await refreshSessions();
       } catch (err) {
         setOperationError("Failed to rename session", err);
+        throw err;
       }
     },
     [activeVpsId, refreshSessions, onSessionRenamed, setOperationError],
