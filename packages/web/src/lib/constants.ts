@@ -82,3 +82,16 @@ export const AGENT_TYPES = [
 ] as const;
 
 export type AgentType = (typeof AGENT_TYPES)[number]["value"];
+
+
+export function agentLabel(agentType: string): string {
+  const match = AGENT_TYPES.find((entry) => entry.value === agentType);
+  if (match) return match.label;
+  if (agentType === "none") return "Shell";
+  return agentType || "Session";
+}
+
+export function defaultSessionTitle(agentType: string, ordinal: number): string {
+  const base = agentType === "none" ? "Shell" : agentLabel(agentType);
+  return `${base} ${Math.max(1, ordinal)}`;
+}

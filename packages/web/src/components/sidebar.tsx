@@ -14,7 +14,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { AGENT_TYPES, type AgentType } from "@/lib/constants";
+import { AGENT_TYPES, defaultSessionTitle, type AgentType } from "@/lib/constants";
 import {
   listVPS,
   listSessions,
@@ -45,6 +45,7 @@ interface SidebarProps {
   userEmail?: string;
   externalErrorMessage?: string;
   refreshSignal?: number;
+  selectedVpsIdHint?: string | null;
 }
 
 export function Sidebar({
@@ -61,12 +62,14 @@ export function Sidebar({
   userEmail,
   externalErrorMessage,
   refreshSignal = 0,
+  selectedVpsIdHint = null,
 }: SidebarProps) {
   const [vpsList, setVpsList] = useState<VPS[]>([]);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [loading, setLoading] = useState(false);
   const [creating, setCreating] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const [dismissedError, setDismissedError] = useState("");
   const [showAgentPicker, setShowAgentPicker] = useState(false);
   const [confirmAction, setConfirmAction] = useState<{
     title: string;
@@ -75,10 +78,15 @@ export function Sidebar({
     onConfirm: () => Promise<void> | void;
   } | null>(null);
   const activeSessionIdRef = useRef(activeSessionId);
+  const activeVps = vpsList.find((v) => v.id === activeVpsId);
 
   useEffect(() => {
     activeSessionIdRef.current = activeSessionId;
   }, [activeSessionId]);
+
+  useEffect(() => {
+    setDismissedError("");
+  }, [errorMessage, externalErrorMessage]);
 
   const setOperationError = useCallback((prefix: string, err: unknown) => {
     const detail = err instanceof Error ? err.message : "unexpected error";
@@ -90,13 +98,15 @@ export function Sidebar({
       const { vps } = await listVPS();
       setVpsList(vps);
       setErrorMessage("");
-      if (vps.length > 0 && !activeVpsId) {
+      if (selectedVpsIdHint && vps.some((row) => row.id === selectedVpsIdHint)) {
+        onSelectVps(selectedVpsIdHint);
+      } else if (vps.length > 0 && !activeVpsId) {
         onSelectVps(vps[0].id);
       }
     } catch (err) {
       setOperationError("Failed to load servers", err);
     }
-  }, [activeVpsId, onSelectVps, setOperationError]);
+  }, [activeVpsId, onSelectVps, selectedVpsIdHint, setOperationError]);
 
   const refreshSessions = useCallback(async () => {
     if (!activeVpsId) return;
@@ -121,18 +131,37 @@ export function Sidebar({
 
   useEffect(() => {
     void refreshVPS();
-  }, []);
+  }, [refreshVPS]);
 
   useEffect(() => {
     void refreshSessions();
   }, [activeVpsId, refreshSessions, refreshSignal]);
+
+  useEffect(() => {
+    if (refreshSignal === 0) return;
+    void refreshVPS();
+  }, [refreshSignal, refreshVPS]);
+
+  useEffect(() => {
+    if (
+      !vpsList.some(
+        (vps) => vps.status === "provisioning" || (vps.status === "active" && vps.gateway_connected === false),
+      )
+    ) {
+      return;
+    }
+    const timer = window.setInterval(() => {
+      void refreshVPS();
+    }, 5000);
+    return () => window.clearInterval(timer);
+  }, [refreshVPS, vpsList]);
 
   const handleCreateSession = useCallback(
     async (agentType: AgentType = "claude-code") => {
       if (!activeVpsId || creating) return;
       setCreating(true);
       try {
-        const title = `Session ${sessions.length + 1}`;
+        const title = defaultSessionTitle(agentType, sessions.length + 1);
         const res = await createSession(activeVpsId, {
           title,
           agent_type: agentType,
@@ -165,14 +194,15 @@ export function Sidebar({
 
   const handleEndSession = useCallback(
     (sessionId: string) => {
+      const session = sessions.find((entry) => entry.id === sessionId);
       setConfirmAction({
         title: "End session",
-        description: "This will terminate the session and any running processes.",
+        description: `This will terminate "${session?.title || sessionId}" and any running processes.`,
         destructive: true,
         onConfirm: () => doEndSession(sessionId),
       });
     },
-    [doEndSession],
+    [doEndSession, sessions],
   );
 
   const doPowerAction = useCallback(
@@ -192,18 +222,19 @@ export function Sidebar({
 
   const handlePowerAction = useCallback(
     (action: "off" | "on") => {
+      const serverName = activeVps?.label || activeVps?.id || "this server";
       if (action === "on") {
         doPowerAction("on");
         return;
       }
       setConfirmAction({
         title: "Power off server",
-        description: "This will shut down the server and disconnect all sessions.",
+        description: `This will shut down "${serverName}" and disconnect all sessions.`,
         destructive: true,
         onConfirm: () => doPowerAction("off"),
       });
     },
-    [doPowerAction],
+    [activeVps, doPowerAction],
   );
 
   const doDeleteVPS = useCallback(async () => {
@@ -221,11 +252,11 @@ export function Sidebar({
     if (!activeVpsId) return;
     setConfirmAction({
       title: "Destroy server",
-      description: "This will permanently destroy the server and all its data. This cannot be undone.",
+      description: `This will permanently destroy "${activeVps?.label || activeVps?.id || activeVpsId}" and all its data. This cannot be undone.`,
       destructive: true,
       onConfirm: doDeleteVPS,
     });
-  }, [activeVpsId, doDeleteVPS]);
+  }, [activeVps, activeVpsId, doDeleteVPS]);
 
   const handleRenameVps = useCallback(
     async (vpsId: string, label: string) => {
@@ -255,8 +286,8 @@ export function Sidebar({
     [activeVpsId, refreshSessions, onSessionRenamed, setOperationError],
   );
 
-  const activeVps = vpsList.find((v) => v.id === activeVpsId);
   const displayedError = externalErrorMessage || errorMessage;
+  const visibleError = displayedError && displayedError !== dismissedError ? displayedError : "";
 
   return (
     <aside
@@ -479,14 +510,22 @@ export function Sidebar({
                   creating={creating}
                 />
               )}
-            </div>
-          )}
 
-          {displayedError && (
-            <div className="px-3 py-2">
-              <p className="text-xs text-muted-foreground/80 rounded px-2 py-1.5 bg-accent/50">
-                {displayedError}
-              </p>
+              {visibleError && (
+                <div className="rounded-md border border-yellow-500/30 bg-yellow-500/10 px-3 py-2 text-xs text-yellow-900 dark:text-yellow-200">
+                  <div className="flex items-start justify-between gap-3">
+                    <span>{visibleError}</span>
+                    <button
+                      type="button"
+                      onClick={() => setDismissedError(visibleError)}
+                      className="shrink-0 rounded px-1 text-yellow-800/80 hover:bg-yellow-500/10 hover:text-yellow-950 dark:text-yellow-100/80 dark:hover:text-yellow-50"
+                      aria-label="Dismiss error"
+                    >
+                      ×
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>

@@ -398,6 +398,10 @@ ${STAGING_TERMINAL_SECTION}
       return prefix + "-" + Date.now() + "-" + Math.random().toString(36).slice(2, 8);
     }
 
+    function sleep(ms) {
+      return new Promise((resolve) => setTimeout(resolve, ms));
+    }
+
     function escapeHtml(value) {
       return String(value)
         .replaceAll("&", "&amp;")
@@ -414,6 +418,14 @@ ${STAGING_TERMINAL_SECTION}
       try { parsed = JSON.parse(text); } catch {}
       show({ status: res.status, body: parsed });
       return { res, body: parsed };
+    }
+
+    async function fetchJSON(path, init) {
+      const res = await fetch(path, { credentials: "include", ...init });
+      const text = await res.text();
+      let body = text;
+      try { body = JSON.parse(text); } catch {}
+      return { res, body };
     }
 
     function wsUrl(path) {
@@ -646,6 +658,47 @@ ${STAGING_TERMINAL_SECTION}
       return { res, body };
     }
 
+    async function pollGatewayUpdate(vpsId, version) {
+      const deadline = Date.now() + 45000;
+      let sawDisconnect = false;
+      while (Date.now() < deadline) {
+        await sleep(2000);
+        const { res, body } = await fetchJSON("/vps", { method: "GET" });
+        if (!res.ok || !body || !Array.isArray(body.vps)) continue;
+        vpsRows = body.vps;
+        renderVPSList(vpsRows);
+        renderVPSSelect(vpsRows);
+        const row = body.vps.find((entry) => entry && entry.id === vpsId);
+        if (!row) continue;
+        if (row.gateway_connected === false) {
+          sawDisconnect = true;
+        }
+        if (row.gateway_version === version && row.gateway_connected === true) {
+          show({
+            status: 200,
+            body: {
+              ok: true,
+              message: "gateway update completed",
+              vps_id: vpsId,
+              version: row.gateway_version,
+              saw_disconnect: sawDisconnect,
+            },
+          });
+          return true;
+        }
+      }
+      show({
+        status: 202,
+        body: {
+          ok: false,
+          message: "gateway update accepted but timed out while waiting for reconnect",
+          vps_id: vpsId,
+          target_version: version,
+        },
+      });
+      return false;
+    }
+
     function renderSessions(vpsId, sessionRows) {
       if (!Array.isArray(sessionRows) || sessionRows.length === 0) {
         sessionsTabs.innerHTML = "";
@@ -788,7 +841,11 @@ ${STAGING_TERMINAL_SECTION}
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ vps_id: vpsId, cmd: payload.body.cmd }),
       });
-      await listVPS();
+      if (result.res.ok && payload.body.cmd.version) {
+        await pollGatewayUpdate(vpsId, String(payload.body.cmd.version));
+      } else {
+        await listVPS();
+      }
       return result;
     }
 

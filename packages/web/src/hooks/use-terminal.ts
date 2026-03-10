@@ -116,6 +116,13 @@ export function createTerminalHandle(opts: UseTerminalOptions): TerminalHandle {
     }, 16);
   }
 
+  function scheduleInitialFits() {
+    scheduleFit();
+    window.setTimeout(scheduleFit, 80);
+    window.setTimeout(scheduleFit, 220);
+    window.setTimeout(scheduleFit, 500);
+  }
+
   // Arrow key handler: force application cursor sequences for curses apps
   term.attachCustomKeyEventHandler((event) => {
     if (event.type !== "keydown") return true;
@@ -143,7 +150,7 @@ export function createTerminalHandle(opts: UseTerminalOptions): TerminalHandle {
     ws.addEventListener("open", () => {
       if (ws !== socket) return;
       reconnectAttempts = 0;
-      scheduleFit();
+      scheduleInitialFits();
       if (interactive) {
         term.focus();
       }
@@ -215,6 +222,7 @@ export function createTerminalHandle(opts: UseTerminalOptions): TerminalHandle {
           else if (msg.cursor_visible === true) term.write("\x1b[?25h");
 
           awaitingInitialSnapshot = false;
+          scheduleFit();
           if (initialSnapshotTimer) {
             clearTimeout(initialSnapshotTimer);
             initialSnapshotTimer = null;
@@ -300,10 +308,9 @@ export function createTerminalHandle(opts: UseTerminalOptions): TerminalHandle {
   const handle: TerminalHandle = {
     mount(el: HTMLDivElement) {
       term.open(el);
-      scheduleFit();
-      setTimeout(scheduleFit, 120);
+      scheduleInitialFits();
       if (document.fonts?.ready) {
-        document.fonts.ready.then(() => scheduleFit()).catch(() => {});
+        document.fonts.ready.then(() => scheduleInitialFits()).catch(() => {});
       }
       window.addEventListener("resize", scheduleFit);
       resizeObserver = new ResizeObserver(() => scheduleFit());

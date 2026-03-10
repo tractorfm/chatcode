@@ -1,15 +1,18 @@
-import { useCallback, useMemo, useReducer, useState } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useState } from "react";
 import { Sidebar } from "@/components/sidebar";
 import { TerminalView } from "@/components/terminal-view";
 import { X, Plus, Terminal } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { createSession } from "@/lib/api";
+import { defaultSessionTitle } from "@/lib/constants";
 
 interface AppPageProps {
   userEmail?: string;
   onLogout: () => void;
   onNavigate: (page: "settings" | "status" | "onboarding") => void;
   overlayOpen?: boolean;
+  externalRefreshSignal?: number;
+  selectedVpsIdHint?: string | null;
 }
 
 interface OpenTab {
@@ -92,6 +95,8 @@ export function AppPage({
   onLogout,
   onNavigate,
   overlayOpen = false,
+  externalRefreshSignal = 0,
+  selectedVpsIdHint = null,
 }: AppPageProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [activeVpsId, setActiveVpsId] = useState<string | null>(null);
@@ -159,11 +164,13 @@ export function AppPage({
     if (!activeVpsId || emptyActionBusy) return;
     setEmptyActionBusy(true);
     try {
+      const nextOrdinal =
+        tabState.tabs.filter((tab) => tab.vpsId === activeVpsId).length + 1;
+      const title = defaultSessionTitle("claude-code", nextOrdinal);
       const res = await createSession(activeVpsId, {
-        title: `Session ${tabState.tabs.length + 1}`,
+        title,
         agent_type: "claude-code",
       });
-      const title = `Session ${tabState.tabs.length + 1}`;
       dispatchTab({
         type: "open",
         tab: {
@@ -179,12 +186,34 @@ export function AppPage({
     } finally {
       setEmptyActionBusy(false);
     }
-  }, [activeVpsId, emptyActionBusy, tabState.tabs.length]);
+  }, [activeVpsId, emptyActionBusy, tabState.tabs]);
+
+  const visibleTabs = useMemo(
+    () =>
+      tabState.tabs
+        .map((tab, index) => ({ tab, index }))
+        .filter(({ tab }) => !activeVpsId || tab.vpsId === activeVpsId),
+    [activeVpsId, tabState.tabs],
+  );
+
+  const effectiveActiveIndex = useMemo(() => {
+    if (visibleTabs.length === 0) return -1;
+    const activeVisible = visibleTabs.find(({ index }) => index === tabState.activeIndex);
+    return activeVisible ? activeVisible.index : visibleTabs[0].index;
+  }, [tabState.activeIndex, visibleTabs]);
 
   const activeTab = useMemo(
-    () => tabState.tabs[tabState.activeIndex] ?? null,
-    [tabState.activeIndex, tabState.tabs],
+    () => (effectiveActiveIndex >= 0 ? tabState.tabs[effectiveActiveIndex] ?? null : null),
+    [effectiveActiveIndex, tabState.tabs],
   );
+
+  const combinedRefreshSignal = sessionRefreshSignal + externalRefreshSignal;
+
+  useEffect(() => {
+    if (!selectedVpsIdHint) return;
+    setActiveVpsId(selectedVpsIdHint);
+    setSidebarErrorMessage("");
+  }, [selectedVpsIdHint]);
 
   return (
     <div className="h-screen flex overflow-hidden">
@@ -202,32 +231,33 @@ export function AppPage({
         onLogout={onLogout}
         userEmail={userEmail}
         externalErrorMessage={sidebarErrorMessage}
-        refreshSignal={sessionRefreshSignal}
+        refreshSignal={combinedRefreshSignal}
+        selectedVpsIdHint={selectedVpsIdHint}
       />
 
       {/* Main content */}
       <main className="flex-1 flex flex-col min-w-0">
         {/* Tab bar */}
-        {tabState.tabs.length > 0 && (
+        {visibleTabs.length > 0 && (
           <div className="flex items-center border-b border-border bg-card">
             <div className="flex-1 flex items-center overflow-x-auto">
-              {tabState.tabs.map((tab, i) => (
+              {visibleTabs.map(({ tab, index }) => (
                 <div
                   key={`${tab.vpsId}-${tab.sessionId}`}
                   className={cn(
                     "group flex items-center gap-1.5 px-3 py-2 text-sm border-r border-border cursor-pointer transition-colors min-w-0 max-w-[200px]",
-                    i === tabState.activeIndex
+                    index === effectiveActiveIndex
                       ? "bg-background text-foreground font-medium"
                       : "text-muted-foreground hover:text-foreground hover:bg-accent/50 font-normal",
                   )}
-                  onClick={() => dispatchTab({ type: "setActive", index: i })}
+                  onClick={() => dispatchTab({ type: "setActive", index })}
                 >
                   <Terminal className="h-3.5 w-3.5 shrink-0" />
                   <span className="truncate text-xs">{tab.title}</span>
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      handleCloseTab(i);
+                      handleCloseTab(index);
                     }}
                     className="ml-auto p-0.5 rounded opacity-0 group-hover:opacity-100 hover:bg-accent text-muted-foreground"
                   >
@@ -241,7 +271,7 @@ export function AppPage({
 
         {/* Terminal area */}
         <div className="flex-1 relative bg-[#111111] dark:bg-[#111111]">
-          {tabState.tabs.length === 0 ? (
+          {visibleTabs.length === 0 ? (
             <EmptyState
               onNavigate={onNavigate}
               selectedVpsId={activeVpsId}
@@ -254,7 +284,7 @@ export function AppPage({
                 key={`${tab.vpsId}-${tab.sessionId}`}
                 vpsId={tab.vpsId}
                 sessionId={tab.sessionId}
-                active={i === tabState.activeIndex}
+                active={i === effectiveActiveIndex}
                 suspended={overlayOpen}
                 onSessionEnded={handleSessionEnded}
                 onSessionStateRefreshNeeded={handleSessionStateRefreshNeeded}

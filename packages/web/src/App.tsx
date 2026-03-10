@@ -11,6 +11,8 @@ type Overlay = "settings" | "status" | "onboarding" | null;
 export function App() {
   const auth = useAuth();
   const [overlay, setOverlay] = useState<Overlay>(null);
+  const [sidebarRefreshSignal, setSidebarRefreshSignal] = useState(0);
+  const [selectedVpsIdHint, setSelectedVpsIdHint] = useState<string | null>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
 
   const handleNavigate = useCallback((target: "settings" | "status" | "onboarding") => {
@@ -19,8 +21,11 @@ export function App() {
 
   const handleCloseOverlay = useCallback(() => setOverlay(null), []);
 
-  const handleOnboardingComplete = useCallback((_vpsId: string) => {
+  const handleOnboardingComplete = useCallback((vpsId: string) => {
+    setSelectedVpsIdHint(vpsId);
+    setSidebarRefreshSignal((value) => value + 1);
     setOverlay(null);
+    window.setTimeout(() => setSelectedVpsIdHint(null), 0);
   }, []);
 
   useEffect(() => {
@@ -52,6 +57,8 @@ export function App() {
         onLogout={auth.logout}
         onNavigate={handleNavigate}
         overlayOpen={overlay !== null}
+        externalRefreshSignal={sidebarRefreshSignal}
+        selectedVpsIdHint={selectedVpsIdHint}
       />
       {overlay && (
         <div
