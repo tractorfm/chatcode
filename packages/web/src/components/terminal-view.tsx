@@ -7,6 +7,7 @@ interface TerminalViewProps {
   vpsId: string;
   sessionId: string;
   active: boolean;
+  suspended?: boolean;
   onSessionEnded?: (sessionId: string) => void;
   onSessionError?: (sessionId: string, error: string) => void;
 }
@@ -15,6 +16,7 @@ export const TerminalView = memo(function TerminalView({
   vpsId,
   sessionId,
   active,
+  suspended = false,
   onSessionEnded,
   onSessionError,
 }: TerminalViewProps) {
@@ -22,20 +24,26 @@ export const TerminalView = memo(function TerminalView({
   const terminalBackground =
     terminalThemes[themeName]?.background ?? terminalThemes.default.background ?? "#111111";
   const opts = useMemo(
-    () => ({ vpsId, sessionId, onSessionEnded, onSessionError }),
-    [vpsId, sessionId, onSessionEnded, onSessionError],
+    () => ({
+      vpsId,
+      sessionId,
+      interactive: active && !suspended,
+      onSessionEnded,
+      onSessionError,
+    }),
+    [vpsId, sessionId, active, suspended, onSessionEnded, onSessionError],
   );
 
   const { containerRef, handleRef } = useTerminalRef(opts);
 
   useEffect(() => {
-    if (!active || !handleRef.current) return;
+    if (!active || suspended || !handleRef.current) return;
     const timer = setTimeout(() => {
       handleRef.current?.fit();
       handleRef.current?.focus();
     }, 0);
     return () => clearTimeout(timer);
-  }, [active, sessionId, vpsId, handleRef]);
+  }, [active, suspended, sessionId, vpsId, handleRef]);
 
   return (
     <div

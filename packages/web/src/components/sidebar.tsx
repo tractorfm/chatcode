@@ -70,7 +70,7 @@ export function Sidebar({
     title: string;
     description: string;
     destructive?: boolean;
-    onConfirm: () => void;
+    onConfirm: () => Promise<void> | void;
   } | null>(null);
   const activeSessionIdRef = useRef(activeSessionId);
 
@@ -518,8 +518,8 @@ export function Sidebar({
           title={confirmAction.title}
           description={confirmAction.description}
           destructive={confirmAction.destructive}
-          onConfirm={() => {
-            confirmAction.onConfirm();
+          onConfirm={async () => {
+            await confirmAction.onConfirm();
             setConfirmAction(null);
           }}
           onCancel={() => setConfirmAction(null)}

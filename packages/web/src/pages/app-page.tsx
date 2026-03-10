@@ -9,6 +9,7 @@ interface AppPageProps {
   userEmail?: string;
   onLogout: () => void;
   onNavigate: (page: "settings" | "status" | "onboarding") => void;
+  overlayOpen?: boolean;
 }
 
 interface OpenTab {
@@ -86,7 +87,12 @@ function tabReducer(state: TabState, action: TabAction): TabState {
   }
 }
 
-export function AppPage({ userEmail, onLogout, onNavigate }: AppPageProps) {
+export function AppPage({
+  userEmail,
+  onLogout,
+  onNavigate,
+  overlayOpen = false,
+}: AppPageProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [activeVpsId, setActiveVpsId] = useState<string | null>(null);
   const [sidebarErrorMessage, setSidebarErrorMessage] = useState("");
@@ -243,6 +249,7 @@ export function AppPage({ userEmail, onLogout, onNavigate }: AppPageProps) {
                 vpsId={tab.vpsId}
                 sessionId={tab.sessionId}
                 active={i === tabState.activeIndex}
+                suspended={overlayOpen}
                 onSessionEnded={handleSessionEnded}
               />
             ))

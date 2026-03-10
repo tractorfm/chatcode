@@ -9,6 +9,7 @@ import type { ITheme } from "@xterm/xterm";
 export interface UseTerminalOptions {
   vpsId: string;
   sessionId: string;
+  interactive?: boolean;
   onSessionEnded?: (sessionId: string) => void;
   onSessionError?: (sessionId: string, error: string) => void;
 }
@@ -24,6 +25,8 @@ export interface TerminalHandle {
   dispose: () => void;
   /** Focus terminal. */
   focus: () => void;
+  /** Enable or suppress terminal focus/input affordances. */
+  setInteractive: (interactive: boolean) => void;
 }
 
 export function createTerminalHandle(opts: UseTerminalOptions): TerminalHandle {
@@ -56,6 +59,7 @@ export function createTerminalHandle(opts: UseTerminalOptions): TerminalHandle {
   let reconnectAttempts = 0;
   let sessionEnded = false;
   let disposed = false;
+  let interactive = opts.interactive !== false;
 
   function sendJSON(msg: Record<string, unknown>) {
     if (!socket || socket.readyState !== WebSocket.OPEN) return;
@@ -133,7 +137,9 @@ export function createTerminalHandle(opts: UseTerminalOptions): TerminalHandle {
       if (ws !== socket) return;
       reconnectAttempts = 0;
       scheduleFit();
-      term.focus();
+      if (interactive) {
+        term.focus();
+      }
 
       inputDisposable?.dispose();
       inputDisposable = term.onData((data) => sendInput(data));
@@ -299,6 +305,12 @@ export function createTerminalHandle(opts: UseTerminalOptions): TerminalHandle {
     setTheme(theme: ITheme) {
       term.options.theme = theme;
     },
+    setInteractive(nextInteractive: boolean) {
+      interactive = nextInteractive;
+      if (!interactive) {
+        term.blur();
+      }
+    },
     dispose() {
       disposed = true;
       inputDisposable?.dispose();
@@ -318,7 +330,9 @@ export function createTerminalHandle(opts: UseTerminalOptions): TerminalHandle {
       term.dispose();
     },
     focus() {
-      term.focus();
+      if (interactive) {
+        term.focus();
+      }
     },
   };
 
@@ -345,6 +359,10 @@ export function useTerminalRef(opts: UseTerminalOptions | null) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [opts?.vpsId, opts?.sessionId],
   );
+
+  useEffect(() => {
+    handleRef.current?.setInteractive(opts?.interactive !== false);
+  }, [opts?.interactive]);
 
   useEffect(() => {
     return () => {
