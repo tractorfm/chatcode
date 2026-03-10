@@ -26,7 +26,8 @@ const (
 	backoffResetAfter    = 30 * time.Second
 	dialTimeout          = 15 * time.Second
 	pingInterval         = 20 * time.Second
-	pingTimeout          = 10 * time.Second
+	pingTimeout          = 15 * time.Second
+	maxPingFailures      = 2
 )
 
 // TextHandler is called for every incoming JSON text frame.
@@ -35,6 +36,11 @@ type TextHandler func(ctx context.Context, msg json.RawMessage)
 
 // BinaryHandler is called for every incoming binary frame.
 type BinaryHandler func(ctx context.Context, data []byte)
+
+type pingConn interface {
+	Ping(ctx context.Context) error
+	Close(code websocket.StatusCode, reason string) error
+}
 
 // Target identifies which control-plane endpoint this client should dial.
 type Target uint8
@@ -181,9 +187,10 @@ func (c *Client) readLoop(ctx context.Context, conn *websocket.Conn) error {
 	}
 }
 
-func (c *Client) pingLoop(ctx context.Context, conn *websocket.Conn) {
+func (c *Client) pingLoop(ctx context.Context, conn pingConn) {
 	t := time.NewTicker(pingInterval)
 	defer t.Stop()
+	failures := 0
 
 	for {
 		select {
@@ -194,10 +201,15 @@ func (c *Client) pingLoop(ctx context.Context, conn *websocket.Conn) {
 			err := conn.Ping(pingCtx)
 			cancel()
 			if err != nil {
-				c.log.Warn("ws ping failed", "err", err)
+				failures++
+				c.log.Warn("ws ping failed", "err", err, "consecutive_failures", failures)
+				if failures < maxPingFailures {
+					continue
+				}
 				_ = conn.Close(websocket.StatusGoingAway, "ping failed")
 				return
 			}
+			failures = 0
 		}
 	}
 }

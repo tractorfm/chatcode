@@ -3,6 +3,7 @@ package ws
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -323,5 +324,93 @@ func TestDefaultDialURLSelfHost(t *testing.T) {
 	client := NewClient("gw-test", "token", TargetSelfHost, nil, nil, slog.Default())
 	if got, want := client.defaultDialURL(), "wss://cp.selfhost.example/gw/connect"; got != want {
 		t.Fatalf("defaultDialURL() for self-host = %q, want %q", got, want)
+	}
+}
+
+type stubPingConn struct {
+	mu        sync.Mutex
+	pingErrs  []error
+	pingCalls int
+	closed    bool
+}
+
+func (s *stubPingConn) Ping(ctx context.Context) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.pingCalls++
+	if len(s.pingErrs) == 0 {
+		return nil
+	}
+	err := s.pingErrs[0]
+	s.pingErrs = s.pingErrs[1:]
+	return err
+}
+
+func (s *stubPingConn) Close(code websocket.StatusCode, reason string) error {
+	s.mu.Lock()
+	s.closed = true
+	s.mu.Unlock()
+	return nil
+}
+
+func (s *stubPingConn) snapshot() (pingCalls int, closed bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.pingCalls, s.closed
+}
+
+func TestPingLoopToleratesSingleFailure(t *testing.T) {
+	conn := &stubPingConn{
+		pingErrs: []error{errors.New("timeout"), nil},
+	}
+	client := NewClient("gw-test", "token", TargetProd, nil, nil, slog.Default())
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		client.pingLoop(ctx, conn)
+	}()
+
+	time.Sleep(pingInterval + 250*time.Millisecond)
+	time.Sleep(pingInterval + 250*time.Millisecond)
+	cancel()
+	<-done
+
+	pingCalls, closed := conn.snapshot()
+	if pingCalls < 2 {
+		t.Fatalf("expected at least 2 pings, got %d", pingCalls)
+	}
+	if closed {
+		t.Fatal("expected ping loop to tolerate a single failure without closing the connection")
+	}
+}
+
+func TestPingLoopClosesAfterConsecutiveFailures(t *testing.T) {
+	conn := &stubPingConn{
+		pingErrs: []error{errors.New("timeout"), errors.New("timeout")},
+	}
+	client := NewClient("gw-test", "token", TargetProd, nil, nil, slog.Default())
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		client.pingLoop(ctx, conn)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After((2 * pingInterval) + time.Second):
+		t.Fatal("timed out waiting for ping loop to close connection after consecutive failures")
+	}
+
+	pingCalls, closed := conn.snapshot()
+	if pingCalls < maxPingFailures {
+		t.Fatalf("expected at least %d pings, got %d", maxPingFailures, pingCalls)
+	}
+	if !closed {
+		t.Fatal("expected ping loop to close the connection after consecutive failures")
 	}
 }
