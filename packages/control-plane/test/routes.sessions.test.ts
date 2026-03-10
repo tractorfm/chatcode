@@ -211,6 +211,51 @@ describe("routes/sessions", () => {
     expect(mocks.updateSessionStatus).toHaveBeenCalledWith(env.DB, "ses-test-1", "error");
   });
 
+  it("retries session.create once after transient gateway reconnect", async () => {
+    const { env, stubFetch } = makeEnv([
+      new Response(
+        JSON.stringify({
+          type: "agents.status",
+          schema_version: "1",
+          request_id: "agents-1",
+          agents: [{ agent: "claude-code", binary: "claude", installed: true, version: "1.0.0" }],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+      new Response(JSON.stringify({ error: "gateway not connected" }), {
+        status: 503,
+        headers: { "Content-Type": "application/json" },
+      }),
+      new Response(JSON.stringify({ connected: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+      new Response(JSON.stringify({ type: "ack", schema_version: "1", request_id: "ses-test-1", ok: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    ]);
+
+    const req = new Request("https://cp.example.test/vps/vps-1/sessions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: "Retry Session",
+        agent_type: "claude-code",
+        workdir: "/home/vibe",
+      }),
+    });
+
+    const res = await handleSessionCreate(req, env, { userId: "usr-1" }, "vps-1");
+
+    expect(res.status).toBe(201);
+    await expect(res.json()).resolves.toMatchObject({
+      session_id: "ses-test-1",
+      status: "starting",
+    });
+    expect(stubFetch).toHaveBeenCalledTimes(4);
+  });
+
   it("returns 409 when selected managed agent is not installed", async () => {
     const { env } = makeEnv(
       new Response(

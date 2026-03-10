@@ -15,6 +15,8 @@ import {
 import { newSessionId } from "../lib/ids.js";
 
 const GATEWAY_LAST_SEEN_FRESH_SECONDS = 90;
+const SESSION_CREATE_RETRY_WINDOW_MS = 4_000;
+const SESSION_CREATE_RETRY_INTERVAL_MS = 250;
 const MANAGED_AGENT_TYPES = new Set(["claude-code", "codex", "gemini", "opencode"]);
 
 interface GatewayAgentStatus {
@@ -157,13 +159,7 @@ export async function handleSessionCreate(
     agent: agentType,
   };
 
-  const cmdResp = await stub.fetch(
-    new Request("http://do/cmd", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(cmd),
-    }),
-  );
+  const cmdResp = await sendSessionCreateWithRetry(env, gateway.id, stub, cmd);
 
   if (!cmdResp.ok) {
     // Mark session as failed
@@ -174,6 +170,12 @@ export async function handleSessionCreate(
     if (error === "gateway not connected") {
       await updateGatewayConnected(env.DB, gateway.id, false);
       return jsonResponse({ error }, 503);
+    }
+    if (error.includes("already exists")) {
+      return jsonResponse(
+        { session_id: sessionId, status: "starting" },
+        201,
+      );
     }
 
     return jsonResponse({ error }, cmdResp.status === 504 ? 504 : 502);
@@ -407,6 +409,61 @@ async function fetchGatewayAgents(
     return null;
   }
   return payload.agents;
+}
+
+async function sendSessionCreateWithRetry(
+  env: Env,
+  gatewayId: string,
+  stub: DurableObjectStub,
+  cmd: Record<string, unknown>,
+): Promise<Response> {
+  const firstResp = await sendGatewayCommand(stub, cmd);
+  if (firstResp.ok) return firstResp;
+
+  const firstErr = await cloneError(firstResp);
+  if (firstErr !== "gateway not connected") {
+    return firstResp;
+  }
+
+  const recovered = await waitForGatewayReconnect(env, gatewayId);
+  if (!recovered) {
+    return firstResp;
+  }
+
+  return sendGatewayCommand(stub, cmd);
+}
+
+async function sendGatewayCommand(
+  stub: DurableObjectStub,
+  cmd: Record<string, unknown>,
+): Promise<Response> {
+  return stub.fetch(
+    new Request("http://do/cmd", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(cmd),
+    }),
+  );
+}
+
+async function cloneError(response: Response): Promise<string | null> {
+  const payload = await response.clone().json().catch(() => null) as { error?: string } | null;
+  return payload?.error ?? null;
+}
+
+async function waitForGatewayReconnect(env: Env, gatewayId: string): Promise<boolean> {
+  const deadline = Date.now() + SESSION_CREATE_RETRY_WINDOW_MS;
+  while (Date.now() < deadline) {
+    if (await isGatewayLive(env, gatewayId, null)) {
+      return true;
+    }
+    await sleep(SESSION_CREATE_RETRY_INTERVAL_MS);
+  }
+  return false;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function newRequestId(prefix: string): string {
