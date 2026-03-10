@@ -6,20 +6,20 @@ import { OnboardingPage } from "@/pages/onboarding-page";
 import { SettingsPage } from "@/pages/settings-page";
 import { StatusPage } from "@/pages/status-page";
 
-type Page = "app" | "settings" | "status" | "onboarding";
+type Overlay = "settings" | "status" | "onboarding" | null;
 
 export function App() {
   const auth = useAuth();
-  const [page, setPage] = useState<Page>("app");
+  const [overlay, setOverlay] = useState<Overlay>(null);
 
-  const handleNavigate = useCallback((target: Page | "settings" | "status" | "onboarding") => {
-    setPage(target as Page);
+  const handleNavigate = useCallback((target: "settings" | "status" | "onboarding") => {
+    setOverlay(target);
   }, []);
 
-  const handleBack = useCallback(() => setPage("app"), []);
+  const handleCloseOverlay = useCallback(() => setOverlay(null), []);
 
   const handleOnboardingComplete = useCallback((_vpsId: string) => {
-    setPage("app");
+    setOverlay(null);
   }, []);
 
   if (auth.status === "loading") {
@@ -36,31 +36,33 @@ export function App() {
 
   const userEmail = auth.user.email;
 
-  switch (page) {
-    case "onboarding":
-      return (
-        <OnboardingPage
-          onBack={handleBack}
-          onComplete={handleOnboardingComplete}
-        />
-      );
-    case "settings":
-      return (
-        <SettingsPage
-          userEmail={userEmail}
-          onBack={handleBack}
-          onLogout={auth.logout}
-        />
-      );
-    case "status":
-      return <StatusPage onBack={handleBack} />;
-    default:
-      return (
-        <AppPage
-          userEmail={userEmail}
-          onLogout={auth.logout}
-          onNavigate={handleNavigate}
-        />
-      );
-  }
+  return (
+    <>
+      <AppPage
+        userEmail={userEmail}
+        onLogout={auth.logout}
+        onNavigate={handleNavigate}
+      />
+      {overlay && (
+        <div className="fixed inset-0 z-50 bg-background overflow-y-auto">
+          {overlay === "onboarding" && (
+            <OnboardingPage
+              onBack={handleCloseOverlay}
+              onComplete={handleOnboardingComplete}
+            />
+          )}
+          {overlay === "settings" && (
+            <SettingsPage
+              userEmail={userEmail}
+              onBack={handleCloseOverlay}
+              onLogout={auth.logout}
+            />
+          )}
+          {overlay === "status" && (
+            <StatusPage onBack={handleCloseOverlay} />
+          )}
+        </div>
+      )}
+    </>
+  );
 }

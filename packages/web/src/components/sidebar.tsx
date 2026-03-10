@@ -11,6 +11,7 @@ import {
   Activity,
   Circle,
   LogOut,
+  Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AGENT_TYPES, type AgentType } from "@/lib/constants";
@@ -25,6 +26,7 @@ import {
   type VPS,
   type Session,
 } from "@/lib/api";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 
 interface SidebarProps {
   collapsed: boolean;
@@ -58,6 +60,13 @@ export function Sidebar({
   const [loading, setLoading] = useState(false);
   const [creating, setCreating] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const [showAgentPicker, setShowAgentPicker] = useState(false);
+  const [confirmAction, setConfirmAction] = useState<{
+    title: string;
+    description: string;
+    destructive?: boolean;
+    onConfirm: () => void;
+  } | null>(null);
   const activeSessionIdRef = useRef(activeSessionId);
 
   useEffect(() => {
@@ -133,7 +142,7 @@ export function Sidebar({
     [activeVpsId, creating, sessions.length, refreshSessions, onNewSession, setOperationError],
   );
 
-  const handleEndSession = useCallback(
+  const doEndSession = useCallback(
     async (sessionId: string) => {
       if (!activeVpsId) return;
       try {
@@ -147,7 +156,19 @@ export function Sidebar({
     [activeVpsId, refreshSessions, setOperationError],
   );
 
-  const handlePowerAction = useCallback(
+  const handleEndSession = useCallback(
+    (sessionId: string) => {
+      setConfirmAction({
+        title: "End session",
+        description: "This will terminate the session and any running processes.",
+        destructive: true,
+        onConfirm: () => doEndSession(sessionId),
+      });
+    },
+    [doEndSession],
+  );
+
+  const doPowerAction = useCallback(
     async (action: "off" | "on") => {
       if (!activeVpsId) return;
       try {
@@ -162,9 +183,24 @@ export function Sidebar({
     [activeVpsId, refreshVPS, setOperationError],
   );
 
-  const handleDeleteVPS = useCallback(async () => {
+  const handlePowerAction = useCallback(
+    (action: "off" | "on") => {
+      if (action === "on") {
+        doPowerAction("on");
+        return;
+      }
+      setConfirmAction({
+        title: "Power off server",
+        description: "This will shut down the server and disconnect all sessions.",
+        destructive: true,
+        onConfirm: () => doPowerAction("off"),
+      });
+    },
+    [doPowerAction],
+  );
+
+  const doDeleteVPS = useCallback(async () => {
     if (!activeVpsId) return;
-    if (!confirm("Destroy this VPS? This cannot be undone.")) return;
     try {
       await deleteVPS(activeVpsId);
       await refreshVPS();
@@ -173,6 +209,16 @@ export function Sidebar({
       setOperationError("Failed to destroy VPS", err);
     }
   }, [activeVpsId, refreshVPS, setOperationError]);
+
+  const handleDeleteVPS = useCallback(() => {
+    if (!activeVpsId) return;
+    setConfirmAction({
+      title: "Destroy server",
+      description: "This will permanently destroy the server and all its data. This cannot be undone.",
+      destructive: true,
+      onConfirm: doDeleteVPS,
+    });
+  }, [activeVpsId, doDeleteVPS]);
 
   const activeVps = vpsList.find((v) => v.id === activeVpsId);
   const displayedError = externalErrorMessage || errorMessage;
@@ -297,15 +343,37 @@ export function Sidebar({
                 <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
                   Sessions
                 </span>
-                <button
-                  data-testid="create-session-button"
-                  onClick={() => handleCreateSession("claude-code")}
-                  disabled={creating}
-                  className="p-0.5 rounded hover:bg-accent text-muted-foreground disabled:opacity-50"
-                  title="New session"
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                </button>
+                <div className="relative">
+                  <button
+                    data-testid="create-session-button"
+                    onClick={() => setShowAgentPicker((p) => !p)}
+                    disabled={creating}
+                    className="p-0.5 rounded hover:bg-accent text-muted-foreground disabled:opacity-50"
+                    title="New session"
+                  >
+                    {creating ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Plus className="h-3.5 w-3.5" />
+                    )}
+                  </button>
+                  {showAgentPicker && !creating && (
+                    <div className="absolute right-0 top-full mt-1 z-50 w-44 rounded-md border border-border bg-card shadow-lg py-1">
+                      {AGENT_TYPES.map(({ value, label }) => (
+                        <button
+                          key={value}
+                          onClick={() => {
+                            setShowAgentPicker(false);
+                            handleCreateSession(value);
+                          }}
+                          className="w-full text-left px-3 py-1.5 text-xs text-foreground hover:bg-accent transition-colors"
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
 
               {loading && sessions.length === 0 && (
@@ -405,6 +473,26 @@ export function Sidebar({
             </span>
           </div>
         </div>
+      )}
+      {confirmAction && (
+        <ConfirmDialog
+          title={confirmAction.title}
+          description={confirmAction.description}
+          destructive={confirmAction.destructive}
+          onConfirm={() => {
+            confirmAction.onConfirm();
+            setConfirmAction(null);
+          }}
+          onCancel={() => setConfirmAction(null)}
+        />
+      )}
+
+      {/* Close agent picker when clicking outside */}
+      {showAgentPicker && (
+        <div
+          className="fixed inset-0 z-40"
+          onClick={() => setShowAgentPicker(false)}
+        />
       )}
     </aside>
   );
