@@ -23,10 +23,13 @@ import {
   deleteVPS,
   powerOffVPS,
   powerOnVPS,
+  updateVPS,
+  updateSession,
   type VPS,
   type Session,
 } from "@/lib/api";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { InlineEdit } from "@/components/inline-edit";
 
 interface SidebarProps {
   collapsed: boolean;
@@ -36,6 +39,7 @@ interface SidebarProps {
   onSelectVps: (vpsId: string) => void;
   onSelectSession: (vpsId: string, sessionId: string, title: string) => void;
   onNewSession: (vpsId: string, sessionId: string, title: string) => void;
+  onSessionRenamed: (sessionId: string, title: string) => void;
   onNavigate: (page: "settings" | "status" | "onboarding") => void;
   onLogout: () => void;
   userEmail?: string;
@@ -50,6 +54,7 @@ export function Sidebar({
   onSelectVps,
   onSelectSession,
   onNewSession,
+  onSessionRenamed,
   onNavigate,
   onLogout,
   userEmail,
@@ -220,6 +225,32 @@ export function Sidebar({
     });
   }, [activeVpsId, doDeleteVPS]);
 
+  const handleRenameVps = useCallback(
+    async (vpsId: string, label: string) => {
+      try {
+        await updateVPS(vpsId, { label });
+        await refreshVPS();
+      } catch (err) {
+        setOperationError("Failed to rename server", err);
+      }
+    },
+    [refreshVPS, setOperationError],
+  );
+
+  const handleRenameSession = useCallback(
+    async (sessionId: string, title: string) => {
+      if (!activeVpsId) return;
+      try {
+        await updateSession(activeVpsId, sessionId, { title });
+        onSessionRenamed(sessionId, title);
+        await refreshSessions();
+      } catch (err) {
+        setOperationError("Failed to rename session", err);
+      }
+    },
+    [activeVpsId, refreshSessions, onSessionRenamed, setOperationError],
+  );
+
   const activeVps = vpsList.find((v) => v.id === activeVpsId);
   const displayedError = externalErrorMessage || errorMessage;
 
@@ -277,21 +308,24 @@ export function Sidebar({
             )}
 
             {vpsList.map((vps) => (
-              <button
+              <div
                 key={vps.id}
                 data-testid={`vps-item-${vps.id}`}
                 onClick={() => onSelectVps(vps.id)}
                 className={cn(
-                  "w-full text-left p-2 rounded-md text-sm transition-colors flex items-center gap-2",
+                  "w-full text-left p-2 rounded-md text-sm transition-colors flex items-center gap-2 cursor-pointer",
                   vps.id === activeVpsId
                     ? "bg-accent text-accent-foreground font-medium"
                     : "hover:bg-accent/50 text-foreground font-normal",
                 )}
               >
                 <Server className="h-3.5 w-3.5 shrink-0" />
-                <span className="truncate">
-                  {vps.label || vps.region || vps.id}
-                </span>
+                <InlineEdit
+                  value={vps.label || vps.region || vps.id}
+                  onSave={(label) => handleRenameVps(vps.id, label)}
+                  maxLength={64}
+                  className="flex-1 min-w-0"
+                />
                 <Circle
                   className={cn(
                     "h-2 w-2 ml-auto shrink-0 fill-current",
@@ -302,7 +336,7 @@ export function Sidebar({
                         : "text-muted-foreground",
                   )}
                 />
-              </button>
+              </div>
             ))}
           </div>
 
@@ -396,7 +430,12 @@ export function Sidebar({
                     className="flex items-center gap-2 flex-1 min-w-0 text-left"
                   >
                     <Terminal className="h-3.5 w-3.5 shrink-0" />
-                    <span className="truncate">{session.title}</span>
+                    <InlineEdit
+                      value={session.title}
+                      onSave={(title) => handleRenameSession(session.id, title)}
+                      maxLength={80}
+                      className="flex-1 min-w-0"
+                    />
                   </button>
                   <button
                     onClick={(e) => {

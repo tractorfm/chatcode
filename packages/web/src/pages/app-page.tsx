@@ -26,7 +26,8 @@ type TabAction =
   | { type: "open"; tab: OpenTab }
   | { type: "close"; index: number }
   | { type: "setActive"; index: number }
-  | { type: "markEnded"; sessionId: string };
+  | { type: "markEnded"; sessionId: string }
+  | { type: "rename"; sessionId: string; title: string };
 
 function tabReducer(state: TabState, action: TabAction): TabState {
   switch (action.type) {
@@ -71,6 +72,13 @@ function tabReducer(state: TabState, action: TabAction): TabState {
           t.sessionId === action.sessionId && !t.title.endsWith(" (ended)")
             ? { ...t, title: `${t.title} (ended)` }
             : t,
+        ),
+      };
+    case "rename":
+      return {
+        ...state,
+        tabs: state.tabs.map((t) =>
+          t.sessionId === action.sessionId ? { ...t, title: action.title } : t,
         ),
       };
     default:
@@ -132,6 +140,10 @@ export function AppPage({ userEmail, onLogout, onNavigate }: AppPageProps) {
     dispatchTab({ type: "markEnded", sessionId });
   }, []);
 
+  const handleSessionRenamed = useCallback((sessionId: string, title: string) => {
+    dispatchTab({ type: "rename", sessionId, title });
+  }, []);
+
   const handleCreateSessionFromEmpty = useCallback(async () => {
     if (!activeVpsId || emptyActionBusy) return;
     setEmptyActionBusy(true);
@@ -174,6 +186,7 @@ export function AppPage({ userEmail, onLogout, onNavigate }: AppPageProps) {
         onSelectVps={handleSelectVps}
         onSelectSession={handleSelectSession}
         onNewSession={handleNewSession}
+        onSessionRenamed={handleSessionRenamed}
         onNavigate={onNavigate}
         onLogout={onLogout}
         userEmail={userEmail}
