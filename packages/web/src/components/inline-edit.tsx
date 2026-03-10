@@ -10,6 +10,8 @@ interface InlineEditProps {
   maxLength?: number;
   placeholder?: string;
   allowEmpty?: boolean;
+  editable?: boolean;
+  editMode?: "single" | "double";
 }
 
 export function InlineEdit({
@@ -20,6 +22,8 @@ export function InlineEdit({
   maxLength = 80,
   placeholder,
   allowEmpty = false,
+  editable = true,
+  editMode = "double",
 }: InlineEditProps) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
@@ -90,14 +94,23 @@ export function InlineEdit({
   return (
     <span
       className={cn("group/edit inline-flex items-center gap-1 min-w-0", className)}
+      onClick={(e) => {
+        if (!editable || editMode !== "single") return;
+        e.stopPropagation();
+        e.preventDefault();
+        setEditing(true);
+      }}
       onDoubleClick={(e) => {
+        if (!editable || editMode !== "double") return;
         e.stopPropagation();
         e.preventDefault();
         setEditing(true);
       }}
     >
       <span className="truncate">{value}</span>
-      <Pencil className="h-2.5 w-2.5 shrink-0 opacity-0 group-hover/edit:opacity-40 transition-opacity" />
+      {editable ? (
+        <Pencil className="h-2.5 w-2.5 shrink-0 opacity-0 group-hover/edit:opacity-40 transition-opacity" />
+      ) : null}
     </span>
   );
 }

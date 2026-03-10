@@ -103,6 +103,15 @@ describe("corsHeaders", () => {
     expect(headers["Access-Control-Allow-Origin"]).toBe("https://two.example.com");
     expect(headers["Access-Control-Allow-Credentials"]).toBe("true");
   });
+
+  it("advertises PATCH in allowed methods", () => {
+    const env = makeEnv({ APP_ENV: "staging" });
+    const request = new Request("https://cp.staging.chatcode.dev/vps/vps-1", {
+      headers: { Origin: "https://app.staging.chatcode.dev" },
+    });
+    const headers = corsHeaders(request, env);
+    expect(headers["Access-Control-Allow-Methods"]).toContain("PATCH");
+  });
 });
 
 describe("withCORS", () => {

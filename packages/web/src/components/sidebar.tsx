@@ -335,6 +335,8 @@ export function Sidebar({
                   onSave={(label) => handleRenameVps(vps.id, label)}
                   maxLength={64}
                   allowEmpty
+                  editable={vps.id === activeVpsId}
+                  editMode="single"
                   className="flex-1 min-w-0"
                 />
                 <Circle
@@ -451,6 +453,8 @@ export function Sidebar({
                       value={session.title}
                       onSave={(title) => handleRenameSession(session.id, title)}
                       maxLength={80}
+                      editable={session.id === activeSessionId}
+                      editMode="single"
                       className="flex-1 min-w-0"
                     />
                   </div>

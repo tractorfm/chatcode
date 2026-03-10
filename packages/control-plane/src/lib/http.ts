@@ -55,7 +55,7 @@ export function withCORS(response: Response, request: Request, env: Env): Respon
 
 export function corsHeaders(request: Request, env: Env): Record<string, string> {
   const headers: Record<string, string> = {
-    "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+    "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Dev-User, X-Dev-Secret",
     "Access-Control-Max-Age": "86400",
     Vary: "Origin",
