@@ -191,8 +191,17 @@ export class GatewayHub {
     }
   }
 
-  webSocketClose(ws: WebSocket): void {
+  webSocketClose(ws: WebSocket, code?: number, reason?: string, wasClean?: boolean): void {
     const meta = this.readAttachment(ws);
+    console.warn("GatewayHub websocket closed", {
+      role: meta?.role ?? "unknown",
+      sessionId: meta?.sessionId ?? null,
+      gatewayId: meta?.gatewayId ?? meta?.expectedGatewayId ?? this.gatewayId,
+      vpsId: meta?.vpsId ?? this.vpsId,
+      code: code ?? null,
+      reason: reason ?? "",
+      wasClean: wasClean ?? null,
+    });
     if (meta?.role === "gateway") {
       void this.onGatewayClose(ws);
       return;
@@ -208,7 +217,18 @@ export class GatewayHub {
     }
   }
 
-  webSocketError(ws: WebSocket): void {
+  webSocketError(ws: WebSocket, error?: unknown): void {
+    const meta = this.readAttachment(ws);
+    console.warn("GatewayHub websocket error", {
+      role: meta?.role ?? "unknown",
+      sessionId: meta?.sessionId ?? null,
+      gatewayId: meta?.gatewayId ?? meta?.expectedGatewayId ?? this.gatewayId,
+      vpsId: meta?.vpsId ?? this.vpsId,
+      error:
+        error instanceof Error
+          ? { name: error.name, message: error.message }
+          : String(error ?? "unknown"),
+    });
     this.webSocketClose(ws);
   }
 

@@ -4,6 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../../../.." && pwd)"
 INSTALL_SCRIPT="${REPO_ROOT}/packages/gateway/deploy/gateway-install.sh"
+SERVICE_TEMPLATE="${REPO_ROOT}/packages/gateway/deploy/chatcode-gateway.service"
 
 fail() {
   echo "[gateway-install.test] FAIL: $*" >&2
@@ -220,10 +221,15 @@ EOF
   rm -rf "${tmp}"
 }
 
+test_service_template_preserves_tmux_children() {
+  assert_contains "${SERVICE_TEMPLATE}" "KillMode=process"
+}
+
 main() {
   test_darwin_binary_source_no_start
   test_darwin_release_download_latest
   test_linux_requires_root
+  test_service_template_preserves_tmux_children
   echo "[gateway-install.test] PASS"
 }
 

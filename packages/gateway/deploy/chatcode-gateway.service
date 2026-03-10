@@ -15,6 +15,7 @@ ExecStart=/usr/local/bin/chatcode-gateway
 EnvironmentFile=/etc/chatcode/gateway.env
 Restart=on-failure
 RestartSec=5s
+KillMode=process
 
 # Keep service environment close to host defaults so explicitly-approved sudo
 # commands behave the same as on a normal SSH shell.
