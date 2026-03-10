@@ -9,6 +9,7 @@ interface InlineEditProps {
   inputClassName?: string;
   maxLength?: number;
   placeholder?: string;
+  allowEmpty?: boolean;
 }
 
 export function InlineEdit({
@@ -18,6 +19,7 @@ export function InlineEdit({
   inputClassName,
   maxLength = 80,
   placeholder,
+  allowEmpty = false,
 }: InlineEditProps) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
@@ -34,18 +36,23 @@ export function InlineEdit({
 
   const commit = useCallback(async () => {
     const trimmed = draft.trim();
-    if (!trimmed || trimmed === value) {
+    if ((!allowEmpty && !trimmed) || trimmed === value) {
       setEditing(false);
       return;
     }
     setSaving(true);
     try {
       await onSave(trimmed);
+      setEditing(false);
+    } catch {
+      requestAnimationFrame(() => {
+        inputRef.current?.focus();
+        inputRef.current?.select();
+      });
     } finally {
       setSaving(false);
-      setEditing(false);
     }
-  }, [draft, value, onSave]);
+  }, [allowEmpty, draft, value, onSave]);
 
   const cancel = useCallback(() => {
     setDraft(value);

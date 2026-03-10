@@ -312,6 +312,14 @@ export function Sidebar({
                 key={vps.id}
                 data-testid={`vps-item-${vps.id}`}
                 onClick={() => onSelectVps(vps.id)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    onSelectVps(vps.id);
+                  }
+                }}
+                role="button"
+                tabIndex={0}
                 className={cn(
                   "w-full text-left p-2 rounded-md text-sm transition-colors flex items-center gap-2 cursor-pointer",
                   vps.id === activeVpsId
@@ -324,6 +332,7 @@ export function Sidebar({
                   value={vps.label || vps.region || vps.id}
                   onSave={(label) => handleRenameVps(vps.id, label)}
                   maxLength={64}
+                  allowEmpty
                   className="flex-1 min-w-0"
                 />
                 <Circle
@@ -417,6 +426,16 @@ export function Sidebar({
               {sessions.map((session) => (
                 <div
                   key={session.id}
+                  data-testid={`session-item-${session.id}`}
+                  onClick={() => onSelectSession(activeVpsId, session.id, session.title)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      onSelectSession(activeVpsId, session.id, session.title);
+                    }
+                  }}
+                  role="button"
+                  tabIndex={0}
                   className={cn(
                     "group flex items-center gap-2 p-2 rounded-md text-sm cursor-pointer transition-colors",
                     session.id === activeSessionId
@@ -424,11 +443,7 @@ export function Sidebar({
                       : "hover:bg-accent/50 text-foreground font-normal",
                   )}
                 >
-                  <button
-                    data-testid={`session-item-${session.id}`}
-                    onClick={() => onSelectSession(activeVpsId, session.id, session.title)}
-                    className="flex items-center gap-2 flex-1 min-w-0 text-left"
-                  >
+                  <div className="flex items-center gap-2 flex-1 min-w-0 text-left">
                     <Terminal className="h-3.5 w-3.5 shrink-0" />
                     <InlineEdit
                       value={session.title}
@@ -436,7 +451,7 @@ export function Sidebar({
                       maxLength={80}
                       className="flex-1 min-w-0"
                     />
-                  </button>
+                  </div>
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
