@@ -96,6 +96,7 @@ export function AppPage({
   const [collapsed, setCollapsed] = useState(false);
   const [activeVpsId, setActiveVpsId] = useState<string | null>(null);
   const [sidebarErrorMessage, setSidebarErrorMessage] = useState("");
+  const [sessionRefreshSignal, setSessionRefreshSignal] = useState(0);
   const [tabState, dispatchTab] = useReducer(tabReducer, {
     tabs: [],
     activeIndex: 0,
@@ -144,6 +145,10 @@ export function AppPage({
 
   const handleSessionEnded = useCallback((sessionId: string) => {
     dispatchTab({ type: "markEnded", sessionId });
+  }, []);
+
+  const handleSessionStateRefreshNeeded = useCallback(() => {
+    setSessionRefreshSignal((value) => value + 1);
   }, []);
 
   const handleSessionRenamed = useCallback((sessionId: string, title: string) => {
@@ -197,6 +202,7 @@ export function AppPage({
         onLogout={onLogout}
         userEmail={userEmail}
         externalErrorMessage={sidebarErrorMessage}
+        refreshSignal={sessionRefreshSignal}
       />
 
       {/* Main content */}
@@ -251,6 +257,7 @@ export function AppPage({
                 active={i === tabState.activeIndex}
                 suspended={overlayOpen}
                 onSessionEnded={handleSessionEnded}
+                onSessionStateRefreshNeeded={handleSessionStateRefreshNeeded}
               />
             ))
           )}

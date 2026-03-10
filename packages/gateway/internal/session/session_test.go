@@ -58,6 +58,30 @@ func TestManagerWatchSessionRemovesExitedSession(t *testing.T) {
 	t.Fatal("expected watcher to remove exited session")
 }
 
+func TestManagerWatchSessionCallsExitHookOnce(t *testing.T) {
+	m := NewManager(5)
+	m.checkInterval = 10 * time.Millisecond
+	m.isAlive = func(_ *Session) bool { return false }
+
+	calls := make(chan string, 1)
+	m.SetOnSessionExit(func(sessionID string) {
+		calls <- sessionID
+	})
+
+	s := &Session{}
+	m.sessions["gone"] = s
+	go m.watchSession("gone", s)
+
+	select {
+	case sessionID := <-calls:
+		if sessionID != "gone" {
+			t.Fatalf("exit hook sessionID = %q, want %q", sessionID, "gone")
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("expected exit hook to fire")
+	}
+}
+
 func TestManagerEndKeepsSessionOnKillFailure(t *testing.T) {
 	m := NewManager(5)
 	s := &Session{}

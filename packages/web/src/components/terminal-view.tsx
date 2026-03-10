@@ -10,6 +10,7 @@ interface TerminalViewProps {
   suspended?: boolean;
   onSessionEnded?: (sessionId: string) => void;
   onSessionError?: (sessionId: string, error: string) => void;
+  onSessionStateRefreshNeeded?: (sessionId: string) => void;
 }
 
 export const TerminalView = memo(function TerminalView({
@@ -19,6 +20,7 @@ export const TerminalView = memo(function TerminalView({
   suspended = false,
   onSessionEnded,
   onSessionError,
+  onSessionStateRefreshNeeded,
 }: TerminalViewProps) {
   const themeName = getStoredTerminalTheme();
   const terminalBackground =
@@ -30,8 +32,9 @@ export const TerminalView = memo(function TerminalView({
       interactive: active && !suspended,
       onSessionEnded,
       onSessionError,
+      onSessionStateRefreshNeeded,
     }),
-    [vpsId, sessionId, active, suspended, onSessionEnded, onSessionError],
+    [vpsId, sessionId, active, suspended, onSessionEnded, onSessionError, onSessionStateRefreshNeeded],
   );
 
   const { containerRef, handleRef } = useTerminalRef(opts);

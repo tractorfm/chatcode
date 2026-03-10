@@ -19,6 +19,7 @@ type Manager struct {
 	checkInterval             time.Duration
 	isAlive                   func(*Session) bool
 	endSession                func(*Session) error
+	onSessionExit             func(string)
 	listRecoverableSessionIDs func() ([]string, error)
 	newRecoveredSession       func(string, chan OutputChunk) *Session
 }
@@ -38,6 +39,14 @@ func NewManager(maxSessions int) *Manager {
 		listRecoverableSessionIDs: listRecoverableSessionIDs,
 		newRecoveredSession:       newRecoveredSession,
 	}
+}
+
+// SetOnSessionExit registers a callback fired when a tracked session exits on
+// its own and is removed by the watcher loop.
+func (m *Manager) SetOnSessionExit(fn func(string)) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.onSessionExit = fn
 }
 
 // Create creates and starts a new session. Returns an error if the limit is
@@ -149,11 +158,15 @@ func (m *Manager) watchSession(sessionID string, s *Session) {
 		if m.isAlive != nil && !m.isAlive(s) {
 			m.mu.Lock()
 			current, ok := m.sessions[sessionID]
+			onExit := m.onSessionExit
 			if ok && current == s {
 				delete(m.sessions, sessionID)
 			}
 			m.mu.Unlock()
 			s.stopCapture()
+			if ok && current == s && onExit != nil {
+				onExit(sessionID)
+			}
 			return
 		}
 	}

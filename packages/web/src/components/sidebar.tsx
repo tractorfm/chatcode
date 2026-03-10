@@ -44,6 +44,7 @@ interface SidebarProps {
   onLogout: () => void;
   userEmail?: string;
   externalErrorMessage?: string;
+  refreshSignal?: number;
 }
 
 export function Sidebar({
@@ -59,6 +60,7 @@ export function Sidebar({
   onLogout,
   userEmail,
   externalErrorMessage,
+  refreshSignal = 0,
 }: SidebarProps) {
   const [vpsList, setVpsList] = useState<VPS[]>([]);
   const [sessions, setSessions] = useState<Session[]>([]);
@@ -123,7 +125,7 @@ export function Sidebar({
 
   useEffect(() => {
     void refreshSessions();
-  }, [activeVpsId, refreshSessions]);
+  }, [activeVpsId, refreshSessions, refreshSignal]);
 
   const handleCreateSession = useCallback(
     async (agentType: AgentType = "claude-code") => {

@@ -64,6 +64,9 @@ func main() {
 		health:   health.NewCollector("/"),
 		updater:  update.NewUpdater(cfg.BinaryPath, log),
 	}
+	g.sessions.SetOnSessionExit(func(sessionID string) {
+		g.onSessionExit(sessionID)
+	})
 	g.sshMgr, err = sshkeys.NewManager()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "ssh manager init error: %v\n", err)
@@ -141,6 +144,18 @@ type gateway struct {
 	updater  *update.Updater
 	files    *files.Handler
 	outputCh chan session.OutputChunk
+}
+
+func (g *gateway) onSessionExit(sessionID string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	g.log.Info("session exited", "session_id", sessionID)
+	g.sendEvent(ctx, map[string]any{
+		"type":           "session.ended",
+		"schema_version": schemaVersion,
+		"session_id":     sessionID,
+	})
 }
 
 // runWSWithHello wraps ws.Client.Run to send gateway.hello on each (re)connect.

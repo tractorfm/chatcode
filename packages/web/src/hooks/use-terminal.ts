@@ -12,6 +12,7 @@ export interface UseTerminalOptions {
   interactive?: boolean;
   onSessionEnded?: (sessionId: string) => void;
   onSessionError?: (sessionId: string, error: string) => void;
+  onSessionStateRefreshNeeded?: (sessionId: string) => void;
 }
 
 export interface TerminalHandle {
@@ -30,7 +31,13 @@ export interface TerminalHandle {
 }
 
 export function createTerminalHandle(opts: UseTerminalOptions): TerminalHandle {
-  const { vpsId, sessionId, onSessionEnded, onSessionError } = opts;
+  const {
+    vpsId,
+    sessionId,
+    onSessionEnded,
+    onSessionError,
+    onSessionStateRefreshNeeded,
+  } = opts;
 
   const themeName = getStoredTerminalTheme();
   const term = new Terminal({
@@ -225,6 +232,7 @@ export function createTerminalHandle(opts: UseTerminalOptions): TerminalHandle {
           sessionEnded = true;
           term.writeln("\r\n[session ended]");
           onSessionEnded?.(sessionId);
+          onSessionStateRefreshNeeded?.(sessionId);
           return;
         }
         return;
@@ -267,6 +275,7 @@ export function createTerminalHandle(opts: UseTerminalOptions): TerminalHandle {
       const reason = ev.reason ? ` reason=${ev.reason}` : "";
       term.writeln(`\r\n[disconnected code=${ev.code}${reason}]`);
       socket = null;
+      onSessionStateRefreshNeeded?.(sessionId);
 
       if (disposed || sessionEnded || ev.code === 1000) return;
       if (reconnectTimer) return;
