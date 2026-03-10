@@ -13,6 +13,14 @@ on:
         description: "Override branch name for preview deploy"
         required: false
         type: string
+      target:
+        description: "Deploy target"
+        required: false
+        default: "staging"
+        type: choice
+        options:
+          - staging
+          - production
 
 permissions:
   contents: read
@@ -62,11 +70,12 @@ jobs:
           # If sanitization strips everything (e.g. branch name is only symbols),
           # use deterministic fallback instead of failing deploy target resolution.
           [[ -n "${branch}" ]] || branch="preview"
+          requested_target="${{ github.event.inputs.target || '' }}"
 
-          if [[ "${branch}" == "main" ]]; then
+          if [[ "${requested_target}" == "production" ]]; then
             project="${PROD_PROJECT}"
             deploy_branch="main"
-          elif [[ "${branch}" == "staging" ]]; then
+          elif [[ "${branch}" == "main" || "${branch}" == "staging" ]]; then
             project="${STAGING_PROJECT}"
             deploy_branch="staging"
           else

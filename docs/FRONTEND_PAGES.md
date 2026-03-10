@@ -52,13 +52,19 @@ Workflow: `.github/workflows/web-pages.yml`
 
 On push with changes under `packages/web/**`:
 
-- `main` branch -> deploy to prod project, branch `main`  
-  target domain: `https://app.chatcode.dev`
+- `main` branch -> deploy to staging project, branch `staging`  
+  target domain: `https://app.staging.chatcode.dev`
 - `staging` branch -> deploy to staging project, branch `staging`  
   target domain: `https://app.staging.chatcode.dev`
 - any other branch -> deploy preview to staging project, branch `<sanitized-branch>`  
   preview URL: `https://<sanitized-branch>.chatcode-app-staging.pages.dev`
   if sanitization results in empty value, fallback branch is `preview`
+
+Production deploy is manual via `workflow_dispatch`:
+
+- set `target=production`  
+  deploy project: `chatcode-app`, branch `main`  
+  target domain: `https://app.chatcode.dev`
 
 Use `workflow_dispatch` to redeploy a specific branch manually.
 
