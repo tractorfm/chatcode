@@ -225,10 +225,17 @@ test_service_template_preserves_tmux_children() {
   assert_contains "${SERVICE_TEMPLATE}" "KillMode=process"
 }
 
+test_linux_installer_bootstraps_base_packages() {
+  assert_contains "${INSTALL_SCRIPT}" "ensure_linux_base_packages"
+  assert_contains "${INSTALL_SCRIPT}" "missing+=(\"tmux\")"
+  assert_contains "${INSTALL_SCRIPT}" "apt-get install -y -q"
+}
+
 main() {
   test_darwin_binary_source_no_start
   test_darwin_release_download_latest
   test_linux_requires_root
+  test_linux_installer_bootstraps_base_packages
   test_service_template_preserves_tmux_children
   echo "[gateway-install.test] PASS"
 }

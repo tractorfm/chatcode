@@ -105,6 +105,27 @@ die() {
   exit 1
 }
 
+ensure_linux_base_packages() {
+  command -v apt-get >/dev/null 2>&1 || return 0
+
+  local missing=()
+  command -v tmux >/dev/null 2>&1 || missing+=("tmux")
+  command -v curl >/dev/null 2>&1 || missing+=("curl")
+  command -v sudo >/dev/null 2>&1 || missing+=("sudo")
+  command -v git >/dev/null 2>&1 || missing+=("git")
+  [[ -f /etc/ssl/certs/ca-certificates.crt ]] || missing+=("ca-certificates")
+  command -v logrotate >/dev/null 2>&1 || missing+=("logrotate")
+
+  if [[ ${#missing[@]} -eq 0 ]]; then
+    return 0
+  fi
+
+  log "installing required Linux packages: ${missing[*]}"
+  export DEBIAN_FRONTEND=noninteractive
+  apt-get update -q
+  apt-get install -y -q "${missing[@]}"
+}
+
 require_single_line() {
   local name="$1"
   local value="$2"
@@ -955,6 +976,7 @@ require_single_line "GATEWAY_BOOTSTRAP_TOKEN" "${GATEWAY_BOOTSTRAP_TOKEN}"
 
 case "${OS_NAME}" in
   Linux)
+    ensure_linux_base_packages
     command -v systemctl >/dev/null 2>&1 || die "systemctl is required"
     command -v useradd >/dev/null 2>&1 || die "useradd is required"
     command -v getent >/dev/null 2>&1 || die "getent is required"
