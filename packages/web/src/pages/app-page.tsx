@@ -35,7 +35,12 @@ function tabReducer(state: TabState, action: TabAction): TabState {
         (t) => t.vpsId === action.tab.vpsId && t.sessionId === action.tab.sessionId,
       );
       if (existingIndex >= 0) {
-        return { ...state, activeIndex: existingIndex };
+        return {
+          tabs: state.tabs.map((tab, index) =>
+            index === existingIndex ? { ...tab, title: action.tab.title } : tab,
+          ),
+          activeIndex: existingIndex,
+        };
       }
       return {
         tabs: [...state.tabs, action.tab],
@@ -89,34 +94,34 @@ export function AppPage({ userEmail, onLogout, onNavigate }: AppPageProps) {
   }, []);
 
   const handleSelectSession = useCallback(
-    (vpsId: string, sessionId: string) => {
+    (vpsId: string, sessionId: string, title: string) => {
       dispatchTab({
         type: "open",
         tab: {
           vpsId,
           sessionId,
-          title: `Session ${tabState.tabs.length + 1}`,
+          title,
         },
       });
       setSidebarErrorMessage("");
     },
-    [tabState.tabs.length],
+    [],
   );
 
   const handleNewSession = useCallback(
-    (vpsId: string, sessionId: string) => {
+    (vpsId: string, sessionId: string, title: string) => {
       dispatchTab({
         type: "open",
         tab: {
           vpsId,
           sessionId,
-          title: `Session ${tabState.tabs.length + 1}`,
+          title,
         },
       });
       setActiveVpsId(vpsId);
       setSidebarErrorMessage("");
     },
-    [tabState.tabs.length],
+    [],
   );
 
   const handleCloseTab = useCallback((index: number) => {
@@ -135,12 +140,13 @@ export function AppPage({ userEmail, onLogout, onNavigate }: AppPageProps) {
         title: `Session ${tabState.tabs.length + 1}`,
         agent_type: "claude-code",
       });
+      const title = `Session ${tabState.tabs.length + 1}`;
       dispatchTab({
         type: "open",
         tab: {
           vpsId: activeVpsId,
           sessionId: res.session_id,
-          title: `Session ${tabState.tabs.length + 1}`,
+          title,
         },
       });
       setSidebarErrorMessage("");
@@ -184,10 +190,10 @@ export function AppPage({ userEmail, onLogout, onNavigate }: AppPageProps) {
                 <div
                   key={`${tab.vpsId}-${tab.sessionId}`}
                   className={cn(
-                    "group flex items-center gap-1.5 px-3 py-2 text-sm border-r border-border cursor-pointer transition-colors min-w-0 max-w-[200px]",
-                    i === tabState.activeIndex
-                      ? "bg-background text-foreground"
-                      : "text-muted-foreground hover:text-foreground hover:bg-accent/50",
+                  "group flex items-center gap-1.5 px-3 py-2 text-sm border-r border-border cursor-pointer transition-colors min-w-0 max-w-[200px]",
+                  i === tabState.activeIndex
+                      ? "bg-background text-foreground font-medium"
+                      : "text-muted-foreground hover:text-foreground hover:bg-accent/50 font-normal",
                   )}
                   onClick={() => dispatchTab({ type: "setActive", index: i })}
                 >

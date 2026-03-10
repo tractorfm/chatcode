@@ -32,8 +32,8 @@ interface SidebarProps {
   activeVpsId: string | null;
   activeSessionId: string | null;
   onSelectVps: (vpsId: string) => void;
-  onSelectSession: (vpsId: string, sessionId: string) => void;
-  onNewSession: (vpsId: string, sessionId: string) => void;
+  onSelectSession: (vpsId: string, sessionId: string, title: string) => void;
+  onNewSession: (vpsId: string, sessionId: string, title: string) => void;
   onNavigate: (page: "settings" | "status" | "onboarding") => void;
   onLogout: () => void;
   userEmail?: string;
@@ -89,12 +89,12 @@ export function Sidebar({
       const { sessions: s } = await listSessions(activeVpsId);
       const openSessions = s.filter((s) => !isClosedStatus(s.status));
       setSessions(openSessions);
-      setErrorMessage("");
+        setErrorMessage("");
       if (
         openSessions.length > 0 &&
         !openSessions.some((session) => session.id === activeSessionIdRef.current)
       ) {
-        onSelectSession(activeVpsId, openSessions[0].id);
+        onSelectSession(activeVpsId, openSessions[0].id, openSessions[0].title);
       }
     } catch (err) {
       setOperationError("Failed to load sessions", err);
@@ -116,12 +116,13 @@ export function Sidebar({
       if (!activeVpsId || creating) return;
       setCreating(true);
       try {
+        const title = `Session ${sessions.length + 1}`;
         const res = await createSession(activeVpsId, {
-          title: `Session ${sessions.length + 1}`,
+          title,
           agent_type: agentType,
         });
         await refreshSessions();
-        onNewSession(activeVpsId, res.session_id);
+        onNewSession(activeVpsId, res.session_id, title);
         setErrorMessage("");
       } catch (err) {
         setOperationError("Failed to create session", err);
@@ -237,8 +238,8 @@ export function Sidebar({
                 className={cn(
                   "w-full text-left p-2 rounded-md text-sm transition-colors flex items-center gap-2",
                   vps.id === activeVpsId
-                    ? "bg-accent text-accent-foreground"
-                    : "hover:bg-accent/50 text-foreground",
+                    ? "bg-accent text-accent-foreground font-medium"
+                    : "hover:bg-accent/50 text-foreground font-normal",
                 )}
               >
                 <Server className="h-3.5 w-3.5 shrink-0" />
@@ -317,13 +318,13 @@ export function Sidebar({
                   className={cn(
                     "group flex items-center gap-2 p-2 rounded-md text-sm cursor-pointer transition-colors",
                     session.id === activeSessionId
-                      ? "bg-primary/10 text-primary"
-                      : "hover:bg-accent/50 text-foreground",
+                      ? "bg-primary/10 text-primary font-medium"
+                      : "hover:bg-accent/50 text-foreground font-normal",
                   )}
                 >
                   <button
                     data-testid={`session-item-${session.id}`}
-                    onClick={() => onSelectSession(activeVpsId, session.id)}
+                    onClick={() => onSelectSession(activeVpsId, session.id, session.title)}
                     className="flex items-center gap-2 flex-1 min-w-0 text-left"
                   >
                     <Terminal className="h-3.5 w-3.5 shrink-0" />
