@@ -9,6 +9,7 @@ import {
   listVPSByUser,
   updateVPSStatus,
   updateVPSIpv4,
+  updateVPSLabel,
   deleteVPSCascade,
   createGateway,
   getGatewayByVPS,
@@ -65,9 +66,9 @@ export async function handleVPSCreate(
   env: Env,
   auth: AuthContext,
 ): Promise<Response> {
-  let body: { region?: string; size?: string; image?: string } = {};
+  let body: { region?: string; size?: string; image?: string; label?: string } = {};
   try {
-    body = (await request.json()) as { region?: string; size?: string; image?: string };
+    body = (await request.json()) as { region?: string; size?: string; image?: string; label?: string };
   } catch {
     // Body is optional. Defaults apply.
   }
@@ -83,6 +84,10 @@ export async function handleVPSCreate(
   }
   if (!isDropletSlug(image)) {
     return jsonResponse({ error: "invalid image slug" }, 400);
+  }
+  const label = normalizeLabel(body.label);
+  if (body.label !== undefined && label === null) {
+    return jsonResponse({ error: "invalid label" }, 400);
   }
 
   // Verify user has DO connection
@@ -145,6 +150,7 @@ export async function handleVPSCreate(
       id: vpsId,
       user_id: auth.userId,
       droplet_id: droplet.id,
+      label,
       region,
       size,
       ipv4: getPublicIp(droplet) ?? null,
@@ -178,6 +184,7 @@ export async function handleVPSCreate(
     id: vpsId,
     user_id: auth.userId,
     droplet_id: droplet.id,
+    label,
     region,
     size,
     ipv4: getPublicIp(droplet) ?? null,
@@ -240,6 +247,7 @@ export async function handleVPSManualCreate(
     id: vpsId,
     user_id: auth.userId,
     droplet_id: 0,
+    label: manualLabel || null,
     region: "manual",
     size,
     ipv4: null,
@@ -314,6 +322,32 @@ export async function handleVPSGet(
   await hydrateMissingIPv4(env, auth.userId, [vps]);
   const gateway = await getGatewayByVPS(env.DB, vps.id);
   return jsonResponse(toVPSResponse(vps, gateway ?? undefined));
+}
+
+/**
+ * PATCH /vps/:id – Rename VPS label.
+ */
+export async function handleVPSUpdate(
+  request: Request,
+  env: Env,
+  auth: AuthContext,
+  vpsId: string,
+): Promise<Response> {
+  const vps = await getVPS(env.DB, vpsId);
+  if (!vps || vps.user_id !== auth.userId) {
+    return jsonResponse({ error: "not found" }, 404);
+  }
+
+  const body = (await request.json().catch(() => ({}))) as { label?: string };
+  const label = normalizeLabel(body.label);
+  if (body.label === undefined || label === null) {
+    return jsonResponse({ error: "invalid label" }, 400);
+  }
+
+  await updateVPSLabel(env.DB, vpsId, label);
+  const updated = { ...vps, label, updated_at: Math.floor(Date.now() / 1000) };
+  const gateway = await getGatewayByVPS(env.DB, vps.id);
+  return jsonResponse(toVPSResponse(updated, gateway ?? undefined));
 }
 
 /**
@@ -502,6 +536,9 @@ function toVPSResponse(vps: VPSRow, gateway?: GatewayRow): VPSResponse {
 }
 
 function deriveVPSLabel(vps: VPSRow): string {
+  if (vps.label?.trim()) {
+    return vps.label.trim();
+  }
   if (vps.droplet_id <= 0) {
     if (vps.size.startsWith("manual:")) {
       const label = vps.size.slice("manual:".length).trim();
@@ -513,6 +550,10 @@ function deriveVPSLabel(vps: VPSRow): string {
 }
 
 function normalizeManualLabel(label: string | undefined): string | null {
+  return normalizeLabel(label);
+}
+
+function normalizeLabel(label: string | undefined): string | null {
   const trimmed = (label ?? "").trim();
   if (!trimmed) return "";
   if (trimmed.length > 64) return null;

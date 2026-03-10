@@ -37,12 +37,14 @@ import {
   handleVPSPowerOff,
   handleVPSPowerOn,
   handleVPSManualCreate,
+  handleVPSUpdate,
 } from "./routes/vps.js";
 import {
   handleSessionList,
   handleAgentList,
   handleSessionCreate,
   handleSessionDelete,
+  handleSessionUpdate,
   handleSessionSnapshot,
   handleTerminalUpgrade,
 } from "./routes/sessions.js";
@@ -150,6 +152,7 @@ export default {
       if (vpsMatch) {
         const vpsId = vpsMatch[1];
         if (method === "GET") return withCORS(await handleVPSGet(request, env, auth, vpsId), request, env);
+        if (method === "PATCH") return withCORS(await handleVPSUpdate(request, env, auth, vpsId), request, env);
         if (method === "DELETE") return withCORS(await handleVPSDelete(request, env, auth, vpsId), request, env);
       }
 
@@ -182,6 +185,13 @@ export default {
       if (sessionDeleteMatch && method === "DELETE") {
         return withCORS(
           await handleSessionDelete(request, env, auth, sessionDeleteMatch[1], sessionDeleteMatch[2]),
+          request,
+          env,
+        );
+      }
+      if (sessionDeleteMatch && method === "PATCH") {
+        return withCORS(
+          await handleSessionUpdate(request, env, auth, sessionDeleteMatch[1], sessionDeleteMatch[2]),
           request,
           env,
         );

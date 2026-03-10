@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   handleAgentList,
   handleSessionCreate,
+  handleSessionUpdate,
   handleSessionSnapshot,
   handleTerminalUpgrade,
 } from "../src/routes/sessions";
@@ -13,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   getSession: vi.fn(),
   listSessionsByVPS: vi.fn(async () => []),
   updateSessionStatus: vi.fn(async () => {}),
+  updateSessionTitle: vi.fn(async () => {}),
   updateGatewayConnected: vi.fn(async () => {}),
   newSessionId: vi.fn(() => "ses-test-1"),
 }));
@@ -24,6 +26,7 @@ vi.mock("../src/db/schema.js", () => ({
   getSession: mocks.getSession,
   listSessionsByVPS: mocks.listSessionsByVPS,
   updateSessionStatus: mocks.updateSessionStatus,
+  updateSessionTitle: mocks.updateSessionTitle,
   updateGatewayConnected: mocks.updateGatewayConnected,
 }));
 
@@ -54,7 +57,17 @@ describe("routes/sessions", () => {
       connected: 1,
       last_seen_at: Math.floor(Date.now() / 1000),
     });
-    mocks.getSession.mockResolvedValue({ id: "ses-1", vps_id: "vps-1" });
+    mocks.getSession.mockResolvedValue({
+      id: "ses-1",
+      user_id: "usr-1",
+      vps_id: "vps-1",
+      title: "Old Title",
+      agent_type: "claude-code",
+      workdir: "/home/vibe",
+      status: "running",
+      created_at: 1,
+      last_activity_at: 1,
+    });
   });
 
   it("returns snapshot payload from GatewayHub command path", async () => {
@@ -316,6 +329,48 @@ describe("routes/sessions", () => {
     });
     expect(mocks.createSession).toHaveBeenCalledOnce();
     expect(stubFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("updates session title", async () => {
+    const { env } = makeEnv(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+
+    const res = await handleSessionUpdate(
+      new Request("https://cp.example.test/vps/vps-1/sessions/ses-1", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: "Renamed Session" }),
+      }),
+      env,
+      { userId: "usr-1" },
+      "vps-1",
+      "ses-1",
+    );
+
+    expect(res.status).toBe(200);
+    expect(mocks.updateSessionTitle).toHaveBeenCalledWith(env.DB, "ses-1", "Renamed Session");
+    await expect(res.json()).resolves.toMatchObject({
+      id: "ses-1",
+      title: "Renamed Session",
+    });
+  });
+
+  it("rejects invalid session title", async () => {
+    const { env } = makeEnv(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+
+    const res = await handleSessionUpdate(
+      new Request("https://cp.example.test/vps/vps-1/sessions/ses-1", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: "" }),
+      }),
+      env,
+      { userId: "usr-1" },
+      "vps-1",
+      "ses-1",
+    );
+
+    expect(res.status).toBe(400);
+    expect(mocks.updateSessionTitle).not.toHaveBeenCalled();
   });
 
   it("returns 503 for terminal upgrade when gateway is disconnected", async () => {

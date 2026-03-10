@@ -68,6 +68,13 @@ export function getVPS(id: string) {
   return request<VPS>(`/vps/${encodeURIComponent(id)}`);
 }
 
+export function updateVPS(id: string, opts: { label: string }) {
+  return request<VPS>(`/vps/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify(opts),
+  });
+}
+
 export interface CreateVPSResponse {
   status: "provisioning";
   vps: VPS;
@@ -156,6 +163,13 @@ export function deleteSession(vpsId: string, sessionId: string) {
   return request<{ ok: boolean }>(
     `/vps/${encodeURIComponent(vpsId)}/sessions/${encodeURIComponent(sessionId)}`,
     { method: "DELETE" },
+  );
+}
+
+export function updateSession(vpsId: string, sessionId: string, opts: { title: string }) {
+  return request<Session>(
+    `/vps/${encodeURIComponent(vpsId)}/sessions/${encodeURIComponent(sessionId)}`,
+    { method: "PATCH", body: JSON.stringify(opts) },
   );
 }
 

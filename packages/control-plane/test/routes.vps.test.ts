@@ -1,11 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { handleVPSCreate, handleVPSDelete, handleVPSManualCreate } from "../src/routes/vps";
+import {
+  handleVPSCreate,
+  handleVPSDelete,
+  handleVPSManualCreate,
+  handleVPSUpdate,
+} from "../src/routes/vps";
 
 const mocks = vi.hoisted(() => ({
   createVPS: vi.fn(async () => {}),
   getVPS: vi.fn(),
   listVPSByUser: vi.fn(async () => []),
   updateVPSStatus: vi.fn(async () => {}),
+  updateVPSLabel: vi.fn(async () => {}),
   deleteVPSCascade: vi.fn(async () => {}),
   createGateway: vi.fn(async () => {}),
   getGatewayByVPS: vi.fn(),
@@ -26,6 +32,7 @@ vi.mock("../src/db/schema.js", () => ({
   getVPS: mocks.getVPS,
   listVPSByUser: mocks.listVPSByUser,
   updateVPSStatus: mocks.updateVPSStatus,
+  updateVPSLabel: mocks.updateVPSLabel,
   deleteVPSCascade: mocks.deleteVPSCascade,
   createGateway: mocks.createGateway,
   getGatewayByVPS: mocks.getGatewayByVPS,
@@ -78,6 +85,14 @@ describe("routes/vps", () => {
       id: "vps-1",
       user_id: "usr-1",
       droplet_id: 123456,
+      label: null,
+      region: "nyc1",
+      size: "s-1vcpu-512mb-10gb",
+      ipv4: "1.2.3.4",
+      status: "active",
+      provisioning_deadline_at: null,
+      created_at: 1,
+      updated_at: 1,
     });
     mocks.getDOConnection.mockResolvedValue({
       user_id: "usr-1",
@@ -288,5 +303,45 @@ describe("routes/vps", () => {
     expect(res.status).toBe(400);
     await expect(res.json()).resolves.toMatchObject({ error: "invalid label" });
     expect(mocks.createVPS).not.toHaveBeenCalled();
+  });
+
+  it("updates vps label", async () => {
+    const { env } = makeEnv();
+
+    const res = await handleVPSUpdate(
+      new Request("https://cp.example.test/vps/vps-1", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ label: "my server" }),
+      }),
+      env,
+      { userId: "usr-1" },
+      "vps-1",
+    );
+
+    expect(res.status).toBe(200);
+    expect(mocks.updateVPSLabel).toHaveBeenCalledWith(env.DB, "vps-1", "my server");
+    await expect(res.json()).resolves.toMatchObject({
+      id: "vps-1",
+      label: "my server",
+    });
+  });
+
+  it("rejects invalid vps label", async () => {
+    const { env } = makeEnv();
+
+    const res = await handleVPSUpdate(
+      new Request("https://cp.example.test/vps/vps-1", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ label: "x".repeat(65) }),
+      }),
+      env,
+      { userId: "usr-1" },
+      "vps-1",
+    );
+
+    expect(res.status).toBe(400);
+    expect(mocks.updateVPSLabel).not.toHaveBeenCalled();
   });
 });

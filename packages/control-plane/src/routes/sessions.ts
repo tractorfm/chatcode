@@ -10,6 +10,7 @@ import {
   getSession,
   listSessionsByVPS,
   updateSessionStatus,
+  updateSessionTitle,
   updateGatewayConnected,
 } from "../db/schema.js";
 import { newSessionId } from "../lib/ids.js";
@@ -234,6 +235,36 @@ export async function handleSessionDelete(
 
   await updateSessionStatus(env.DB, sessionId, "ended");
   return new Response(null, { status: 204 });
+}
+
+/**
+ * PATCH /vps/:id/sessions/:sid – Rename session title.
+ */
+export async function handleSessionUpdate(
+  request: Request,
+  env: Env,
+  auth: AuthContext,
+  vpsId: string,
+  sessionId: string,
+): Promise<Response> {
+  const vps = await getVPS(env.DB, vpsId);
+  if (!vps || vps.user_id !== auth.userId) {
+    return jsonResponse({ error: "not found" }, 404);
+  }
+
+  const session = await getSession(env.DB, sessionId);
+  if (!session || session.vps_id !== vpsId) {
+    return jsonResponse({ error: "session not found" }, 404);
+  }
+
+  const body = (await request.json().catch(() => ({}))) as { title?: string };
+  const title = normalizeSessionTitle(body.title);
+  if (body.title === undefined || title === null) {
+    return jsonResponse({ error: "invalid title" }, 400);
+  }
+
+  await updateSessionTitle(env.DB, sessionId, title);
+  return jsonResponse({ ...session, title });
 }
 
 /**
@@ -472,4 +503,12 @@ function newRequestId(prefix: string): string {
   } catch {
     return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   }
+}
+
+function normalizeSessionTitle(title: string | undefined): string | null {
+  const trimmed = (title ?? "").trim();
+  if (!trimmed) return null;
+  if (trimmed.length > 80) return null;
+  if (/[\u0000-\u001f\u007f]/.test(trimmed)) return null;
+  return trimmed;
 }

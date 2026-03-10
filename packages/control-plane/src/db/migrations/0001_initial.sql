@@ -41,6 +41,7 @@ CREATE TABLE vps (
   id                        TEXT    PRIMARY KEY,
   user_id                   TEXT    NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   droplet_id                INTEGER NOT NULL,
+  label                     TEXT,
   region                    TEXT    NOT NULL,
   size                      TEXT    NOT NULL,
   ipv4                      TEXT,

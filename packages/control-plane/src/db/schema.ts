@@ -43,6 +43,7 @@ export interface VPSRow {
   id: string;
   user_id: string;
   droplet_id: number;
+  label: string | null;
   region: string;
   size: string;
   ipv4: string | null;
@@ -249,13 +250,14 @@ export async function deleteDOConnection(db: D1Database, userId: string): Promis
 export async function createVPS(db: D1Database, row: VPSRow): Promise<void> {
   await db
     .prepare(
-      `INSERT INTO vps (id, user_id, droplet_id, region, size, ipv4, status, provisioning_deadline_at, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO vps (id, user_id, droplet_id, label, region, size, ipv4, status, provisioning_deadline_at, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .bind(
       row.id,
       row.user_id,
       row.droplet_id,
+      row.label,
       row.region,
       row.size,
       row.ipv4,
@@ -298,6 +300,17 @@ export async function updateVPSIpv4(
   await db
     .prepare("UPDATE vps SET ipv4 = ?, updated_at = ? WHERE id = ?")
     .bind(ipv4, nowSec(), id)
+    .run();
+}
+
+export async function updateVPSLabel(
+  db: D1Database,
+  id: string,
+  label: string,
+): Promise<void> {
+  await db
+    .prepare("UPDATE vps SET label = ?, updated_at = ? WHERE id = ?")
+    .bind(label, nowSec(), id)
     .run();
 }
 
@@ -452,6 +465,17 @@ export async function createSession(db: D1Database, row: SessionRow): Promise<vo
       row.created_at,
       row.last_activity_at,
     )
+    .run();
+}
+
+export async function updateSessionTitle(
+  db: D1Database,
+  id: string,
+  title: string,
+): Promise<void> {
+  await db
+    .prepare("UPDATE sessions SET title = ? WHERE id = ?")
+    .bind(title, id)
     .run();
 }
 
