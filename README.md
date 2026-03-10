@@ -147,9 +147,11 @@ Guide:
 
 ## License
 
+Copyright (c) 2026 **Holy Traction OÜ**.
+
 Licensed under **GNU Affero General Public License v3.0 only (AGPL-3.0-only)**.
 
 - Commercial use is allowed.
 - If you modify and run this software as a network service, you must provide complete corresponding source code of your modifications to users of that service.
 
-See [`LICENSE`](LICENSE).
+See [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE).
