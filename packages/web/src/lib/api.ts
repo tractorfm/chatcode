@@ -1,5 +1,20 @@
 import { apiUrl } from "./constants";
 
+async function parseResponseBody(res: Response): Promise<unknown> {
+  if (res.status === 204 || res.status === 205) {
+    return undefined;
+  }
+  const text = await res.text();
+  if (!text) {
+    return undefined;
+  }
+  const contentType = res.headers.get("Content-Type") || "";
+  if (contentType.includes("application/json")) {
+    return JSON.parse(text) as unknown;
+  }
+  return text;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(apiUrl(path), {
     credentials: "include",
@@ -9,14 +24,16 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       ...init?.headers,
     },
   });
+  const body = await parseResponseBody(res).catch(() => undefined);
   if (!res.ok) {
-    const body = await res.json().catch(() => ({ error: res.statusText }));
-    throw Object.assign(new Error(body.error ?? res.statusText), {
+    const errorBody =
+      body && typeof body === "object" ? body : { error: res.statusText };
+    throw Object.assign(new Error((errorBody as { error?: string }).error ?? res.statusText), {
       status: res.status,
-      body,
+      body: errorBody,
     });
   }
-  return res.json() as Promise<T>;
+  return body as T;
 }
 
 // -- Auth --
