@@ -729,19 +729,27 @@ func (g *gateway) handleGatewayUpdate(ctx context.Context, raw json.RawMessage) 
 	if err := json.Unmarshal(raw, &cmd); err != nil {
 		return err
 	}
+
+	// Ack immediately once the updater job is accepted. The process is expected
+	// to restart during a successful update, so waiting for a post-update ack is
+	// inherently racy and makes the control-plane treat expected disconnects as
+	// command failures.
+	g.sendAck(ctx, cmd.RequestID, true, "")
 	go func() {
 		if err := g.updater.Update(cmd.URL, cmd.SHA256); err != nil {
-			g.sendAck(ctx, cmd.RequestID, false, err.Error())
+			g.sendEvent(ctx, map[string]any{
+				"type":       "gateway.update_failed",
+				"request_id": cmd.RequestID,
+				"error":      err.Error(),
+			})
 			return
 		}
-		// If we get here the process is about to be replaced by systemd.
-		// Send updated event as a best-effort.
+		// Best-effort: this may be lost if systemd replaces the process first.
 		g.sendEvent(ctx, map[string]any{
 			"type":       "gateway.updated",
 			"request_id": cmd.RequestID,
 			"version":    cmd.Version,
 		})
-		g.sendAck(ctx, cmd.RequestID, true, "")
 	}()
 	return nil
 }
