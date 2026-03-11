@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import {
   Plus,
   Server,
@@ -76,6 +76,7 @@ export function Sidebar({
   const [confirmAction, setConfirmAction] = useState<{
     title: string;
     description: string;
+    details?: ReactNode;
     destructive?: boolean;
     onConfirm: () => Promise<void> | void;
   } | null>(null);
@@ -261,11 +262,41 @@ export function Sidebar({
 
   const handleDeleteVPS = useCallback(() => {
     if (!activeVpsId) return;
+    const cleanupDetails = !isManagedVps ? (
+      <div className="space-y-3">
+        <p className="text-xs text-muted-foreground">
+          If the host still exists, cleanly remove the gateway first:
+        </p>
+        <div className="space-y-2">
+          <div className="space-y-1">
+            <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+              Linux
+            </span>
+            <div className="bg-background rounded-md border border-border p-3">
+              <code className="text-xs font-mono text-foreground break-all">
+                curl -fsSL https://chatcode.dev/cleanup.sh | sudo bash -s -- --yes
+              </code>
+            </div>
+          </div>
+          <div className="space-y-1">
+            <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+              macOS
+            </span>
+            <div className="bg-background rounded-md border border-border p-3">
+              <code className="text-xs font-mono text-foreground break-all">
+                curl -fsSL https://chatcode.dev/cleanup.sh | bash -s -- --yes
+              </code>
+            </div>
+          </div>
+        </div>
+      </div>
+    ) : undefined;
     setConfirmAction({
       title: isManagedVps ? "Destroy server" : "Remove server",
       description: isManagedVps
         ? `This will permanently destroy "${activeVpsName}" and all its data. This cannot be undone.`
         : `This will remove "${activeVpsName}" from chatcode and stop reconnect attempts. This does not power off the host.`,
+      details: cleanupDetails,
       destructive: true,
       onConfirm: doDeleteVPS,
     });

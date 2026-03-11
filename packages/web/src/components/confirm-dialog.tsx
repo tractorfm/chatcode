@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import { Loader2 } from "lucide-react";
 
 interface ConfirmDialogProps {
   title: string;
   description: string;
+  details?: ReactNode;
   destructive?: boolean;
   confirmLabel?: string;
   onConfirm: () => Promise<void> | void;
@@ -13,6 +14,7 @@ interface ConfirmDialogProps {
 export function ConfirmDialog({
   title,
   description,
+  details,
   destructive,
   confirmLabel,
   onConfirm,
@@ -38,10 +40,11 @@ export function ConfirmDialog({
           if (!pending) onCancel();
         }}
       />
-      <div className="relative bg-card rounded-lg border border-border shadow-lg p-5 w-full max-w-sm mx-4 space-y-4">
+      <div className="relative bg-card rounded-lg border border-border shadow-lg p-5 w-full max-w-md mx-4 space-y-4">
         <div className="space-y-1.5">
           <h3 className="text-sm font-medium text-foreground">{title}</h3>
           <p className="text-sm text-muted-foreground">{description}</p>
+          {details ? <div className="pt-2">{details}</div> : null}
         </div>
         <div className="flex justify-end gap-2">
           <button
