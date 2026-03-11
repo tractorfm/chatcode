@@ -34,7 +34,7 @@ import { InlineEdit } from "@/components/inline-edit";
 import { SessionCreatePicker } from "@/components/session-create-picker";
 
 const DEFAULT_SESSION_WORKDIR = "/home/vibe/workspace";
-const DEFAULT_SESSION_WORKDIR_INPUT = "new";
+const DEFAULT_SESSION_WORKDIR_INPUT = ".";
 
 interface SidebarProps {
   collapsed: boolean;
@@ -822,7 +822,7 @@ function buildTabTitle(title: string, workdir: string): string {
 function tabPathSuffix(path: string): string {
   if (path === DEFAULT_SESSION_WORKDIR) return "";
   if (path.startsWith(`${DEFAULT_SESSION_WORKDIR}/`)) {
-    return `/${path.slice(DEFAULT_SESSION_WORKDIR.length + 1)}`;
+    return path.slice(DEFAULT_SESSION_WORKDIR.length + 1);
   }
   return "";
 }
