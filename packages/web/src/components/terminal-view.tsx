@@ -7,6 +7,7 @@ interface TerminalViewProps {
   vpsId: string;
   sessionId: string;
   active: boolean;
+  layoutSignal?: number;
   suspended?: boolean;
   onSessionEnded?: (sessionId: string) => void;
   onSessionError?: (sessionId: string, error: string) => void;
@@ -17,6 +18,7 @@ export const TerminalView = memo(function TerminalView({
   vpsId,
   sessionId,
   active,
+  layoutSignal = 0,
   suspended = false,
   onSessionEnded,
   onSessionError,
@@ -45,8 +47,15 @@ export const TerminalView = memo(function TerminalView({
       handleRef.current?.fit();
       handleRef.current?.focus();
     }, 0);
-    return () => clearTimeout(timer);
-  }, [active, suspended, sessionId, vpsId, handleRef]);
+    const settleTimer = setTimeout(() => {
+      handleRef.current?.fit();
+      handleRef.current?.focus();
+    }, 120);
+    return () => {
+      clearTimeout(timer);
+      clearTimeout(settleTimer);
+    };
+  }, [active, suspended, layoutSignal, sessionId, vpsId, handleRef]);
 
   return (
     <div

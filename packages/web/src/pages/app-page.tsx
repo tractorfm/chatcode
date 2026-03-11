@@ -124,7 +124,8 @@ export function AppPage({
     activeIndex: 0,
   });
   const [emptyActionBusy, setEmptyActionBusy] = useState(false);
-  const [fullscreenElement, setFullscreenElement] = useState<Element | null>(null);
+  const [fullscreenActive, setFullscreenActive] = useState(false);
+  const [layoutSignal, setLayoutSignal] = useState(0);
 
   const handleSelectVps = useCallback((vpsId: string) => {
     setActiveVpsId(vpsId);
@@ -233,7 +234,6 @@ export function AppPage({
   );
 
   const combinedRefreshSignal = sessionRefreshSignal + externalRefreshSignal;
-  const fullscreenActive = fullscreenElement !== null;
 
   useEffect(() => {
     if (!selectedVpsIdHint) return;
@@ -241,24 +241,20 @@ export function AppPage({
     setSidebarErrorMessage("");
   }, [selectedVpsIdHint]);
 
-  useEffect(() => {
-    const handleFullscreenChange = () => setFullscreenElement(document.fullscreenElement);
-    document.addEventListener("fullscreenchange", handleFullscreenChange);
-    return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
-  }, []);
-
   const handleToggleFullscreen = useCallback(async () => {
-    const target = document.getElementById("app-terminal-shell");
-    if (!target) return;
-    if (document.fullscreenElement === target) {
-      await document.exitFullscreen().catch(() => {});
-      return;
-    }
-    await target.requestFullscreen().catch(() => {});
+    setFullscreenActive((value) => !value);
+    window.setTimeout(() => {
+      setLayoutSignal((value) => value + 1);
+    }, 0);
   }, []);
 
   return (
-    <div className="h-screen flex overflow-hidden">
+    <div
+      className={cn(
+        "flex overflow-hidden",
+        fullscreenActive ? "fixed inset-0 z-40 bg-background" : "h-screen",
+      )}
+    >
       {/* Sidebar */}
       <Sidebar
         collapsed={collapsed || fullscreenActive}
@@ -296,8 +292,8 @@ export function AppPage({
                       ? "bg-background text-foreground font-medium"
                       : "text-muted-foreground hover:text-foreground hover:bg-accent/50 font-normal",
                   )}
-                  onClick={() => dispatchTab({ type: "setActive", index })}
-                >
+                onClick={() => dispatchTab({ type: "setActive", index })}
+              >
                   <Terminal className="h-3.5 w-3.5 shrink-0" />
                   <span className="truncate text-xs">{tab.title}</span>
                   <button
@@ -316,9 +312,9 @@ export function AppPage({
               <button
                 onClick={handleToggleFullscreen}
                 className="inline-flex items-center justify-center rounded-md p-2 text-muted-foreground hover:bg-accent hover:text-foreground"
-                title={fullscreenElement ? "Exit fullscreen" : "Enter fullscreen"}
+                title={fullscreenActive ? "Exit terminal fullscreen" : "Enter terminal fullscreen"}
               >
-                {fullscreenElement ? (
+                {fullscreenActive ? (
                   <Minimize2 className="h-4 w-4" />
                 ) : (
                   <Maximize2 className="h-4 w-4" />
@@ -344,6 +340,7 @@ export function AppPage({
                 vpsId={tab.vpsId}
                 sessionId={tab.sessionId}
                 active={i === effectiveActiveIndex}
+                layoutSignal={layoutSignal}
                 suspended={overlayOpen}
                 onSessionEnded={handleSessionEnded}
                 onSessionStateRefreshNeeded={handleSessionStateRefreshNeeded}

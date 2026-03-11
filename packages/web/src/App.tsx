@@ -46,7 +46,7 @@ export function App() {
   useEffect(() => {
     if (auth.status !== "authenticated") return;
     setLinkedProviders(auth.user.providers ?? []);
-  }, [auth]);
+  }, [auth.status, auth.status === "authenticated" ? auth.user.user_id : null]);
 
   if (auth.status === "loading") {
     return (
