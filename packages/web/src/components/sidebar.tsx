@@ -15,7 +15,7 @@ import {
   Copy,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { AGENT_TYPES, defaultSessionTitle, type AgentType } from "@/lib/constants";
+import { AGENT_TYPES, agentLabel, defaultSessionTitle, type AgentType } from "@/lib/constants";
 import {
   listVPS,
   listSessions,
@@ -31,6 +31,8 @@ import {
 } from "@/lib/api";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { InlineEdit } from "@/components/inline-edit";
+
+const DEFAULT_SESSION_WORKDIR = "/home/vibe/workspace";
 
 interface SidebarProps {
   collapsed: boolean;
@@ -74,6 +76,7 @@ export function Sidebar({
   const [errorMessage, setErrorMessage] = useState("");
   const [dismissedError, setDismissedError] = useState("");
   const [showAgentPicker, setShowAgentPicker] = useState(false);
+  const [sessionWorkdir, setSessionWorkdir] = useState(DEFAULT_SESSION_WORKDIR);
   const [confirmAction, setConfirmAction] = useState<{
     kind?: "remove-server";
     watchVpsId?: string;
@@ -196,20 +199,23 @@ export function Sidebar({
       setCreating(true);
       try {
         const title = defaultSessionTitle(agentType, sessions.length + 1);
+        const workdir = normalizeSessionWorkdir(sessionWorkdir);
         const res = await createSession(activeVpsId, {
           title,
           agent_type: agentType,
+          workdir,
         });
         await refreshSessions();
         onNewSession(activeVpsId, res.session_id, title);
         setErrorMessage("");
+        setShowAgentPicker(false);
       } catch (err) {
         setOperationError("Failed to create session", err);
       } finally {
         setCreating(false);
       }
     },
-    [activeVpsId, creating, sessions.length, refreshSessions, onNewSession, setOperationError],
+    [activeVpsId, creating, sessions.length, sessionWorkdir, refreshSessions, onNewSession, setOperationError],
   );
 
   const doEndSession = useCallback(
@@ -496,19 +502,34 @@ export function Sidebar({
                     )}
                   </button>
                   {showAgentPicker && !creating && (
-                    <div className="absolute right-0 top-full mt-1 z-50 w-44 rounded-md border border-border bg-card shadow-lg py-1">
+                    <div className="absolute right-0 top-full mt-1 z-50 w-56 rounded-md border border-border bg-card shadow-lg p-2 space-y-2">
+                      <div className="space-y-1">
+                        <label className="block text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                          Folder
+                        </label>
+                        <input
+                          value={sessionWorkdir}
+                          onChange={(e) => setSessionWorkdir(e.target.value)}
+                          placeholder={DEFAULT_SESSION_WORKDIR}
+                          className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs text-foreground outline-none focus:border-primary"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                          Agent
+                        </p>
                       {AGENT_TYPES.map(({ value, label }) => (
                         <button
                           key={value}
                           onClick={() => {
-                            setShowAgentPicker(false);
                             handleCreateSession(value);
                           }}
-                          className="w-full text-left px-3 py-1.5 text-xs text-foreground hover:bg-accent transition-colors"
+                          className="w-full rounded-md text-left px-2 py-1.5 text-xs text-foreground hover:bg-accent transition-colors"
                         >
                           {label}
                         </button>
                       ))}
+                      </div>
                     </div>
                   )}
                 </div>
@@ -538,16 +559,21 @@ export function Sidebar({
                       : "hover:bg-accent/50 text-foreground font-normal",
                   )}
                 >
-                  <div className="flex items-center gap-2 flex-1 min-w-0 text-left">
+                  <div className="flex items-start gap-2 flex-1 min-w-0 text-left">
                     <Terminal className="h-3.5 w-3.5 shrink-0" />
-                    <InlineEdit
-                      value={session.title}
-                      onSave={(title) => handleRenameSession(session.id, title)}
-                      maxLength={80}
-                      editable={session.id === activeSessionId}
-                      editMode="single"
-                      className="flex-1 min-w-0"
-                    />
+                    <div className="min-w-0 flex-1">
+                      <InlineEdit
+                        value={session.title}
+                        onSave={(title) => handleRenameSession(session.id, title)}
+                        maxLength={80}
+                        editable={session.id === activeSessionId}
+                        editMode="single"
+                        className="min-w-0"
+                      />
+                      <div className="truncate text-[11px] font-normal text-muted-foreground">
+                        {formatSessionSubtitle(session)}
+                      </div>
+                    </div>
                   </div>
                   <button
                     onClick={(e) => {
@@ -694,6 +720,27 @@ function ProviderServerIcon({
     );
   }
   return <Server className="h-3.5 w-3.5 shrink-0" />;
+}
+
+function normalizeSessionWorkdir(input: string): string {
+  const trimmed = input.trim();
+  if (!trimmed) return DEFAULT_SESSION_WORKDIR;
+  if (trimmed.startsWith("/")) return trimmed;
+  if (trimmed === "~") return "/home/vibe";
+  if (trimmed.startsWith("~/")) return `/home/vibe/${trimmed.slice(2)}`;
+  return `${DEFAULT_SESSION_WORKDIR}/${trimmed.replace(/^\.\//, "").replace(/^\/+/, "")}`;
+}
+
+function compactSessionPath(path: string): string {
+  if (!path) return "~";
+  if (path === "/home/vibe") return "~";
+  if (path.startsWith("/home/vibe/")) return `~/${path.slice("/home/vibe/".length)}`;
+  return path;
+}
+
+function formatSessionSubtitle(session: Session): string {
+  const kind = session.agent_type === "none" ? "Shell" : agentLabel(session.agent_type);
+  return `${kind} · ${compactSessionPath(session.workdir)}`;
 }
 
 function cleanupCommandForOS(os: string | null | undefined): string | null {

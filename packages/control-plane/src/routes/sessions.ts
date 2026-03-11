@@ -22,6 +22,7 @@ const MANAGED_AGENT_TYPES = new Set(["claude-code", "codex", "gemini", "opencode
 const FREE_PLAN_SESSION_LIMIT = 10;
 const OPEN_SESSION_STATUSES = new Set(["starting", "running"]);
 const SESSION_LIMIT_ERROR = /^session limit reached \((\d+)\)$/;
+const DEFAULT_SESSION_WORKDIR = "/home/vibe/workspace";
 
 interface GatewayAgentStatus {
   agent: string;
@@ -156,7 +157,7 @@ export async function handleSessionCreate(
     vps_id: vpsId,
     title: body.title || "New Session",
     agent_type: agentType,
-    workdir: body.workdir || "/home/vibe",
+    workdir: body.workdir || DEFAULT_SESSION_WORKDIR,
     status: "starting",
     created_at: now,
     last_activity_at: now,
@@ -172,7 +173,7 @@ export async function handleSessionCreate(
     request_id: sessionId,
     session_id: sessionId,
     name: body.title || "New Session",
-    workdir: body.workdir || "/home/vibe",
+    workdir: body.workdir || DEFAULT_SESSION_WORKDIR,
     agent: agentType,
   };
 

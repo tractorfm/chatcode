@@ -225,6 +225,7 @@ export function AppPage({
       const res = await createSession(activeVpsId, {
         title,
         agent_type: "claude-code",
+        workdir: "/home/vibe/workspace",
       });
       dispatchTab({
         type: "open",
