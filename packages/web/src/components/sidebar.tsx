@@ -79,6 +79,7 @@ export function Sidebar({
     description: string;
     details?: ReactNode;
     destructive?: boolean;
+    confirmLabel?: string;
     onConfirm: () => Promise<void> | void;
   } | null>(null);
   const activeSessionIdRef = useRef(activeSessionId);
@@ -238,6 +239,7 @@ export function Sidebar({
         title: "Power off server",
         description: `This will shut down "${activeVpsName}" and disconnect all sessions.`,
         destructive: true,
+        confirmLabel: "Power off",
         onConfirm: () => doPowerAction("off"),
       });
     },
@@ -273,6 +275,7 @@ export function Sidebar({
         : `This will remove "${activeVpsName}" from chatcode and stop reconnect attempts. This does not power off the host.`,
       details: cleanupDetails,
       destructive: true,
+      confirmLabel: isManagedVps ? "Destroy server" : "Remove without cleanup",
       onConfirm: doDeleteVPS,
     });
   }, [activeVpsId, activeVpsName, doDeleteVPS, isManagedVps]);
@@ -381,7 +384,7 @@ export function Sidebar({
                     : "hover:bg-accent/50 text-foreground font-normal",
                 )}
               >
-                <ProviderServerIcon provider={vps.provider} />
+                <ProviderServerIcon provider={vps.provider} gatewayOS={vps.gateway_os} />
                 <InlineEdit
                   value={vps.label || vps.region || vps.id}
                   onSave={(label) => handleRenameVps(vps.id, label)}
@@ -604,6 +607,7 @@ export function Sidebar({
           description={confirmAction.description}
           details={confirmAction.details}
           destructive={confirmAction.destructive}
+          confirmLabel={confirmAction.confirmLabel}
           onConfirm={async () => {
             await confirmAction.onConfirm();
             setConfirmAction(null);
@@ -623,7 +627,13 @@ export function Sidebar({
   );
 }
 
-function ProviderServerIcon({ provider }: { provider?: "digitalocean" | "manual" }) {
+function ProviderServerIcon({
+  provider,
+  gatewayOS,
+}: {
+  provider?: "digitalocean" | "manual";
+  gatewayOS?: string | null;
+}) {
   if (provider === "digitalocean") {
     return (
       <svg
@@ -635,6 +645,17 @@ function ProviderServerIcon({ provider }: { provider?: "digitalocean" | "manual"
         <path d="M155.3,317.6h-34v-34h34V317.6z" />
         <path d="M121.3,343.8H95.1v-26.2h26.2V343.8z" />
         <path d="M95.1,317.6H73.2v-21.9h21.9V317.6z" />
+      </svg>
+    );
+  }
+  if (gatewayOS === "darwin") {
+    return (
+      <svg
+        viewBox="0 0 41.5 51"
+        aria-hidden="true"
+        className="h-3.5 w-3.5 shrink-0 fill-current"
+      >
+        <path d="M40.2,17.4c-3.4,2.1-5.5,5.7-5.5,9.7c0,4.5,2.7,8.6,6.8,10.3c-0.8,2.6-2,5-3.5,7.2c-2.2,3.1-4.5,6.3-7.9,6.3s-4.4-2-8.4-2c-3.9,0-5.3,2.1-8.5,2.1s-5.4-2.9-7.9-6.5C2,39.5,0.1,33.7,0,27.6c0-9.9,6.4-15.2,12.8-15.2c3.4,0,6.2,2.2,8.3,2.2c2,0,5.2-2.3,9-2.3C34.1,12.2,37.9,14.1,40.2,17.4z M28.3,8.1C30,6.1,30.9,3.6,31,1c0-0.3,0-0.7-0.1-1c-2.9,0.3-5.6,1.7-7.5,3.9c-1.7,1.9-2.7,4.3-2.8,6.9c0,0.3,0,0.6,0.1,0.9c0.2,0,0.5,0.1,0.7,0.1C24.1,11.6,26.6,10.2,28.3,8.1z" />
       </svg>
     );
   }
@@ -653,7 +674,12 @@ function cleanupCommandForOS(os: string | null | undefined): string | null {
 
 function CleanupCommandDetails({ os }: { os?: string | null }) {
   const [copied, setCopied] = useState(false);
-  const command = cleanupCommandForOS(os);
+  const [platform, setPlatform] = useState<"linux" | "darwin">(
+    os === "darwin" ? "darwin" : "linux",
+  );
+  const knownOS = os === "darwin" || os === "linux";
+  const selectedPlatform = knownOS ? os : platform;
+  const command = cleanupCommandForOS(selectedPlatform);
 
   const copyCommand = useCallback(async (value: string) => {
     try {
@@ -666,12 +692,38 @@ function CleanupCommandDetails({ os }: { os?: string | null }) {
   }, []);
 
   if (command) {
-    const label = os === "darwin" ? "macOS" : "Linux";
+    const label = selectedPlatform === "darwin" ? "macOS" : "Linux";
     return (
       <div className="space-y-3">
-        <p className="text-xs text-muted-foreground">
+        <p className="text-sm text-muted-foreground">
           If the host still exists, cleanly remove the gateway first:
         </p>
+        {!knownOS ? (
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setPlatform("linux")}
+              className={`px-2 py-1 rounded-md text-xs border ${
+                platform === "linux"
+                  ? "border-primary bg-primary/5 text-primary"
+                  : "border-border text-muted-foreground"
+              }`}
+            >
+              Linux
+            </button>
+            <button
+              type="button"
+              onClick={() => setPlatform("darwin")}
+              className={`px-2 py-1 rounded-md text-xs border ${
+                platform === "darwin"
+                  ? "border-primary bg-primary/5 text-primary"
+                  : "border-border text-muted-foreground"
+              }`}
+            >
+              macOS
+            </button>
+          </div>
+        ) : null}
         <div className="space-y-1">
           <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
             {label}
@@ -693,45 +745,7 @@ function CleanupCommandDetails({ os }: { os?: string | null }) {
       </div>
     );
   }
-
-  return (
-    <div className="space-y-3">
-      <p className="text-xs text-muted-foreground">
-        If the host still exists, cleanly remove the gateway first:
-      </p>
-      {[
-        {
-          label: "Linux",
-          command: "curl -fsSL https://chatcode.dev/cleanup.sh | sudo bash -s -- --yes",
-        },
-        {
-          label: "macOS",
-          command: "curl -fsSL https://chatcode.dev/cleanup.sh | bash -s -- --yes",
-        },
-      ].map((entry) => (
-        <div key={entry.label} className="space-y-2">
-          <div className="space-y-1">
-            <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-              {entry.label}
-            </span>
-            <div className="bg-background rounded-md border border-border p-3">
-              <code className="text-xs font-mono text-foreground break-all">
-                {entry.command}
-              </code>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={() => void copyCommand(entry.command)}
-            className="inline-flex items-center gap-2 rounded-md border border-border px-3 py-2 text-xs text-foreground hover:bg-accent"
-          >
-            <Copy className="h-3.5 w-3.5" />
-            {copied ? "Copied" : `Copy ${entry.label} command`}
-          </button>
-        </div>
-      ))}
-    </div>
-  );
+  return null;
 }
 
 function NewSessionQuickStart({
