@@ -117,6 +117,8 @@ Rationale: keep the first release focused on “create VPS → open terminal →
 
 - MVP merges “workspace” and “workspace instance” into **Session**.
 - One session = one tmux session = one terminal.
+- Session workdirs are constrained under `~/workspace`; users choose a workspace-relative folder per session.
+- Current web UI groups sessions by top-level workspace folder and shows deeper subpaths as lightweight session context.
 - `session_id` is the canonical handle for cross-client continuity.
 - Limit: **10 concurrent sessions** per VPS on the free plan (control-plane enforced), with a gateway safety cap of **50**.
 - On session start, gateway writes an agent instruction file in the session workdir:

@@ -51,11 +51,16 @@ This milestone is the gate before Telegram integration.
 3. Make reconnect behavior explicit in terminal UX.
 4. Improve session list usability for large numbers of ended sessions.
 5. Keep staging test tooling useful but separate from end-user UX.
+6. Keep session creation lightweight but structured:
+   - workspace-relative folder selection
+   - folder grouping in sidebar
+   - path-aware tab titles
 
 ### Exit criteria
 1. Core flows are debuggable without checking browser console logs.
 2. Session create/select/close behavior is deterministic under rapid user actions.
 3. Terminal reconnect behavior is visible and predictable.
+4. Session list is navigable once multiple folders/sessions exist on the same VPS.
 
 ---
 

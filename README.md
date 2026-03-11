@@ -17,6 +17,13 @@ chatcode.dev focuses on one reliable path for MVP:
 2. Keep one persistent gateway connection to control plane.
 3. Run tmux-backed sessions for AI coding agents.
 
+Current web app behavior:
+
+- sessions are created under `~/workspace`
+- users can pick a workspace-relative folder per session
+- sidebar groups sessions by workspace folder
+- tabs show session name plus workspace-relative subpath when applicable
+
 Current status:
 
 - `M1` complete (protocol + gateway core).
@@ -94,6 +101,14 @@ Linux gateway installs currently:
 - install reusable agent installers (`claude-code`, `codex`, `gemini`, `opencode`) plus `install-git.sh`
 - enable daily maintenance timer to update gateway + installed agent CLIs
 - enable sudo command logging for `vibe` (root-owned log)
+
+## Session Model (Current MVP)
+
+- One session = one tmux-backed terminal.
+- Default workdir root is `~/workspace`.
+- Session create is constrained to workspace-relative folders.
+- Free plan limit is enforced in control-plane at `10` concurrent sessions per VPS.
+- Gateway keeps a broader safety cap at `50`.
 
 ## Security and Trust Model
 
