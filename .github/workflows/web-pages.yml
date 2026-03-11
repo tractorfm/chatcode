@@ -41,10 +41,10 @@ jobs:
       STAGING_PROJECT: ${{ vars.CF_PAGES_PROJECT_STAGING }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 24
 
@@ -57,7 +57,16 @@ jobs:
       - name: Verify Cloudflare Pages auth
         run: |
           set -euo pipefail
-          corepack pnpm --dir packages/control-plane exec wrangler pages project list >/dev/null
+          for attempt in 1 2 3; do
+            if corepack pnpm --dir packages/control-plane exec wrangler pages project list >/dev/null; then
+              exit 0
+            fi
+            if [[ "${attempt}" -eq 3 ]]; then
+              echo "::error::failed to verify Cloudflare Pages auth after ${attempt} attempts"
+              exit 1
+            fi
+            sleep $((attempt * 5))
+          done
 
       - name: Build web app
         run: corepack pnpm --dir packages/web run build
@@ -99,7 +108,16 @@ jobs:
       - name: Deploy to Cloudflare Pages
         run: |
           set -euo pipefail
-          corepack pnpm --dir packages/control-plane exec wrangler pages deploy "${GITHUB_WORKSPACE}/${WEB_DIST_DIR}" \
-            --project-name "${{ steps.target.outputs.project }}" \
-            --branch "${{ steps.target.outputs.deploy_branch }}" \
-            --commit-dirty=true
+          for attempt in 1 2 3; do
+            if corepack pnpm --dir packages/control-plane exec wrangler pages deploy "${GITHUB_WORKSPACE}/${WEB_DIST_DIR}" \
+              --project-name "${{ steps.target.outputs.project }}" \
+              --branch "${{ steps.target.outputs.deploy_branch }}" \
+              --commit-dirty=true; then
+              exit 0
+            fi
+            if [[ "${attempt}" -eq 3 ]]; then
+              echo "::error::Cloudflare Pages deploy failed after ${attempt} attempts"
+              exit 1
+            fi
+            sleep $((attempt * 10))
+          done

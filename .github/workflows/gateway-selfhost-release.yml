@@ -94,10 +94,10 @@ jobs:
       R2_RELEASE_BUCKET: ${{ secrets.R2_RELEASE_BUCKET }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version-file: packages/gateway/go.mod
           cache-dependency-path: packages/gateway/go.sum
@@ -111,7 +111,7 @@ jobs:
           ./scripts/build-release.sh "${{ needs.prepare.outputs.release_tag }}"
 
       - name: Remove existing release for tag
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         env:
           RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
         with:

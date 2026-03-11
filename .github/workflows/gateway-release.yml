@@ -63,10 +63,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version-file: packages/gateway/go.mod
           cache-dependency-path: packages/gateway/go.sum
@@ -86,7 +86,7 @@ jobs:
             -o "${OUT}" ./cmd/gateway
 
       - name: Upload build artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: gateway-bin-${{ matrix.goos }}-${{ matrix.goarch }}
           path: packages/gateway/dist/${{ needs.prepare.outputs.release_tag }}/chatcode-gateway-${{ matrix.goos }}-${{ matrix.goarch }}
@@ -98,10 +98,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Download binaries
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: gateway-bin-*
           merge-multiple: true
@@ -152,7 +152,7 @@ jobs:
           JSON
 
       - name: Upload release bundle
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: gateway-release-bundle
           path: packages/gateway/dist/${{ needs.prepare.outputs.release_tag }}
@@ -164,7 +164,7 @@ jobs:
 
     steps:
       - name: Remove existing release for tag (clean asset set)
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         env:
           RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
         with:
@@ -185,7 +185,7 @@ jobs:
             }
 
       - name: Remove legacy release assets (if release exists)
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         env:
           RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
         with:
@@ -215,7 +215,7 @@ jobs:
             }
 
       - name: Download release bundle
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: gateway-release-bundle
           path: dist/${{ needs.prepare.outputs.release_tag }}
@@ -249,11 +249,11 @@ jobs:
 
       - name: Checkout
         if: ${{ steps.check.outputs.enabled == 'true' }}
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Download release bundle
         if: ${{ steps.check.outputs.enabled == 'true' }}
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: gateway-release-bundle
           path: packages/gateway/dist/${{ needs.prepare.outputs.release_tag }}
