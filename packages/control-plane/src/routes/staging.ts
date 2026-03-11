@@ -98,6 +98,14 @@ const GATEWAY_UPDATE_TARGETS = new Set([
   "darwin-arm64",
 ]);
 
+function trimTrailingSlashes(value: string): string {
+  let end = value.length;
+  while (end > 0 && value.charCodeAt(end - 1) === 47) {
+    end -= 1;
+  }
+  return end === value.length ? value : value.slice(0, end);
+}
+
 export async function handleStagingGatewayUpdatePayload(
   request: Request,
   env: Env,
@@ -111,7 +119,7 @@ export async function handleStagingGatewayUpdatePayload(
   const vpsId = (url.searchParams.get("vps_id") || "").trim();
   const target = (url.searchParams.get("target") || "linux-amd64").trim();
   const version = (url.searchParams.get("version") || env.GATEWAY_VERSION || "").trim();
-  const baseUrl = (env.GATEWAY_RELEASE_BASE_URL || "").trim().replace(/\/+$/, "");
+  const baseUrl = trimTrailingSlashes((env.GATEWAY_RELEASE_BASE_URL || "").trim());
 
   if (!vpsId) {
     return jsonResponse({ error: "vps_id is required" }, 400);

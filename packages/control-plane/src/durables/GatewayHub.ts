@@ -611,18 +611,7 @@ export class GatewayHub {
     this.upsertBrowserSocket(server, sessionId, Date.now());
     this.cleanupIdleSockets();
 
-    // Request snapshot from gateway
-    if (this.gatewaySocket) {
-      const requestId = `snap-init-${sessionId}-${Date.now()}`;
-      this.trackBrowserAck(requestId, server);
-      const snapshotCmd = JSON.stringify({
-        type: "session.snapshot",
-        schema_version: "1",
-        request_id: requestId,
-        session_id: sessionId,
-      });
-      safeSend(this.gatewaySocket, snapshotCmd);
-    } else {
+    if (!this.gatewaySocket) {
       safeSend(
         server,
         JSON.stringify({
