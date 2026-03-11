@@ -40,6 +40,7 @@ import {
   handleVPSPowerOn,
   handleGatewayUnlink,
   handleVPSManualCreate,
+  handleVPSManualCommand,
   handleVPSUpdate,
 } from "./routes/vps.js";
 import {
@@ -168,6 +169,14 @@ export default {
       }
       if (path === "/vps/manual" && method === "POST") {
         return withCORS(await handleVPSManualCreate(request, env, auth), request, env);
+      }
+      const manualCommandMatch = path.match(/^\/vps\/([a-zA-Z0-9_-]+)\/manual-command$/);
+      if (manualCommandMatch && method === "POST") {
+        return withCORS(
+          await handleVPSManualCommand(request, env, auth, manualCommandMatch[1]),
+          request,
+          env,
+        );
       }
 
       const vpsMatch = path.match(/^\/vps\/([a-zA-Z0-9_-]+)$/);

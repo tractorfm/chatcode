@@ -42,7 +42,7 @@ interface SidebarProps {
   onNewSession: (vpsId: string, sessionId: string, title: string) => void;
   onSessionRenamed: (sessionId: string, title: string) => void;
   onVpsDeleted: (deletedVpsId: string, nextVpsId: string | null) => void;
-  onNavigate: (page: "settings" | "status" | "onboarding") => void;
+  onNavigate: (page: "settings" | "status" | "onboarding", opts?: { manualVpsId?: string | null }) => void;
   onLogout: () => void;
   userEmail?: string;
   externalErrorMessage?: string;
@@ -435,6 +435,15 @@ export function Sidebar({
           {/* VPS Actions */}
           {activeVps && (
             <div className="px-3 pb-2 flex gap-1">
+              {activeVps.provider === "manual" && !activeVps.gateway_connected ? (
+                <button
+                  onClick={() => onNavigate("onboarding", { manualVpsId: activeVps.id })}
+                  className="p-1.5 rounded hover:bg-accent text-muted-foreground"
+                  title="Show install command"
+                >
+                  <Terminal className="h-3.5 w-3.5" />
+                </button>
+              ) : null}
               <button
                 onClick={() => {
                   if (!isManagedVps) return;

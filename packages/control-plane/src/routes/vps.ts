@@ -10,6 +10,7 @@ import {
   updateVPSStatus,
   updateVPSIpv4,
   updateVPSLabel,
+  updateGatewayAuthTokenHash,
   deleteVPSCascade,
   createGateway,
   getGateway,
@@ -57,6 +58,17 @@ interface VPSResponse {
 
 interface VPSCreateResponse {
   status: "provisioning";
+  vps: VPSResponse;
+}
+
+interface ManualVPSResponse {
+  gateway_id: string;
+  gateway_auth_token: string;
+  cp_url: string;
+  install: {
+    linux: string;
+    macos: string;
+  };
   vps: VPSResponse;
 }
 
@@ -466,6 +478,58 @@ export async function handleVPSPowerOn(
   await updateVPSStatus(env.DB, vpsId, "active");
 
   return jsonResponse({ ok: true });
+}
+
+/**
+ * POST /vps/:id/manual-command – Reissue install command for an existing BYO server.
+ * Rotates the gateway auth token while the gateway is disconnected.
+ */
+export async function handleVPSManualCommand(
+  request: Request,
+  env: Env,
+  auth: AuthContext,
+  vpsId: string,
+): Promise<Response> {
+  if (!isManualVPSAllowed(env)) {
+    return jsonResponse({ error: "not found" }, 404);
+  }
+
+  const vps = await getVPS(env.DB, vpsId);
+  if (!vps || vps.user_id !== auth.userId) {
+    return jsonResponse({ error: "not found" }, 404);
+  }
+  if (vps.droplet_id > 0) {
+    return jsonResponse({ error: "manual command only applies to BYO servers" }, 400);
+  }
+
+  const gateway = await getGatewayByVPS(env.DB, vpsId);
+  if (!gateway) {
+    return jsonResponse({ error: "gateway not found" }, 404);
+  }
+  if (gateway.connected) {
+    return jsonResponse({ error: "gateway already connected" }, 409);
+  }
+
+  const authToken = randomHex(32);
+  const authTokenHash = await hashGatewayToken(authToken, env.GATEWAY_TOKEN_SALT);
+  await updateGatewayAuthTokenHash(env.DB, gateway.id, authTokenHash);
+
+  const cp = new URL(request.url);
+  const cpWsBase = `wss://${cp.hostname}/gw/connect`;
+
+  return jsonResponse(
+    {
+      gateway_id: gateway.id,
+      gateway_auth_token: authToken,
+      cp_url: cpWsBase,
+      install: {
+        linux: `curl -fsSL https://chatcode.dev/install.sh | sudo bash -s -- --version latest --gateway-id ${gateway.id} --gateway-auth-token ${authToken} --cp-url ${cpWsBase}`,
+        macos: `curl -fsSL https://chatcode.dev/install.sh | bash -s -- --version latest --gateway-id ${gateway.id} --gateway-auth-token ${authToken} --cp-url ${cpWsBase}`,
+      },
+      vps: toVPSResponse(vps, gateway),
+    } satisfies ManualVPSResponse,
+    200,
+  );
 }
 
 /**

@@ -4,6 +4,7 @@ import {
   handleVPSDelete,
   handleGatewayUnlink,
   handleVPSManualCreate,
+  handleVPSManualCommand,
   handleVPSUpdate,
 } from "../src/routes/vps";
 
@@ -13,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   listVPSByUser: vi.fn(async () => []),
   updateVPSStatus: vi.fn(async () => {}),
   updateVPSLabel: vi.fn(async () => {}),
+  updateGatewayAuthTokenHash: vi.fn(async () => {}),
   deleteVPSCascade: vi.fn(async () => {}),
   createGateway: vi.fn(async () => {}),
   getGateway: vi.fn(),
@@ -35,6 +37,7 @@ vi.mock("../src/db/schema.js", () => ({
   listVPSByUser: mocks.listVPSByUser,
   updateVPSStatus: mocks.updateVPSStatus,
   updateVPSLabel: mocks.updateVPSLabel,
+  updateGatewayAuthTokenHash: mocks.updateGatewayAuthTokenHash,
   deleteVPSCascade: mocks.deleteVPSCascade,
   createGateway: mocks.createGateway,
   getGateway: mocks.getGateway,
@@ -346,6 +349,97 @@ describe("routes/vps", () => {
     expect(res.status).toBe(400);
     await expect(res.json()).resolves.toMatchObject({ error: "invalid label" });
     expect(mocks.createVPS).not.toHaveBeenCalled();
+  });
+
+  it("reissues manual install command for disconnected BYO server", async () => {
+    const { env } = makeEnv();
+    mocks.getVPS.mockResolvedValue({
+      id: "vps-manual-1",
+      user_id: "usr-1",
+      droplet_id: 0,
+      label: "raspi",
+      region: "manual",
+      size: "manual:raspi",
+      ipv4: null,
+      status: "provisioning",
+      provisioning_deadline_at: null,
+      created_at: 1,
+      updated_at: 1,
+    });
+    mocks.getGatewayByVPS.mockResolvedValue({
+      id: "gw-manual-1",
+      vps_id: "vps-manual-1",
+      auth_token_hash: "old-hash",
+      version: null,
+      host_os: null,
+      last_seen_at: null,
+      connected: 0,
+      created_at: 1,
+    });
+    mocks.randomHex.mockReturnValue("fresh-token");
+
+    const res = await handleVPSManualCommand(
+      new Request("https://cp.example.test/vps/vps-manual-1/manual-command", {
+        method: "POST",
+      }),
+      env,
+      { userId: "usr-1" },
+      "vps-manual-1",
+    );
+
+    expect(res.status).toBe(200);
+    expect(mocks.updateGatewayAuthTokenHash).toHaveBeenCalledWith(
+      env.DB,
+      "gw-manual-1",
+      "hash-token",
+    );
+    await expect(res.json()).resolves.toMatchObject({
+      gateway_id: "gw-manual-1",
+      gateway_auth_token: "fresh-token",
+      vps: {
+        id: "vps-manual-1",
+        provider: "manual",
+      },
+    });
+  });
+
+  it("rejects manual command refresh when gateway is already connected", async () => {
+    const { env } = makeEnv();
+    mocks.getVPS.mockResolvedValue({
+      id: "vps-manual-1",
+      user_id: "usr-1",
+      droplet_id: 0,
+      label: "raspi",
+      region: "manual",
+      size: "manual:raspi",
+      ipv4: null,
+      status: "active",
+      provisioning_deadline_at: null,
+      created_at: 1,
+      updated_at: 1,
+    });
+    mocks.getGatewayByVPS.mockResolvedValue({
+      id: "gw-manual-1",
+      vps_id: "vps-manual-1",
+      auth_token_hash: "old-hash",
+      version: "v0.0.13",
+      host_os: "linux",
+      last_seen_at: 1,
+      connected: 1,
+      created_at: 1,
+    });
+
+    const res = await handleVPSManualCommand(
+      new Request("https://cp.example.test/vps/vps-manual-1/manual-command", {
+        method: "POST",
+      }),
+      env,
+      { userId: "usr-1" },
+      "vps-manual-1",
+    );
+
+    expect(res.status).toBe(409);
+    expect(mocks.updateGatewayAuthTokenHash).not.toHaveBeenCalled();
   });
 
   it("updates vps label", async () => {

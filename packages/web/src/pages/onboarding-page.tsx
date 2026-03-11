@@ -1,10 +1,11 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ArrowLeft, Cloud, Server, Check, Loader2, Copy } from "lucide-react";
-import { createManualVPS, createVPS, listVPS, type ManualVPSResponse } from "@/lib/api";
+import { createManualVPS, createVPS, listVPS, regenerateManualVPSCommand, type ManualVPSResponse } from "@/lib/api";
 
 interface OnboardingPageProps {
   onBack: () => void;
   onComplete: (vpsId: string) => void;
+  manualVpsId?: string | null;
 }
 
 type Step = "choose" | "do-setup" | "byo-setup" | "creating";
@@ -25,7 +26,7 @@ const SIZES = [
   { value: "s-2vcpu-4gb", label: "Large", desc: "2 vCPU, 4GB, 80GB", cost: "~$24/mo" },
 ];
 
-export function OnboardingPage({ onBack, onComplete }: OnboardingPageProps) {
+export function OnboardingPage({ onBack, onComplete, manualVpsId = null }: OnboardingPageProps) {
   const [step, setStep] = useState<Step>("choose");
   const [region, setRegion] = useState("nyc1");
   const [size, setSize] = useState("s-1vcpu-512mb-10gb");
@@ -86,6 +87,26 @@ export function OnboardingPage({ onBack, onComplete }: OnboardingPageProps) {
     }
   }, [byoLabel]);
 
+  const loadExistingManualSetup = useCallback(async () => {
+    if (!manualVpsId) return;
+    setStep("byo-setup");
+    setManualLoading(true);
+    setManualError("");
+    setCopiedCommand(false);
+    try {
+      const setup = await regenerateManualVPSCommand(manualVpsId);
+      setManualSetup(setup);
+    } catch (err: unknown) {
+      const msg =
+        err instanceof Error
+          ? err.message
+          : "Failed to load install command";
+      setManualError(msg);
+    } finally {
+      setManualLoading(false);
+    }
+  }, [manualVpsId]);
+
   const handleCopyCommand = useCallback(async () => {
     if (!manualSetup) return;
     const cmd = manualSetup.install[manualPlatform];
@@ -101,6 +122,28 @@ export function OnboardingPage({ onBack, onComplete }: OnboardingPageProps) {
   const handleManualContinue = useCallback(() => {
     const vpsId = manualSetup?.vps?.id;
     if (vpsId) onComplete(vpsId);
+  }, [manualSetup, onComplete]);
+
+  useEffect(() => {
+    if (!manualVpsId) return;
+    void loadExistingManualSetup();
+  }, [loadExistingManualSetup, manualVpsId]);
+
+  useEffect(() => {
+    const vpsId = manualSetup?.vps?.id;
+    if (!vpsId) return;
+    const timer = window.setInterval(async () => {
+      try {
+        const { vps } = await listVPS();
+        const current = vps.find((entry) => entry.id === vpsId);
+        if (current?.gateway_connected) {
+          onComplete(vpsId);
+        }
+      } catch {
+        // Best-effort polling only.
+      }
+    }, 3000);
+    return () => window.clearInterval(timer);
   }, [manualSetup, onComplete]);
 
   return (
@@ -285,7 +328,7 @@ export function OnboardingPage({ onBack, onComplete }: OnboardingPageProps) {
               ) : (
                 <>
                   <Server className="h-4 w-4" />
-                  Generate install command
+                  {manualVpsId ? "Regenerate install command" : "Generate install command"}
                 </>
               )}
             </button>
@@ -340,7 +383,7 @@ export function OnboardingPage({ onBack, onComplete }: OnboardingPageProps) {
                     onClick={handleManualContinue}
                     className="inline-flex items-center gap-2 rounded-md bg-primary px-3 py-2 text-xs text-primary-foreground hover:bg-primary/90"
                   >
-                    Continue
+                    Done
                   </button>
                 </div>
               </div>

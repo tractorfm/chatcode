@@ -127,6 +127,12 @@ export function createManualVPS(opts?: { label?: string }) {
   });
 }
 
+export function regenerateManualVPSCommand(id: string) {
+  return request<ManualVPSResponse>(`/vps/${encodeURIComponent(id)}/manual-command`, {
+    method: "POST",
+  });
+}
+
 export function deleteVPS(id: string) {
   return request<{ ok: boolean }>(`/vps/${encodeURIComponent(id)}`, {
     method: "DELETE",

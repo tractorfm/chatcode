@@ -9,7 +9,7 @@ import { defaultSessionTitle } from "@/lib/constants";
 interface AppPageProps {
   userEmail?: string;
   onLogout: () => void;
-  onNavigate: (page: "settings" | "status" | "onboarding") => void;
+  onNavigate: (page: "settings" | "status" | "onboarding", opts?: { manualVpsId?: string | null }) => void;
   overlayOpen?: boolean;
   externalRefreshSignal?: number;
   selectedVpsIdHint?: string | null;

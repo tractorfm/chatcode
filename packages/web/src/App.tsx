@@ -13,17 +13,23 @@ export function App() {
   const [overlay, setOverlay] = useState<Overlay>(null);
   const [sidebarRefreshSignal, setSidebarRefreshSignal] = useState(0);
   const [selectedVpsIdHint, setSelectedVpsIdHint] = useState<string | null>(null);
+  const [onboardingManualVpsId, setOnboardingManualVpsId] = useState<string | null>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
 
-  const handleNavigate = useCallback((target: "settings" | "status" | "onboarding") => {
+  const handleNavigate = useCallback((target: "settings" | "status" | "onboarding", opts?: { manualVpsId?: string | null }) => {
+    setOnboardingManualVpsId(target === "onboarding" ? opts?.manualVpsId ?? null : null);
     setOverlay(target);
   }, []);
 
-  const handleCloseOverlay = useCallback(() => setOverlay(null), []);
+  const handleCloseOverlay = useCallback(() => {
+    setOnboardingManualVpsId(null);
+    setOverlay(null);
+  }, []);
 
   const handleOnboardingComplete = useCallback((vpsId: string) => {
     setSelectedVpsIdHint(vpsId);
     setSidebarRefreshSignal((value) => value + 1);
+    setOnboardingManualVpsId(null);
     setOverlay(null);
     window.setTimeout(() => setSelectedVpsIdHint(null), 0);
   }, []);
@@ -72,6 +78,7 @@ export function App() {
             <OnboardingPage
               onBack={handleCloseOverlay}
               onComplete={handleOnboardingComplete}
+              manualVpsId={onboardingManualVpsId}
             />
           )}
           {overlay === "settings" && (

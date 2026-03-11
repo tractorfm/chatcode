@@ -466,6 +466,17 @@ export async function updateGatewaySystemInfo(
     .run();
 }
 
+export async function updateGatewayAuthTokenHash(
+  db: D1Database,
+  id: string,
+  authTokenHash: string,
+): Promise<void> {
+  await db
+    .prepare("UPDATE gateways SET auth_token_hash = ?, connected = 0 WHERE id = ?")
+    .bind(authTokenHash, id)
+    .run();
+}
+
 export async function updateGatewayLastSeen(db: D1Database, id: string): Promise<void> {
   await db
     .prepare("UPDATE gateways SET last_seen_at = ? WHERE id = ?")
