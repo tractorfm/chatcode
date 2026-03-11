@@ -64,6 +64,8 @@ export function createTerminalHandle(opts: UseTerminalOptions): TerminalHandle {
   let resizeObserver: ResizeObserver | null = null;
   let windowResizeHandler: (() => void) | null = null;
   let awaitingInitialSnapshot = false;
+  let initialResizeRequestId: string | null = null;
+  let initialSnapshotRequested = false;
   let initialSnapshotTimer: ReturnType<typeof setTimeout> | null = null;
   let initialSnapshotRetryTimer: ReturnType<typeof setTimeout> | null = null;
   let lastCols = 0;
@@ -106,26 +108,28 @@ export function createTerminalHandle(opts: UseTerminalOptions): TerminalHandle {
     }
   }
 
-  function sendResize(cols: number, rows: number, reason = "unknown") {
+  function sendResize(cols: number, rows: number, reason = "unknown"): string | null {
     if (!socket || socket.readyState !== WebSocket.OPEN) {
       debugLog("defer-resize-no-socket", { reason, cols, rows });
-      return;
+      return null;
     }
     if (cols === lastCols && rows === lastRows) {
       debugLog("skip-resize", { reason, cols, rows });
-      return;
+      return null;
     }
     lastCols = cols;
     lastRows = rows;
+    const reqId = requestId("resize");
     debugLog("send-resize", { reason, cols, rows });
     sendJSON({
       type: "session.resize",
       schema_version: "1",
-      request_id: requestId("resize"),
+      request_id: reqId,
       session_id: sessionId,
       cols,
       rows,
     });
+    return reqId;
   }
 
   function sendInput(data: string) {
@@ -140,6 +144,7 @@ export function createTerminalHandle(opts: UseTerminalOptions): TerminalHandle {
   }
 
   function requestSnapshot(reason: string) {
+    initialSnapshotRequested = true;
     debugLog("send-snapshot", { reason });
     sendJSON({
       type: "session.snapshot",
@@ -149,7 +154,10 @@ export function createTerminalHandle(opts: UseTerminalOptions): TerminalHandle {
     });
   }
 
-  function scheduleFit(reason = "unknown", afterFit?: () => void) {
+  function scheduleFit(
+    reason = "unknown",
+    afterFit?: (cols: number, rows: number, resizeReqId: string | null) => void,
+  ) {
     if (fitTimer) clearTimeout(fitTimer);
     if (fitFrameA !== null) cancelAnimationFrame(fitFrameA);
     if (fitFrameB !== null) cancelAnimationFrame(fitFrameB);
@@ -169,8 +177,8 @@ export function createTerminalHandle(opts: UseTerminalOptions): TerminalHandle {
           const cols = term.cols || 80;
           const rows = term.rows || 24;
           debugLog("fit", { reason, cols, rows });
-          sendResize(cols, rows, reason);
-          afterFit?.();
+          const resizeReqId = sendResize(cols, rows, reason);
+          afterFit?.(cols, rows, resizeReqId);
         });
       });
     }, 0);
@@ -218,10 +226,13 @@ export function createTerminalHandle(opts: UseTerminalOptions): TerminalHandle {
 
       // Request initial snapshot
       awaitingInitialSnapshot = true;
+      initialResizeRequestId = null;
+      initialSnapshotRequested = false;
       if (initialSnapshotTimer) clearTimeout(initialSnapshotTimer);
       initialSnapshotTimer = setTimeout(() => {
         initialSnapshotTimer = null;
         awaitingInitialSnapshot = false;
+        initialResizeRequestId = null;
       }, 1500);
 
       if (initialSnapshotRetryTimer) {
@@ -229,16 +240,26 @@ export function createTerminalHandle(opts: UseTerminalOptions): TerminalHandle {
         initialSnapshotRetryTimer = null;
       }
 
-      scheduleFit("ws-open", () => {
+      scheduleFit("ws-open", (_cols, _rows, resizeReqId) => {
         if (disposed || ws !== socket) return;
+        if (resizeReqId) {
+          initialResizeRequestId = resizeReqId;
+          return;
+        }
         requestSnapshot("initial-post-fit");
       });
 
       initialSnapshotRetryTimer = setTimeout(() => {
         if (disposed || ws !== socket || !awaitingInitialSnapshot) return;
-        scheduleFit("initial-retry", () => {
+        scheduleFit("initial-retry", (_cols, _rows, resizeReqId) => {
           if (disposed || ws !== socket || !awaitingInitialSnapshot) return;
-          requestSnapshot("initial-retry");
+          if (resizeReqId) {
+            initialResizeRequestId = resizeReqId;
+            return;
+          }
+          if (!initialSnapshotRequested) {
+            requestSnapshot("initial-retry");
+          }
         });
       }, 250);
     });
@@ -260,12 +281,50 @@ export function createTerminalHandle(opts: UseTerminalOptions): TerminalHandle {
         }
 
         if (
+          msg.type === "ack" &&
+          msg.ok !== false &&
+          awaitingInitialSnapshot &&
+          typeof msg.request_id === "string" &&
+          msg.request_id === initialResizeRequestId
+        ) {
+          initialResizeRequestId = null;
+          if (!initialSnapshotRequested) {
+            requestSnapshot("after-initial-resize-ack");
+          }
+          return;
+        }
+
+        if (
           msg.type === "session.snapshot" &&
           msg.session_id === sessionId &&
           typeof msg.content === "string"
         ) {
+          const snapshotCols = typeof msg.cols === "number" ? msg.cols : null;
+          const snapshotRows =
+            typeof msg.rows === "number" && msg.rows > 0 ? msg.rows : null;
+          if (
+            awaitingInitialSnapshot &&
+            snapshotCols === 80 &&
+            snapshotRows === 24 &&
+            lastCols > 0 &&
+            lastRows > 0 &&
+            (lastCols !== 80 || lastRows !== 24)
+          ) {
+            debugLog("ignore-bootstrap-snapshot", {
+              snapshotCols,
+              snapshotRows,
+              expectedCols: lastCols,
+              expectedRows: lastRows,
+            });
+            initialSnapshotRequested = false;
+            setTimeout(() => {
+              if (disposed || ws !== socket || !awaitingInitialSnapshot) return;
+              requestSnapshot("after-bootstrap-snapshot-ignore");
+            }, 75);
+            return;
+          }
           const rowsHint =
-            typeof msg.rows === "number" && msg.rows > 0 ? msg.rows : 80;
+            snapshotRows ?? 80;
           const normalized = msg.content
             .replace(/\r\n/g, "\n")
             .replace(/\r/g, "\n");
@@ -293,6 +352,8 @@ export function createTerminalHandle(opts: UseTerminalOptions): TerminalHandle {
           else if (msg.cursor_visible === true) term.write("\x1b[?25h");
 
           awaitingInitialSnapshot = false;
+          initialResizeRequestId = null;
+          initialSnapshotRequested = false;
           if (initialSnapshotTimer) {
             clearTimeout(initialSnapshotTimer);
             initialSnapshotTimer = null;
