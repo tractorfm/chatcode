@@ -12,6 +12,7 @@ import {
   updateVPSLabel,
   deleteVPSCascade,
   createGateway,
+  getGateway,
   getGatewayByVPS,
   listGatewaysByVPSIds,
   getDOConnection,
@@ -465,6 +466,31 @@ export async function handleVPSPowerOn(
   await updateVPSStatus(env.DB, vpsId, "active");
 
   return jsonResponse({ ok: true });
+}
+
+/**
+ * POST /gw/unlink/:gatewayId – Gateway-authenticated unlink used by cleanup script.
+ * Removes chatcode metadata for the gateway's VPS without destroying provider resources.
+ */
+export async function handleGatewayUnlink(
+  env: Env,
+  gatewayId: string,
+): Promise<Response> {
+  const gateway = await getGateway(env.DB, gatewayId);
+  if (!gateway) {
+    return new Response(null, { status: 204 });
+  }
+
+  try {
+    const doId = env.GATEWAY_HUB.idFromName(gateway.id);
+    const stub = env.GATEWAY_HUB.get(doId);
+    await stub.fetch(new Request("http://do/shutdown", { method: "POST" }));
+  } catch {
+    // Best-effort shutdown before unlinking metadata.
+  }
+
+  await deleteVPSCascade(env.DB, gateway.vps_id);
+  return new Response(null, { status: 204 });
 }
 
 // ---------------------------------------------------------------------------

@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   handleVPSCreate,
   handleVPSDelete,
+  handleGatewayUnlink,
   handleVPSManualCreate,
   handleVPSUpdate,
 } from "../src/routes/vps";
@@ -14,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   updateVPSLabel: vi.fn(async () => {}),
   deleteVPSCascade: vi.fn(async () => {}),
   createGateway: vi.fn(async () => {}),
+  getGateway: vi.fn(),
   getGatewayByVPS: vi.fn(),
   getDOConnection: vi.fn(),
   getAccessToken: vi.fn(),
@@ -35,6 +37,7 @@ vi.mock("../src/db/schema.js", () => ({
   updateVPSLabel: mocks.updateVPSLabel,
   deleteVPSCascade: mocks.deleteVPSCascade,
   createGateway: mocks.createGateway,
+  getGateway: mocks.getGateway,
   getGatewayByVPS: mocks.getGatewayByVPS,
   getDOConnection: mocks.getDOConnection,
 }));
@@ -103,6 +106,16 @@ describe("routes/vps", () => {
       expires_at: 9999999999,
       created_at: 1,
       updated_at: 1,
+    });
+    mocks.getGateway.mockResolvedValue({
+      id: "gw-1",
+      vps_id: "vps-1",
+      auth_token_hash: "hash",
+      version: null,
+      host_os: null,
+      last_seen_at: null,
+      connected: 0,
+      created_at: 1,
     });
     mocks.getGatewayByVPS.mockResolvedValue({ id: "gw-1" });
     mocks.getAccessToken.mockResolvedValue("do-access-token");
@@ -373,5 +386,16 @@ describe("routes/vps", () => {
 
     expect(res.status).toBe(400);
     expect(mocks.updateVPSLabel).not.toHaveBeenCalled();
+  });
+
+  it("unlinks a gateway without deleting provider resources", async () => {
+    const { env, doShutdownFetch } = makeEnv();
+
+    const res = await handleGatewayUnlink(env, "gw-1");
+
+    expect(res.status).toBe(204);
+    expect(doShutdownFetch).toHaveBeenCalledOnce();
+    expect(mocks.deleteDroplet).not.toHaveBeenCalled();
+    expect(mocks.deleteVPSCascade).toHaveBeenCalledWith(env.DB, "vps-1");
   });
 });

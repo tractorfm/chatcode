@@ -38,6 +38,7 @@ import {
   handleVPSDelete,
   handleVPSPowerOff,
   handleVPSPowerOn,
+  handleGatewayUnlink,
   handleVPSManualCreate,
   handleVPSUpdate,
 } from "./routes/vps.js";
@@ -108,6 +109,12 @@ export default {
       const gwMatch = path.match(/^\/gw\/connect(?:\/([a-zA-Z0-9_-]+))?$/);
       if (gwMatch) {
         return handleGatewayConnect(request, env, gwMatch[1] ?? null);
+      }
+      const gwUnlinkMatch = path.match(/^\/gw\/unlink(?:\/([a-zA-Z0-9_-]+))?$/);
+      if (gwUnlinkMatch && method === "POST") {
+        const auth = await authorizeGatewayRequest(request, env, gwUnlinkMatch[1] ?? null);
+        if (auth instanceof Response) return auth;
+        return handleGatewayUnlink(env, auth.gatewayId);
       }
 
       if (path === "/auth/dev/login" && method === "POST" && env.AUTH_MODE !== "dev") {
@@ -329,11 +336,36 @@ async function handleGatewayConnect(
   env: Env,
   gatewayIdFromPath: string | null,
 ): Promise<Response> {
+  const auth = await authorizeGatewayRequest(request, env, gatewayIdFromPath);
+  if (auth instanceof Response) {
+    return auth;
+  }
+
   const upgradeHeader = request.headers.get("Upgrade");
   if (!upgradeHeader || upgradeHeader.toLowerCase() !== "websocket") {
     return new Response("expected websocket upgrade", { status: 426 });
   }
+  const gatewayId = auth.gatewayId;
 
+  // Route to GatewayHub DO
+  const doId = env.GATEWAY_HUB.idFromName(gatewayId);
+  const stub = env.GATEWAY_HUB.get(doId);
+
+  const headers = new Headers(request.headers);
+  headers.set("X-Gateway-Id", gatewayId);
+
+  return stub.fetch(
+    new Request("http://do/gateway-ws", {
+      headers,
+    }),
+  );
+}
+
+async function authorizeGatewayRequest(
+  request: Request,
+  env: Env,
+  gatewayIdFromPath: string | null,
+): Promise<{ gatewayId: string } | Response> {
   const gatewayIdHeader = request.headers.get("X-Gateway-Id");
   if (gatewayIdFromPath && gatewayIdHeader && gatewayIdFromPath !== gatewayIdHeader) {
     return new Response("gateway id mismatch", { status: 400 });
@@ -343,7 +375,6 @@ async function handleGatewayConnect(
     return new Response("invalid gateway id", { status: 400 });
   }
 
-  // Verify bearer token
   const authHeader = request.headers.get("Authorization");
   if (!authHeader?.startsWith("Bearer ")) {
     return new Response("unauthorized", { status: 401 });
@@ -360,18 +391,7 @@ async function handleGatewayConnect(
     return new Response("unauthorized", { status: 401 });
   }
 
-  // Route to GatewayHub DO
-  const doId = env.GATEWAY_HUB.idFromName(gatewayId);
-  const stub = env.GATEWAY_HUB.get(doId);
-
-  const headers = new Headers(request.headers);
-  headers.set("X-Gateway-Id", gatewayId);
-
-  return stub.fetch(
-    new Request("http://do/gateway-ws", {
-      headers,
-    }),
-  );
+  return { gatewayId };
 }
 
 // ---------------------------------------------------------------------------

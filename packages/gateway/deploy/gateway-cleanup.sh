@@ -44,6 +44,7 @@ LINUX_AGENT_INSTALLER_SCRIPTS=(
 
 DARWIN_LABEL="dev.chatcode.gateway"
 DARWIN_MAINTENANCE_LABEL="dev.chatcode.maintenance"
+LINUX_ENV_FILE="${LINUX_CONFIG_DIR}/gateway.env"
 
 CONFIRM=0
 KEEP_USER=0
@@ -113,6 +114,49 @@ bootout_darwin_agent() {
   launchctl bootout "user/${uid}/${label}" >/dev/null 2>&1 || true
 }
 
+load_gateway_env() {
+  local env_file="$1"
+  [[ -f "${env_file}" ]] || return 0
+  # Trusted installer-written env file.
+  # shellcheck disable=SC1090
+  source "${env_file}"
+}
+
+cp_unlink_url() {
+  local ws_url="$1"
+  local gateway_id="$2"
+  local base="${ws_url}"
+  case "${base}" in
+    wss://*) base="https://${base#wss://}" ;;
+    ws://*) base="http://${base#ws://}" ;;
+    https://*|http://*) ;;
+    *) return 1 ;;
+  esac
+  base="${base%/gw/connect}"
+  printf '%s/gw/unlink/%s' "${base}" "${gateway_id}"
+}
+
+try_unlink_control_plane() {
+  local cp_url="${GATEWAY_CP_URL:-}"
+  local gateway_id="${GATEWAY_ID:-}"
+  local auth_token="${GATEWAY_AUTH_TOKEN:-}"
+  [[ -n "${cp_url}" && -n "${gateway_id}" && -n "${auth_token}" ]] || return 0
+  command -v curl >/dev/null 2>&1 || return 0
+
+  local unlink_url=""
+  unlink_url="$(cp_unlink_url "${cp_url}" "${gateway_id}")" || return 0
+
+  if curl -fsS -X POST \
+    -H "Authorization: Bearer ${auth_token}" \
+    -H "X-Gateway-Id: ${gateway_id}" \
+    --max-time 10 \
+    "${unlink_url}" >/dev/null 2>&1; then
+    log "unlinked server from control plane"
+  else
+    log "warning: failed to unlink server from control plane; you may need to remove it manually"
+  fi
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --yes)
@@ -160,6 +204,8 @@ case "${OS_NAME}" in
       die "--keep-workspace requires --keep-user"
     fi
 
+    load_gateway_env "${LINUX_ENV_FILE}"
+
     VIBE_HOME="/home/${LINUX_USER}"
     if id "${LINUX_USER}" >/dev/null 2>&1; then
       maybe_home="$(getent passwd "${LINUX_USER}" | cut -d: -f6)"
@@ -176,6 +222,7 @@ case "${OS_NAME}" in
       systemctl disable "${LINUX_MAINTENANCE_SERVICE}.timer" >/dev/null 2>&1 || true
     fi
     pkill -x chatcode-gateway >/dev/null 2>&1 || true
+    try_unlink_control_plane
 
     safe_rm_file "${LINUX_SERVICE_FILE}"
     safe_rm_file "${LINUX_MAINTENANCE_SERVICE_FILE}"
@@ -236,6 +283,7 @@ case "${OS_NAME}" in
     PLIST_PATH="${USER_HOME}/Library/LaunchAgents/${DARWIN_LABEL}.plist"
     MAINTENANCE_PLIST_PATH="${USER_HOME}/Library/LaunchAgents/${DARWIN_MAINTENANCE_LABEL}.plist"
     CONFIG_DIR="${USER_HOME}/.config/chatcode"
+    ENV_FILE="${CONFIG_DIR}/gateway.env"
     BINARY_PATH="${USER_HOME}/.local/bin/chatcode-gateway"
     AGENT_UPDATE_HELPER="${USER_HOME}/.local/bin/chatcode-update-agent-clis"
     MAINTENANCE_SCRIPT="${USER_HOME}/.local/bin/chatcode-maintenance"
@@ -249,6 +297,8 @@ case "${OS_NAME}" in
     bootout_darwin_agent "${USER_UID}" "${DARWIN_LABEL}" "${PLIST_PATH}"
     bootout_darwin_agent "${USER_UID}" "${DARWIN_MAINTENANCE_LABEL}" "${MAINTENANCE_PLIST_PATH}"
     pkill -x chatcode-gateway >/dev/null 2>&1 || true
+    load_gateway_env "${ENV_FILE}"
+    try_unlink_control_plane
 
     safe_rm_file "${PLIST_PATH}"
     safe_rm_file "${MAINTENANCE_PLIST_PATH}"

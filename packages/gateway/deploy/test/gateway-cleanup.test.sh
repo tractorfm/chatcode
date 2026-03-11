@@ -62,7 +62,13 @@ EOF
 exit 0
 EOF
 
-  chmod +x "${stub_dir}/uname" "${stub_dir}/launchctl" "${stub_dir}/pkill"
+  cat > "${stub_dir}/curl" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "${CURL_LOG:?}"
+exit 0
+EOF
+
+  chmod +x "${stub_dir}/uname" "${stub_dir}/launchctl" "${stub_dir}/pkill" "${stub_dir}/curl"
 }
 
 create_darwin_layout() {
@@ -79,6 +85,8 @@ EOF
 
   cat > "${home_dir}/.config/chatcode/gateway.env" <<'EOF'
 GATEWAY_ID=gw-test
+GATEWAY_AUTH_TOKEN=tok-test
+GATEWAY_CP_URL=wss://cp.staging.chatcode.dev/gw/connect
 EOF
 
   cat > "${home_dir}/.local/bin/chatcode-gateway" <<'EOF'
@@ -94,18 +102,20 @@ test_darwin_cleanup_keeps_workspace_by_default() {
 
   local stub_dir="${tmp}/stubs"
   local home_dir="${tmp}/home"
+  local curl_log="${tmp}/curl.log"
   mkdir -p "${stub_dir}" "${home_dir}"
   setup_darwin_stubs "${stub_dir}"
   create_darwin_layout "${home_dir}"
   prepare_tmp_chatcode_state
 
-  env HOME="${home_dir}" PATH="${stub_dir}:${PATH}" "${CLEANUP_SCRIPT}" --yes
+  env HOME="${home_dir}" PATH="${stub_dir}:${PATH}" CURL_LOG="${curl_log}" "${CLEANUP_SCRIPT}" --yes
 
   assert_not_exists "${home_dir}/Library/LaunchAgents/dev.chatcode.gateway.plist"
   assert_not_exists "${home_dir}/.config/chatcode"
   assert_not_exists "${home_dir}/.local/bin/chatcode-gateway"
   assert_exists "${home_dir}/workspace"
   assert_not_exists "/tmp/chatcode"
+  grep -q "https://cp.staging.chatcode.dev/gw/unlink/gw-test" "${curl_log}" || fail "expected unlink curl call"
   restore_tmp_chatcode_state
   rm -rf "${tmp}"
 }
@@ -116,18 +126,20 @@ test_darwin_cleanup_remove_workspace() {
 
   local stub_dir="${tmp}/stubs"
   local home_dir="${tmp}/home"
+  local curl_log="${tmp}/curl.log"
   mkdir -p "${stub_dir}" "${home_dir}"
   setup_darwin_stubs "${stub_dir}"
   create_darwin_layout "${home_dir}"
   prepare_tmp_chatcode_state
 
-  env HOME="${home_dir}" PATH="${stub_dir}:${PATH}" "${CLEANUP_SCRIPT}" --yes --remove-workspace
+  env HOME="${home_dir}" PATH="${stub_dir}:${PATH}" CURL_LOG="${curl_log}" "${CLEANUP_SCRIPT}" --yes --remove-workspace
 
   assert_not_exists "${home_dir}/workspace"
   assert_not_exists "${home_dir}/Library/LaunchAgents/dev.chatcode.gateway.plist"
   assert_not_exists "${home_dir}/.config/chatcode"
   assert_not_exists "${home_dir}/.local/bin/chatcode-gateway"
   assert_not_exists "/tmp/chatcode"
+  grep -q "https://cp.staging.chatcode.dev/gw/unlink/gw-test" "${curl_log}" || fail "expected unlink curl call"
   restore_tmp_chatcode_state
   rm -rf "${tmp}"
 }
