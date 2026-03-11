@@ -4,7 +4,7 @@ import { TerminalView } from "@/components/terminal-view";
 import { SessionCreatePicker } from "@/components/session-create-picker";
 import { X, Plus, Terminal } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { createSession } from "@/lib/api";
+import { createSession, type Session } from "@/lib/api";
 import { defaultSessionTitle, type AgentType } from "@/lib/constants";
 
 interface AppPageProps {
@@ -211,6 +211,14 @@ export function AppPage({
     dispatchTab({ type: "rename", sessionId, title });
   }, []);
 
+  const handleSessionTitleSync = useCallback((session: Session) => {
+    dispatchTab({
+      type: "rename",
+      sessionId: session.id,
+      title: withSessionPathSuffix(session.title, session.workdir),
+    });
+  }, []);
+
   const handleVpsDeleted = useCallback((deletedVpsId: string, nextVpsId: string | null) => {
     dispatchTab({ type: "removeVps", vpsId: deletedVpsId });
     setActiveVpsId(nextVpsId);
@@ -233,7 +241,7 @@ export function AppPage({
         tab: {
           vpsId: activeVpsId,
           sessionId: res.session_id,
-          title,
+          title: withSessionPathSuffix(title, normalizeWorkspacePath(emptyCreateWorkdir)),
         },
       });
       setSidebarErrorMessage("");
@@ -295,6 +303,7 @@ export function AppPage({
         onSelectSession={handleSelectSession}
         onNewSession={handleNewSession}
         onSessionRenamed={handleSessionRenamed}
+        onSessionTitleSync={handleSessionTitleSync}
         onVpsDeleted={handleVpsDeleted}
         onNavigate={onNavigate}
         onLogout={onLogout}
@@ -391,6 +400,38 @@ export function AppPage({
       </main>
     </div>
   );
+}
+
+function normalizeWorkspacePath(input: string): string {
+  const trimmed = input.trim();
+  if (!trimmed || trimmed === "." || trimmed === "new") return "/home/vibe/workspace";
+  if (trimmed === "~" || trimmed === "~/workspace" || trimmed === "/home/vibe/workspace") {
+    return "/home/vibe/workspace";
+  }
+  let relative = trimmed;
+  if (relative.startsWith("~/workspace/")) {
+    relative = relative.slice("~/workspace/".length);
+  } else if (relative.startsWith("/home/vibe/workspace/")) {
+    relative = relative.slice("/home/vibe/workspace/".length);
+  } else if (relative.startsWith("/")) {
+    relative = relative.replace(/^\/+/, "");
+  }
+  relative = relative.replace(/^\.\//, "").replace(/^\/+/, "");
+  if (!relative) return "/home/vibe/workspace";
+  return `/home/vibe/workspace/${relative}`;
+}
+
+function workspaceSuffix(path: string): string {
+  if (path === "/home/vibe/workspace") return "";
+  if (path.startsWith("/home/vibe/workspace/")) {
+    return ` /${path.slice("/home/vibe/workspace/".length)}`;
+  }
+  return "";
+}
+
+function withSessionPathSuffix(title: string, workdir: string): string {
+  const suffix = workspaceSuffix(workdir);
+  return suffix ? `${title} -${suffix}` : title;
 }
 
 function EmptyState({

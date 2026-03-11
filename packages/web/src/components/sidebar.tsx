@@ -45,6 +45,7 @@ interface SidebarProps {
   onSelectSession: (vpsId: string, sessionId: string, title: string) => void;
   onNewSession: (vpsId: string, sessionId: string, title: string) => void;
   onSessionRenamed: (sessionId: string, title: string) => void;
+  onSessionTitleSync: (session: Session) => void;
   onVpsDeleted: (deletedVpsId: string, nextVpsId: string | null) => void;
   onNavigate: (page: "settings" | "status" | "onboarding", opts?: { manualVpsId?: string | null }) => void;
   onLogout: () => void;
@@ -63,6 +64,7 @@ export function Sidebar({
   onSelectSession,
   onNewSession,
   onSessionRenamed,
+  onSessionTitleSync,
   onVpsDeleted,
   onNavigate,
   onLogout,
@@ -146,6 +148,7 @@ export function Sidebar({
       const openSessions = s.filter((s) => !isClosedStatus(s.status));
       setSessions(openSessions);
       setErrorMessage("");
+      openSessions.forEach((session) => onSessionTitleSync(session));
       if (
         openSessions.length > 0 &&
         !openSessions.some((session) => session.id === activeSessionIdRef.current)
@@ -157,7 +160,7 @@ export function Sidebar({
     } finally {
       setLoading(false);
     }
-  }, [activeVpsId, onSelectSession, setOperationError]);
+  }, [activeVpsId, onSelectSession, onSessionTitleSync, setOperationError]);
 
   useEffect(() => {
     void refreshVPS();
@@ -213,7 +216,7 @@ export function Sidebar({
           workdir,
         });
         await refreshSessions();
-        onNewSession(activeVpsId, res.session_id, title);
+        onNewSession(activeVpsId, res.session_id, buildTabTitle(title, workdir));
         setErrorMessage("");
         setShowAgentPicker(false);
         setGroupPickerKey(null);
@@ -337,15 +340,16 @@ export function Sidebar({
     async (sessionId: string, title: string) => {
       if (!activeVpsId) return;
       try {
+        const session = sessions.find((entry) => entry.id === sessionId);
         await updateSession(activeVpsId, sessionId, { title });
-        onSessionRenamed(sessionId, title);
+        onSessionRenamed(sessionId, buildTabTitle(title, session?.workdir || DEFAULT_SESSION_WORKDIR));
         await refreshSessions();
       } catch (err) {
         setOperationError("Failed to rename session", err);
         throw err;
       }
     },
-    [activeVpsId, refreshSessions, onSessionRenamed, setOperationError],
+    [activeVpsId, refreshSessions, onSessionRenamed, sessions, setOperationError],
   );
 
   const displayedError = externalErrorMessage || errorMessage;
@@ -507,13 +511,13 @@ export function Sidebar({
                     disabled={creating || !canCreateSessions}
                     className="p-0.5 rounded hover:bg-accent text-muted-foreground disabled:opacity-50"
                     title={canCreateSessions ? "New session" : "Server must be connected to create sessions"}
-                  >
-                    {creating ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    ) : (
-                      <Plus className="h-3.5 w-3.5" />
-                    )}
-                  </button>
+                    >
+                      {creating ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Plus className="h-3.5 w-3.5" />
+                      )}
+                    </button>
                   {showAgentPicker && !creating && (
                     <div className="absolute right-0 top-full mt-1 z-50 w-56">
                       <SessionCreatePicker
@@ -567,11 +571,11 @@ export function Sidebar({
                     <div
                       key={session.id}
                       data-testid={`session-item-${session.id}`}
-                      onClick={() => onSelectSession(activeVpsId, session.id, session.title)}
+                      onClick={() => onSelectSession(activeVpsId, session.id, buildTabTitle(session.title, session.workdir))}
                       onKeyDown={(e) => {
                         if (e.key === "Enter" || e.key === " ") {
                           e.preventDefault();
-                          onSelectSession(activeVpsId, session.id, session.title);
+                          onSelectSession(activeVpsId, session.id, buildTabTitle(session.title, session.workdir));
                         }
                       }}
                       role="button"
@@ -618,7 +622,6 @@ export function Sidebar({
                 <NewSessionQuickStart
                   onCreate={handleCreateSession}
                   creating={creating}
-                  defaultFolder={normalizeSessionWorkdir(sessionWorkdir)}
                   disabled={!canCreateSessions}
                 />
               )}
@@ -811,6 +814,19 @@ function sessionSubpathWithinGroup(path: string, groupKey: string): string {
   return "";
 }
 
+function buildTabTitle(title: string, workdir: string): string {
+  const suffix = tabPathSuffix(workdir);
+  return suffix ? `${title} - ${suffix}` : title;
+}
+
+function tabPathSuffix(path: string): string {
+  if (path === DEFAULT_SESSION_WORKDIR) return "";
+  if (path.startsWith(`${DEFAULT_SESSION_WORKDIR}/`)) {
+    return `/${path.slice(DEFAULT_SESSION_WORKDIR.length + 1)}`;
+  }
+  return "";
+}
+
 function cleanupCommandForOS(os: string | null | undefined): string | null {
   if (os === "linux") {
     return "curl -fsSL https://chatcode.dev/cleanup.sh | sudo bash -s -- --yes";
@@ -900,12 +916,10 @@ function CleanupCommandDetails({ os }: { os?: string | null }) {
 function NewSessionQuickStart({
   onCreate,
   creating,
-  defaultFolder,
   disabled,
 }: {
   onCreate: (agent: AgentType) => void;
   creating: boolean;
-  defaultFolder: string;
   disabled: boolean;
 }) {
   return (
@@ -917,19 +931,11 @@ function NewSessionQuickStart({
           disabled={creating || disabled}
           className="w-full text-left p-2 rounded-md border border-dashed border-border text-xs text-muted-foreground hover:border-primary hover:text-primary transition-colors disabled:opacity-50"
         >
-          + {label} on {displayWorkspacePath(defaultFolder)}
+          + {label}
         </button>
       ))}
     </div>
   );
-}
-
-function displayWorkspacePath(path: string): string {
-  if (path === DEFAULT_SESSION_WORKDIR) return "~/workspace";
-  if (path.startsWith(`${DEFAULT_SESSION_WORKDIR}/`)) {
-    return `~/workspace/${path.slice(DEFAULT_SESSION_WORKDIR.length + 1)}`;
-  }
-  return "~/workspace";
 }
 
 function isClosedStatus(status: string): boolean {
