@@ -75,6 +75,8 @@ export function Sidebar({
   const [dismissedError, setDismissedError] = useState("");
   const [showAgentPicker, setShowAgentPicker] = useState(false);
   const [confirmAction, setConfirmAction] = useState<{
+    kind?: "remove-server";
+    watchVpsId?: string;
     title: string;
     description: string;
     details?: ReactNode;
@@ -105,6 +107,14 @@ export function Sidebar({
       const { vps } = await listVPS();
       setVpsList(vps);
       setErrorMessage("");
+      if (activeVpsId && !vps.some((row) => row.id === activeVpsId)) {
+        const nextVpsId = vps[0]?.id ?? null;
+        onVpsDeleted(activeVpsId, nextVpsId);
+        if (confirmAction?.kind === "remove-server" && confirmAction.watchVpsId === activeVpsId) {
+          setConfirmAction(null);
+        }
+        return vps;
+      }
       if (selectedVpsIdHint && vps.some((row) => row.id === selectedVpsIdHint)) {
         onSelectVps(selectedVpsIdHint);
       } else if (vps.length > 0 && !activeVpsId) {
@@ -115,7 +125,7 @@ export function Sidebar({
       setOperationError("Failed to load servers", err);
       return [];
     }
-  }, [activeVpsId, onSelectVps, selectedVpsIdHint, setOperationError]);
+  }, [activeVpsId, confirmAction, onSelectVps, onVpsDeleted, selectedVpsIdHint, setOperationError]);
 
   const refreshSessions = useCallback(async () => {
     if (!activeVpsId) return;
@@ -164,6 +174,16 @@ export function Sidebar({
     }, 5000);
     return () => window.clearInterval(timer);
   }, [refreshVPS, vpsList]);
+
+  useEffect(() => {
+    if (confirmAction?.kind !== "remove-server" || !confirmAction.watchVpsId) {
+      return;
+    }
+    const timer = window.setInterval(() => {
+      void refreshVPS();
+    }, 3000);
+    return () => window.clearInterval(timer);
+  }, [confirmAction, refreshVPS]);
 
   const handleCreateSession = useCallback(
     async (agentType: AgentType = "claude-code") => {
@@ -269,6 +289,8 @@ export function Sidebar({
       <CleanupCommandDetails os={activeVps?.gateway_os} />
     ) : undefined;
     setConfirmAction({
+      kind: "remove-server",
+      watchVpsId: activeVpsId,
       title: isManagedVps ? "Destroy server" : "Remove server",
       description: isManagedVps
         ? `This will permanently destroy "${activeVpsName}" and all its data. This cannot be undone.`
