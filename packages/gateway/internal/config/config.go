@@ -33,7 +33,7 @@ type Config struct {
 	// HealthInterval is how often to send gateway.health events. Default 30s.
 	HealthInterval time.Duration `json:"health_interval"`
 
-	// MaxSessions is the maximum number of concurrent sessions. Default 10.
+	// MaxSessions is the maximum number of concurrent sessions. Default 50.
 	MaxSessions int `json:"max_sessions"`
 
 	// TempDir is used for file upload staging. Default /tmp/vibecode.
@@ -47,8 +47,10 @@ type Config struct {
 }
 
 const (
-	CPURLProd    = "wss://cp.chatcode.dev/gw/connect"
-	CPURLStaging = "wss://cp.staging.chatcode.dev/gw/connect"
+	CPURLProd          = "wss://cp.chatcode.dev/gw/connect"
+	CPURLStaging       = "wss://cp.staging.chatcode.dev/gw/connect"
+	DefaultMaxSessions = 50
+	HardMaxSessions    = 50
 )
 
 var gatewayIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
@@ -86,7 +88,7 @@ func defaults() *Config {
 	exe, _ := os.Executable()
 	return &Config{
 		HealthInterval: 30 * time.Second,
-		MaxSessions:    10,
+		MaxSessions:    DefaultMaxSessions,
 		TempDir:        "/tmp/chatcode",
 		BinaryPath:     exe,
 		LogLevel:       "info",
@@ -148,6 +150,12 @@ func (c *Config) validate() error {
 	}
 	if c.CPURL == "" {
 		return fmt.Errorf("GATEWAY_CP_URL is required")
+	}
+	if c.MaxSessions < 1 {
+		return fmt.Errorf("GATEWAY_MAX_SESSIONS must be >= 1")
+	}
+	if c.MaxSessions > HardMaxSessions {
+		return fmt.Errorf("GATEWAY_MAX_SESSIONS must be <= %d", HardMaxSessions)
 	}
 	allowed, err := allowedCPURLs()
 	if err != nil {

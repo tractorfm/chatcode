@@ -32,7 +32,7 @@ GATEWAY_CP_URL="${GATEWAY_CP_URL:-}"
 GATEWAY_BOOTSTRAP_TOKEN="${GATEWAY_BOOTSTRAP_TOKEN:-}"
 GATEWAY_LOG_LEVEL="${GATEWAY_LOG_LEVEL:-info}"
 GATEWAY_HEALTH_INTERVAL="${GATEWAY_HEALTH_INTERVAL:-30s}"
-GATEWAY_MAX_SESSIONS="${GATEWAY_MAX_SESSIONS:-10}"
+GATEWAY_MAX_SESSIONS="${GATEWAY_MAX_SESSIONS:-50}"
 
 BINARY_SOURCE="${BINARY_SOURCE:-}"
 GATEWAY_VERSION="${GATEWAY_VERSION:-latest}"
@@ -82,7 +82,7 @@ Options:
   --bootstrap-token TOKEN    Optional bootstrap token (or env GATEWAY_BOOTSTRAP_TOKEN).
   --log-level LEVEL          debug|info|warn|error (default: info).
   --health-interval DURATION Health interval (default: 30s).
-  --max-sessions N           Max sessions (default: 5).
+  --max-sessions N           Max sessions (default: 50).
   --no-start                 Install files but do not start/restart service now.
   --skip-agent-preinstall    Do not preinstall default agents (claude-code, codex).
   -h, --help                 Show this help.

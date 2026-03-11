@@ -77,3 +77,32 @@ func TestLoadRejectsMalformedSelfHostCPURLBuildConfig(t *testing.T) {
 		t.Fatal("Load() error = nil, want invalid self-host cp url error")
 	}
 }
+
+func TestLoadDefaultsMaxSessionsToHardCap(t *testing.T) {
+	resetSelfHostCPURL(t)
+	t.Setenv("GATEWAY_ID", "gw-test")
+	t.Setenv("GATEWAY_AUTH_TOKEN", "auth-test")
+	t.Setenv("GATEWAY_CP_URL", CPURLStaging)
+	t.Setenv("GATEWAY_MAX_SESSIONS", "")
+
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.MaxSessions != DefaultMaxSessions {
+		t.Fatalf("MaxSessions = %d, want %d", cfg.MaxSessions, DefaultMaxSessions)
+	}
+}
+
+func TestLoadRejectsMaxSessionsAboveHardCap(t *testing.T) {
+	resetSelfHostCPURL(t)
+	t.Setenv("GATEWAY_ID", "gw-test")
+	t.Setenv("GATEWAY_AUTH_TOKEN", "auth-test")
+	t.Setenv("GATEWAY_CP_URL", CPURLStaging)
+	t.Setenv("GATEWAY_MAX_SESSIONS", "51")
+
+	_, err := Load("")
+	if err == nil {
+		t.Fatal("Load() error = nil, want max sessions validation error")
+	}
+}

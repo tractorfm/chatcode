@@ -19,6 +19,8 @@ const GATEWAY_LAST_SEEN_FRESH_SECONDS = 90;
 const SESSION_CREATE_RETRY_WINDOW_MS = 4_000;
 const SESSION_CREATE_RETRY_INTERVAL_MS = 250;
 const MANAGED_AGENT_TYPES = new Set(["claude-code", "codex", "gemini", "opencode"]);
+const FREE_PLAN_SESSION_LIMIT = 10;
+const OPEN_SESSION_STATUSES = new Set(["starting", "running"]);
 
 interface GatewayAgentStatus {
   agent: string;
@@ -109,6 +111,19 @@ export async function handleSessionCreate(
     workdir?: string;
   };
   const agentType = body.agent_type || "claude-code";
+
+  const existingSessions = await listSessionsByVPS(env.DB, vpsId);
+  const openSessionCount = existingSessions.filter((session) => OPEN_SESSION_STATUSES.has(session.status)).length;
+  if (openSessionCount >= FREE_PLAN_SESSION_LIMIT) {
+    return jsonResponse(
+      {
+        error: `session limit reached (${FREE_PLAN_SESSION_LIMIT})`,
+        code: "session_limit_reached",
+        limit: FREE_PLAN_SESSION_LIMIT,
+      },
+      409,
+    );
+  }
 
   if (MANAGED_AGENT_TYPES.has(agentType)) {
     const doId = env.GATEWAY_HUB.idFromName(gateway.id);

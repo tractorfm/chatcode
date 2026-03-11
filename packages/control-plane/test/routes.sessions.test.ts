@@ -57,6 +57,7 @@ describe("routes/sessions", () => {
       connected: 1,
       last_seen_at: Math.floor(Date.now() / 1000),
     });
+    mocks.listSessionsByVPS.mockResolvedValue([]);
     mocks.getSession.mockResolvedValue({
       id: "ses-1",
       user_id: "usr-1",
@@ -299,6 +300,38 @@ describe("routes/sessions", () => {
       agent: "claude-code",
     });
     expect(mocks.createSession).not.toHaveBeenCalled();
+  });
+
+  it("returns 409 when free-plan open session limit is reached", async () => {
+    mocks.listSessionsByVPS.mockResolvedValue(
+      Array.from({ length: 10 }, (_, index) => ({
+        id: `ses-${index}`,
+        status: "running",
+      })),
+    );
+    const { env, stubFetch } = makeEnv(
+      new Response(JSON.stringify({ ok: true }), { status: 200 }),
+    );
+
+    const req = new Request("https://cp.example.test/vps/vps-1/sessions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: "Limit Session",
+        agent_type: "none",
+        workdir: "/home/vibe",
+      }),
+    });
+
+    const res = await handleSessionCreate(req, env, { userId: "usr-1" }, "vps-1");
+
+    expect(res.status).toBe(409);
+    await expect(res.json()).resolves.toMatchObject({
+      code: "session_limit_reached",
+      limit: 10,
+    });
+    expect(mocks.createSession).not.toHaveBeenCalled();
+    expect(stubFetch).not.toHaveBeenCalled();
   });
 
   it("continues session creation when agents.list is unavailable", async () => {

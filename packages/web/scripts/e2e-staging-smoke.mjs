@@ -85,7 +85,8 @@ async function ensureSessionHeadroom(context, vpsId, allowedOpenSessions = maxOp
 
 function isSessionLimitError(result) {
   const message = typeof result?.payload?.error === "string" ? result.payload.error : "";
-  return result?.resp?.status() === 502 && message.includes("session limit reached");
+  const status = result?.resp?.status?.();
+  return (status === 409 || status === 502) && message.includes("session limit reached");
 }
 
 async function createSmokeSession(context, vpsId, title) {

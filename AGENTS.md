@@ -16,7 +16,7 @@ Ship a reliable MVP path:
 - One DO droplet per user by default.
 - Gateway keeps one persistent WebSocket to control-plane.
 - One session = tmux-backed workspace terminal.
-- MVP limit: max 10 concurrent sessions per VPS.
+- MVP limit: control-plane soft limit 10 concurrent sessions per VPS on free plan; gateway safety cap 50.
 - Control-plane must not store private SSH keys.
 - Protocol schema source of truth: `packages/protocol/schema/`.
 - Every protocol message must include `schema_version`.
