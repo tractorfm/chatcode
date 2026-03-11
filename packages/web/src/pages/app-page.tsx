@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useReducer, useState } from "react";
 import { Sidebar } from "@/components/sidebar";
 import { TerminalView } from "@/components/terminal-view";
-import { X, Plus, Terminal, Maximize2, Minimize2 } from "lucide-react";
+import { X, Plus, Terminal } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { createSession } from "@/lib/api";
 import { defaultSessionTitle } from "@/lib/constants";
@@ -30,6 +30,7 @@ type TabAction =
   | { type: "open"; tab: OpenTab }
   | { type: "close"; index: number }
   | { type: "setActive"; index: number }
+  | { type: "reorderVisible"; vpsId: string | null; fromIndex: number; toIndex: number }
   | { type: "markEnded"; sessionId: string }
   | { type: "rename"; sessionId: string; title: string }
   | { type: "removeVps"; vpsId: string };
@@ -70,6 +71,35 @@ function tabReducer(state: TabState, action: TabAction): TabState {
     case "setActive":
       if (action.index < 0 || action.index >= state.tabs.length) return state;
       return { ...state, activeIndex: action.index };
+    case "reorderVisible": {
+      if (action.fromIndex === action.toIndex) return state;
+      const visiblePositions = state.tabs
+        .map((tab, index) => ({ tab, index }))
+        .filter(({ tab }) => !action.vpsId || tab.vpsId === action.vpsId);
+      if (
+        action.fromIndex < 0 ||
+        action.toIndex < 0 ||
+        action.fromIndex >= visiblePositions.length ||
+        action.toIndex >= visiblePositions.length
+      ) {
+        return state;
+      }
+      const reorderedVisible = visiblePositions.map(({ tab }) => tab);
+      const [moved] = reorderedVisible.splice(action.fromIndex, 1);
+      reorderedVisible.splice(action.toIndex, 0, moved);
+      const nextTabs = state.tabs.slice();
+      visiblePositions.forEach(({ index }, visibleIndex) => {
+        nextTabs[index] = reorderedVisible[visibleIndex];
+      });
+      const activeSessionId = state.tabs[state.activeIndex]?.sessionId;
+      const nextActiveIndex = activeSessionId
+        ? nextTabs.findIndex((tab) => tab.sessionId === activeSessionId)
+        : state.activeIndex;
+      return {
+        tabs: nextTabs,
+        activeIndex: nextActiveIndex >= 0 ? nextActiveIndex : state.activeIndex,
+      };
+    }
     case "markEnded":
       return {
         ...state,
@@ -124,8 +154,7 @@ export function AppPage({
     activeIndex: 0,
   });
   const [emptyActionBusy, setEmptyActionBusy] = useState(false);
-  const [fullscreenActive, setFullscreenActive] = useState(false);
-  const [layoutSignal, setLayoutSignal] = useState(0);
+  const [draggingVisibleIndex, setDraggingVisibleIndex] = useState<number | null>(null);
 
   const handleSelectVps = useCallback((vpsId: string) => {
     setActiveVpsId(vpsId);
@@ -241,27 +270,21 @@ export function AppPage({
     setSidebarErrorMessage("");
   }, [selectedVpsIdHint]);
 
-  const handleToggleFullscreen = useCallback(async () => {
-    setFullscreenActive((value) => !value);
-    window.setTimeout(() => {
-      setLayoutSignal((value) => value + 1);
-    }, 0);
-  }, []);
+  const handleReorderVisibleTabs = useCallback((fromIndex: number, toIndex: number) => {
+    dispatchTab({
+      type: "reorderVisible",
+      vpsId: activeVpsId,
+      fromIndex,
+      toIndex,
+    });
+  }, [activeVpsId]);
 
   return (
-    <div
-      className={cn(
-        "flex overflow-hidden",
-        fullscreenActive ? "fixed inset-0 z-40 bg-background" : "h-screen",
-      )}
-    >
+    <div className="h-screen flex overflow-hidden">
       {/* Sidebar */}
       <Sidebar
-        collapsed={collapsed || fullscreenActive}
-        onToggle={() => {
-          if (fullscreenActive) return;
-          setCollapsed((c) => !c);
-        }}
+        collapsed={collapsed}
+        onToggle={() => setCollapsed((c) => !c)}
         activeVpsId={activeVpsId}
         activeSessionId={activeTab?.sessionId ?? null}
         onSelectVps={handleSelectVps}
@@ -283,17 +306,38 @@ export function AppPage({
         {visibleTabs.length > 0 && (
           <div className="flex items-center border-b border-border bg-card">
             <div className="flex-1 flex items-center overflow-x-auto">
-              {visibleTabs.map(({ tab, index }) => (
+              {visibleTabs.map(({ tab, index }, visibleIndex) => (
                 <div
                   key={`${tab.vpsId}-${tab.sessionId}`}
+                  draggable
                   className={cn(
                     "group flex items-center gap-1.5 px-3 py-2 text-sm border-r border-border cursor-pointer transition-colors min-w-0 max-w-[200px]",
+                    draggingVisibleIndex === visibleIndex && "opacity-60",
                     index === effectiveActiveIndex
                       ? "bg-background text-foreground font-medium"
                       : "text-muted-foreground hover:text-foreground hover:bg-accent/50 font-normal",
                   )}
-                onClick={() => dispatchTab({ type: "setActive", index })}
-              >
+                  onClick={() => dispatchTab({ type: "setActive", index })}
+                  onDragStart={(event) => {
+                    event.dataTransfer.effectAllowed = "move";
+                    event.dataTransfer.setData("text/plain", String(visibleIndex));
+                    setDraggingVisibleIndex(visibleIndex);
+                  }}
+                  onDragOver={(event) => {
+                    event.preventDefault();
+                    event.dataTransfer.dropEffect = "move";
+                  }}
+                  onDrop={(event) => {
+                    event.preventDefault();
+                    const raw = event.dataTransfer.getData("text/plain");
+                    const fromIndex = Number.parseInt(raw, 10);
+                    if (!Number.isNaN(fromIndex)) {
+                      handleReorderVisibleTabs(fromIndex, visibleIndex);
+                    }
+                    setDraggingVisibleIndex(null);
+                  }}
+                  onDragEnd={() => setDraggingVisibleIndex(null)}
+                >
                   <Terminal className="h-3.5 w-3.5 shrink-0" />
                   <span className="truncate text-xs">{tab.title}</span>
                   <button
@@ -307,19 +351,6 @@ export function AppPage({
                   </button>
                 </div>
               ))}
-            </div>
-            <div className="flex items-center pr-2">
-              <button
-                onClick={handleToggleFullscreen}
-                className="inline-flex items-center justify-center rounded-md p-2 text-muted-foreground hover:bg-accent hover:text-foreground"
-                title={fullscreenActive ? "Exit terminal fullscreen" : "Enter terminal fullscreen"}
-              >
-                {fullscreenActive ? (
-                  <Minimize2 className="h-4 w-4" />
-                ) : (
-                  <Maximize2 className="h-4 w-4" />
-                )}
-              </button>
             </div>
           </div>
         )}
@@ -340,7 +371,6 @@ export function AppPage({
                 vpsId={tab.vpsId}
                 sessionId={tab.sessionId}
                 active={i === effectiveActiveIndex}
-                layoutSignal={layoutSignal}
                 suspended={overlayOpen}
                 onSessionEnded={handleSessionEnded}
                 onSessionStateRefreshNeeded={handleSessionStateRefreshNeeded}
