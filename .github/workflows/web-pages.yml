@@ -37,6 +37,7 @@ jobs:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN || secrets.CF_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || secrets.CF_ACCOUNT_ID }}
       WEB_DIST_DIR: packages/web/dist
+      WRANGLER_BIN: ./packages/control-plane/node_modules/.bin/wrangler
       PROD_PROJECT: ${{ vars.CF_PAGES_PROJECT_PROD }}
       STAGING_PROJECT: ${{ vars.CF_PAGES_PROJECT_STAGING }}
     steps:
@@ -58,7 +59,7 @@ jobs:
         run: |
           set -euo pipefail
           for attempt in 1 2 3; do
-            if corepack pnpm --dir packages/control-plane exec wrangler pages project list >/dev/null; then
+            if timeout 120 "${WRANGLER_BIN}" pages project list >/dev/null; then
               exit 0
             fi
             if [[ "${attempt}" -eq 3 ]]; then
@@ -109,7 +110,7 @@ jobs:
         run: |
           set -euo pipefail
           for attempt in 1 2 3; do
-            if corepack pnpm --dir packages/control-plane exec wrangler pages deploy "${GITHUB_WORKSPACE}/${WEB_DIST_DIR}" \
+            if timeout 600 "${WRANGLER_BIN}" pages deploy "${GITHUB_WORKSPACE}/${WEB_DIST_DIR}" \
               --project-name "${{ steps.target.outputs.project }}" \
               --branch "${{ steps.target.outputs.deploy_branch }}" \
               --commit-dirty=true; then
