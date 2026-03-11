@@ -75,10 +75,10 @@ export function utf8ToBase64(str: string): string {
 
 export const AGENT_TYPES = [
   { value: "claude-code", label: "Claude Code" },
-  { value: "codex", label: "Codex CLI" },
+  { value: "codex", label: "Codex" },
   { value: "gemini", label: "Gemini CLI" },
   { value: "opencode", label: "OpenCode" },
-  { value: "none", label: "Plain shell" },
+  { value: "none", label: "Shell" },
 ] as const;
 
 export type AgentType = (typeof AGENT_TYPES)[number]["value"];
@@ -92,6 +92,15 @@ export function agentLabel(agentType: string): string {
 }
 
 export function defaultSessionTitle(agentType: string, ordinal: number): string {
-  const base = agentType === "none" ? "Shell" : agentLabel(agentType);
-  return `${base} ${Math.max(1, ordinal)}`;
+  const slug =
+    agentType === "claude-code"
+      ? "claude"
+      : agentType === "codex"
+        ? "codex"
+        : agentType === "gemini"
+          ? "gemini"
+          : agentType === "opencode"
+            ? "opencode"
+            : "shell";
+  return `${slug}-${Math.max(1, ordinal)}`;
 }

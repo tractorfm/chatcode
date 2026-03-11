@@ -31,8 +31,10 @@ import {
 } from "@/lib/api";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { InlineEdit } from "@/components/inline-edit";
+import { SessionCreatePicker } from "@/components/session-create-picker";
 
 const DEFAULT_SESSION_WORKDIR = "/home/vibe/workspace";
+const DEFAULT_SESSION_WORKDIR_INPUT = "new";
 
 interface SidebarProps {
   collapsed: boolean;
@@ -76,7 +78,8 @@ export function Sidebar({
   const [errorMessage, setErrorMessage] = useState("");
   const [dismissedError, setDismissedError] = useState("");
   const [showAgentPicker, setShowAgentPicker] = useState(false);
-  const [sessionWorkdir, setSessionWorkdir] = useState(DEFAULT_SESSION_WORKDIR);
+  const [sessionWorkdir, setSessionWorkdir] = useState(DEFAULT_SESSION_WORKDIR_INPUT);
+  const [groupPickerKey, setGroupPickerKey] = useState<string | null>(null);
   const [confirmAction, setConfirmAction] = useState<{
     kind?: "remove-server";
     watchVpsId?: string;
@@ -92,6 +95,7 @@ export function Sidebar({
   const activeVpsName = activeVps?.label || activeVps?.id || "this server";
   const isManagedVps = activeVps?.provider === "digitalocean";
   const sessionHeading = sessions.length > 0 ? `Sessions (${sessions.length})` : "Sessions";
+  const canCreateSessions = activeVps?.status === "active" && activeVps?.gateway_connected === true;
   const transientPollCountRef = useRef(0);
 
   useEffect(() => {
@@ -198,7 +202,10 @@ export function Sidebar({
       if (!activeVpsId || creating) return;
       setCreating(true);
       try {
-        const title = defaultSessionTitle(agentType, sessions.length + 1);
+        const title = defaultSessionTitle(
+          agentType,
+          sessions.filter((session) => session.agent_type === agentType).length + 1,
+        );
         const workdir = normalizeSessionWorkdir(sessionWorkdir);
         const res = await createSession(activeVpsId, {
           title,
@@ -209,13 +216,15 @@ export function Sidebar({
         onNewSession(activeVpsId, res.session_id, title);
         setErrorMessage("");
         setShowAgentPicker(false);
+        setGroupPickerKey(null);
+        setSessionWorkdir(DEFAULT_SESSION_WORKDIR_INPUT);
       } catch (err) {
         setOperationError("Failed to create session", err);
       } finally {
         setCreating(false);
       }
     },
-    [activeVpsId, creating, sessions.length, sessionWorkdir, refreshSessions, onNewSession, setOperationError],
+    [activeVpsId, creating, sessions, sessionWorkdir, refreshSessions, onNewSession, setOperationError],
   );
 
   const doEndSession = useCallback(
@@ -490,10 +499,14 @@ export function Sidebar({
                 <div className="relative">
                   <button
                     data-testid="create-session-button"
-                    onClick={() => setShowAgentPicker((p) => !p)}
-                    disabled={creating}
+                    onClick={() => {
+                      setGroupPickerKey(null);
+                      setSessionWorkdir(DEFAULT_SESSION_WORKDIR_INPUT);
+                      setShowAgentPicker((p) => !p);
+                    }}
+                    disabled={creating || !canCreateSessions}
                     className="p-0.5 rounded hover:bg-accent text-muted-foreground disabled:opacity-50"
-                    title="New session"
+                    title={canCreateSessions ? "New session" : "Server must be connected to create sessions"}
                   >
                     {creating ? (
                       <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -502,34 +515,14 @@ export function Sidebar({
                     )}
                   </button>
                   {showAgentPicker && !creating && (
-                    <div className="absolute right-0 top-full mt-1 z-50 w-56 rounded-md border border-border bg-card shadow-lg p-2 space-y-2">
-                      <div className="space-y-1">
-                        <label className="block text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-                          Folder under ~/workspace
-                        </label>
-                        <input
-                          value={sessionWorkdir}
-                          onChange={(e) => setSessionWorkdir(e.target.value)}
-                          placeholder="."
-                          className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs text-foreground outline-none focus:border-primary"
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-                          Agent
-                        </p>
-                      {AGENT_TYPES.map(({ value, label }) => (
-                        <button
-                          key={value}
-                          onClick={() => {
-                            handleCreateSession(value);
-                          }}
-                          className="w-full rounded-md text-left px-2 py-1.5 text-xs text-foreground hover:bg-accent transition-colors"
-                        >
-                          {label}
-                        </button>
-                      ))}
-                      </div>
+                    <div className="absolute right-0 top-full mt-1 z-50 w-56">
+                      <SessionCreatePicker
+                        workdir={sessionWorkdir}
+                        onWorkdirChange={setSessionWorkdir}
+                        onCreate={handleCreateSession}
+                        creating={creating}
+                        disabled={!canCreateSessions}
+                      />
                     </div>
                   )}
                 </div>
@@ -541,9 +534,35 @@ export function Sidebar({
 
               {groupSessionsByFolder(sessions).map((group) => (
                 <div key={group.key} className="space-y-1">
-                  <div className="px-2 pt-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-                    {group.label}
+                  <div className="flex items-center justify-between px-2 pt-1">
+                    <div className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                      {group.label}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowAgentPicker(false);
+                        setGroupPickerKey((current) => current === group.key ? null : group.key);
+                        setSessionWorkdir(group.inputValue);
+                      }}
+                      disabled={creating || !canCreateSessions}
+                      className="rounded p-0.5 text-muted-foreground hover:bg-accent disabled:opacity-40 disabled:cursor-not-allowed"
+                      title={canCreateSessions ? `New session in ${group.label}` : "Server must be connected to create sessions"}
+                    >
+                      <Plus className="h-3 w-3" />
+                    </button>
                   </div>
+                  {groupPickerKey === group.key && (
+                    <div className="px-2">
+                      <SessionCreatePicker
+                        workdir={sessionWorkdir}
+                        onWorkdirChange={setSessionWorkdir}
+                        onCreate={handleCreateSession}
+                        creating={creating}
+                        disabled={!canCreateSessions}
+                      />
+                    </div>
+                  )}
                   {group.sessions.map((session) => (
                     <div
                       key={session.id}
@@ -576,7 +595,7 @@ export function Sidebar({
                             className="min-w-0"
                           />
                           <div className="truncate text-[11px] font-normal text-muted-foreground">
-                            {formatSessionSubtitle(session)}
+                            {formatSessionSubtitle(session, group.key)}
                           </div>
                         </div>
                       </div>
@@ -599,6 +618,8 @@ export function Sidebar({
                 <NewSessionQuickStart
                   onCreate={handleCreateSession}
                   creating={creating}
+                  defaultFolder={normalizeSessionWorkdir(sessionWorkdir)}
+                  disabled={!canCreateSessions}
                 />
               )}
 
@@ -746,16 +767,17 @@ function normalizeSessionWorkdir(input: string): string {
   return `${DEFAULT_SESSION_WORKDIR}/${relative.replace(/^\.\//, "").replace(/^\/+/, "")}`;
 }
 
-function formatSessionSubtitle(session: Session): string {
-  return session.agent_type === "none" ? "Shell" : agentLabel(session.agent_type);
+function formatSessionSubtitle(session: Session, groupKey: string): string {
+  const label = session.agent_type === "none" ? "Shell" : agentLabel(session.agent_type);
+  const subpath = sessionSubpathWithinGroup(session.workdir, groupKey);
+  return subpath ? `${label} · ${subpath}` : label;
 }
 
 function sessionFolderKey(path: string): string {
   if (!path || path === DEFAULT_SESSION_WORKDIR) return "";
-  if (path.startsWith(`${DEFAULT_SESSION_WORKDIR}/`)) {
-    return path.slice(DEFAULT_SESSION_WORKDIR.length + 1);
-  }
-  return path;
+  if (!path.startsWith(`${DEFAULT_SESSION_WORKDIR}/`)) return path;
+  const relative = path.slice(DEFAULT_SESSION_WORKDIR.length + 1);
+  return relative.split("/")[0] || "";
 }
 
 function groupSessionsByFolder(sessions: Session[]) {
@@ -775,8 +797,18 @@ function groupSessionsByFolder(sessions: Session[]) {
     .map(([key, grouped]) => ({
       key,
       label: key === "" ? "~/workspace" : `~/workspace/${key}`,
+      inputValue: key === "" ? "." : key,
       sessions: grouped,
     }));
+}
+
+function sessionSubpathWithinGroup(path: string, groupKey: string): string {
+  if (!path.startsWith(DEFAULT_SESSION_WORKDIR)) return "";
+  if (groupKey === "") return "";
+  const groupRoot = `${DEFAULT_SESSION_WORKDIR}/${groupKey}`;
+  if (path === groupRoot) return "";
+  if (path.startsWith(`${groupRoot}/`)) return path.slice(groupRoot.length + 1);
+  return "";
 }
 
 function cleanupCommandForOS(os: string | null | undefined): string | null {
@@ -868,24 +900,36 @@ function CleanupCommandDetails({ os }: { os?: string | null }) {
 function NewSessionQuickStart({
   onCreate,
   creating,
+  defaultFolder,
+  disabled,
 }: {
   onCreate: (agent: AgentType) => void;
   creating: boolean;
+  defaultFolder: string;
+  disabled: boolean;
 }) {
   return (
     <div className="space-y-1">
-      {AGENT_TYPES.slice(0, 3).map(({ value, label }) => (
+      {AGENT_TYPES.map(({ value, label }) => (
         <button
           key={value}
           onClick={() => onCreate(value)}
-          disabled={creating}
+          disabled={creating || disabled}
           className="w-full text-left p-2 rounded-md border border-dashed border-border text-xs text-muted-foreground hover:border-primary hover:text-primary transition-colors disabled:opacity-50"
         >
-          + {label}
+          + {label} on {displayWorkspacePath(defaultFolder)}
         </button>
       ))}
     </div>
   );
+}
+
+function displayWorkspacePath(path: string): string {
+  if (path === DEFAULT_SESSION_WORKDIR) return "~/workspace";
+  if (path.startsWith(`${DEFAULT_SESSION_WORKDIR}/`)) {
+    return `~/workspace/${path.slice(DEFAULT_SESSION_WORKDIR.length + 1)}`;
+  }
+  return "~/workspace";
 }
 
 function isClosedStatus(status: string): boolean {

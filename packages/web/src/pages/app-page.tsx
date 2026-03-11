@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useReducer, useState } from "react";
 import { Sidebar } from "@/components/sidebar";
 import { TerminalView } from "@/components/terminal-view";
+import { SessionCreatePicker } from "@/components/session-create-picker";
 import { X, Plus, Terminal } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { createSession } from "@/lib/api";
-import { defaultSessionTitle } from "@/lib/constants";
+import { defaultSessionTitle, type AgentType } from "@/lib/constants";
 
 interface AppPageProps {
   userEmail?: string;
@@ -155,6 +156,8 @@ export function AppPage({
   });
   const [emptyActionBusy, setEmptyActionBusy] = useState(false);
   const [draggingVisibleIndex, setDraggingVisibleIndex] = useState<number | null>(null);
+  const [showEmptyCreateMenu, setShowEmptyCreateMenu] = useState(false);
+  const [emptyCreateWorkdir, setEmptyCreateWorkdir] = useState("new");
 
   const handleSelectVps = useCallback((vpsId: string) => {
     setActiveVpsId(vpsId);
@@ -215,17 +218,15 @@ export function AppPage({
     setSessionRefreshSignal((value) => value + 1);
   }, []);
 
-  const handleCreateSessionFromEmpty = useCallback(async () => {
+  const handleCreateSessionFromEmpty = useCallback(async (agentType: AgentType) => {
     if (!activeVpsId || emptyActionBusy) return;
     setEmptyActionBusy(true);
     try {
-      const nextOrdinal =
-        tabState.tabs.filter((tab) => tab.vpsId === activeVpsId).length + 1;
-      const title = defaultSessionTitle("claude-code", nextOrdinal);
+      const title = defaultSessionTitle(agentType, 1);
       const res = await createSession(activeVpsId, {
         title,
-        agent_type: "claude-code",
-        workdir: "/home/vibe/workspace",
+        agent_type: agentType,
+        workdir: emptyCreateWorkdir,
       });
       dispatchTab({
         type: "open",
@@ -236,13 +237,15 @@ export function AppPage({
         },
       });
       setSidebarErrorMessage("");
+      setShowEmptyCreateMenu(false);
+      setEmptyCreateWorkdir("new");
     } catch (err) {
       const detail = err instanceof Error ? err.message : "unexpected error";
       setSidebarErrorMessage(`Failed to create session: ${detail}`);
     } finally {
       setEmptyActionBusy(false);
     }
-  }, [activeVpsId, emptyActionBusy, tabState.tabs]);
+  }, [activeVpsId, emptyActionBusy, emptyCreateWorkdir]);
 
   const visibleTabs = useMemo(
     () =>
@@ -375,8 +378,12 @@ export function AppPage({
               <EmptyState
                 onNavigate={onNavigate}
                 selectedVpsId={activeVpsId}
-                onCreateSession={handleCreateSessionFromEmpty}
+                onCreateSession={() => setShowEmptyCreateMenu((value) => !value)}
+                onCreateAgentSession={handleCreateSessionFromEmpty}
                 creatingSession={emptyActionBusy}
+                showCreateMenu={showEmptyCreateMenu}
+                createWorkdir={emptyCreateWorkdir}
+                onChangeWorkdir={setEmptyCreateWorkdir}
               />
             </div>
           )}
@@ -390,12 +397,20 @@ function EmptyState({
   onNavigate,
   selectedVpsId,
   onCreateSession,
+  onCreateAgentSession,
   creatingSession,
+  showCreateMenu,
+  createWorkdir,
+  onChangeWorkdir,
 }: {
   onNavigate: (page: "onboarding") => void;
   selectedVpsId: string | null;
   onCreateSession: () => void;
+  onCreateAgentSession: (agent: AgentType) => void;
   creatingSession: boolean;
+  showCreateMenu: boolean;
+  createWorkdir: string;
+  onChangeWorkdir: (value: string) => void;
 }) {
   return (
     <div className="absolute inset-0 flex items-center justify-center">
@@ -416,8 +431,18 @@ function EmptyState({
               className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-60"
             >
               <Plus className="h-4 w-4" />
-              {creatingSession ? "Creating..." : "Create Session"}
+              {creatingSession ? "Creating..." : "New Session"}
             </button>
+            {showCreateMenu && (
+              <div className="mx-auto w-64 text-left">
+                <SessionCreatePicker
+                  workdir={createWorkdir}
+                  onWorkdirChange={onChangeWorkdir}
+                  onCreate={onCreateAgentSession}
+                  creating={creatingSession}
+                />
+              </div>
+            )}
           </>
         ) : (
           <>
