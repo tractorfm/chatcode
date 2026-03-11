@@ -58,6 +58,7 @@ export interface GatewayRow {
   vps_id: string;
   auth_token_hash: string;
   version: string | null;
+  host_os: string | null;
   last_seen_at: number | null;
   connected: number;
   created_at: number;
@@ -362,14 +363,15 @@ export async function listVPSMissingIPv4(db: D1Database): Promise<VPSRow[]> {
 export async function createGateway(db: D1Database, row: GatewayRow): Promise<void> {
   await db
     .prepare(
-      `INSERT INTO gateways (id, vps_id, auth_token_hash, version, last_seen_at, connected, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO gateways (id, vps_id, auth_token_hash, version, host_os, last_seen_at, connected, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .bind(
       row.id,
       row.vps_id,
       row.auth_token_hash,
       row.version,
+      row.host_os,
       row.last_seen_at,
       row.connected,
       row.created_at,
@@ -450,6 +452,17 @@ export async function updateGatewayVersion(
   await db
     .prepare("UPDATE gateways SET version = ? WHERE id = ?")
     .bind(version, id)
+    .run();
+}
+
+export async function updateGatewaySystemInfo(
+  db: D1Database,
+  id: string,
+  info: { host_os?: string | null },
+): Promise<void> {
+  await db
+    .prepare("UPDATE gateways SET host_os = ? WHERE id = ?")
+    .bind(info.host_os ?? null, id)
     .run();
 }
 

@@ -29,6 +29,7 @@ import {
   updateGatewayConnected,
   updateGatewayVersion,
   updateGatewayLastSeen,
+  updateGatewaySystemInfo,
   updateSessionStatus,
 } from "../db/schema.js";
 
@@ -354,6 +355,9 @@ export class GatewayHub {
 
     // Update D1
     await updateGatewayVersion(this.env.DB, gatewayId, msg.version);
+    await updateGatewaySystemInfo(this.env.DB, gatewayId, {
+      host_os: msg.system_info?.os ?? null,
+    });
     await updateGatewayConnected(this.env.DB, gatewayId, true);
 
     // Transition VPS to active if provisioning

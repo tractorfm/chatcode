@@ -12,6 +12,7 @@ import {
   Circle,
   LogOut,
   Loader2,
+  Copy,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AGENT_TYPES, defaultSessionTitle, type AgentType } from "@/lib/constants";
@@ -263,33 +264,7 @@ export function Sidebar({
   const handleDeleteVPS = useCallback(() => {
     if (!activeVpsId) return;
     const cleanupDetails = !isManagedVps ? (
-      <div className="space-y-3">
-        <p className="text-xs text-muted-foreground">
-          If the host still exists, cleanly remove the gateway first:
-        </p>
-        <div className="space-y-2">
-          <div className="space-y-1">
-            <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-              Linux
-            </span>
-            <div className="bg-background rounded-md border border-border p-3">
-              <code className="text-xs font-mono text-foreground break-all">
-                curl -fsSL https://chatcode.dev/cleanup.sh | sudo bash -s -- --yes
-              </code>
-            </div>
-          </div>
-          <div className="space-y-1">
-            <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-              macOS
-            </span>
-            <div className="bg-background rounded-md border border-border p-3">
-              <code className="text-xs font-mono text-foreground break-all">
-                curl -fsSL https://chatcode.dev/cleanup.sh | bash -s -- --yes
-              </code>
-            </div>
-          </div>
-        </div>
-      </div>
+      <CleanupCommandDetails os={activeVps?.gateway_os} />
     ) : undefined;
     setConfirmAction({
       title: isManagedVps ? "Destroy server" : "Remove server",
@@ -664,6 +639,99 @@ function ProviderServerIcon({ provider }: { provider?: "digitalocean" | "manual"
     );
   }
   return <Server className="h-3.5 w-3.5 shrink-0" />;
+}
+
+function cleanupCommandForOS(os: string | null | undefined): string | null {
+  if (os === "linux") {
+    return "curl -fsSL https://chatcode.dev/cleanup.sh | sudo bash -s -- --yes";
+  }
+  if (os === "darwin") {
+    return "curl -fsSL https://chatcode.dev/cleanup.sh | bash -s -- --yes";
+  }
+  return null;
+}
+
+function CleanupCommandDetails({ os }: { os?: string | null }) {
+  const [copied, setCopied] = useState(false);
+  const command = cleanupCommandForOS(os);
+
+  const copyCommand = useCallback(async (value: string) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      setCopied(false);
+    }
+  }, []);
+
+  if (command) {
+    const label = os === "darwin" ? "macOS" : "Linux";
+    return (
+      <div className="space-y-3">
+        <p className="text-xs text-muted-foreground">
+          If the host still exists, cleanly remove the gateway first:
+        </p>
+        <div className="space-y-1">
+          <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+            {label}
+          </span>
+          <div className="bg-background rounded-md border border-border p-3">
+            <code className="text-xs font-mono text-foreground break-all">
+              {command}
+            </code>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={() => void copyCommand(command)}
+          className="inline-flex items-center gap-2 rounded-md border border-border px-3 py-2 text-xs text-foreground hover:bg-accent"
+        >
+          <Copy className="h-3.5 w-3.5" />
+          {copied ? "Copied" : "Copy command"}
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <p className="text-xs text-muted-foreground">
+        If the host still exists, cleanly remove the gateway first:
+      </p>
+      {[
+        {
+          label: "Linux",
+          command: "curl -fsSL https://chatcode.dev/cleanup.sh | sudo bash -s -- --yes",
+        },
+        {
+          label: "macOS",
+          command: "curl -fsSL https://chatcode.dev/cleanup.sh | bash -s -- --yes",
+        },
+      ].map((entry) => (
+        <div key={entry.label} className="space-y-2">
+          <div className="space-y-1">
+            <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+              {entry.label}
+            </span>
+            <div className="bg-background rounded-md border border-border p-3">
+              <code className="text-xs font-mono text-foreground break-all">
+                {entry.command}
+              </code>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => void copyCommand(entry.command)}
+            className="inline-flex items-center gap-2 rounded-md border border-border px-3 py-2 text-xs text-foreground hover:bg-accent"
+          >
+            <Copy className="h-3.5 w-3.5" />
+            {copied ? "Copied" : `Copy ${entry.label} command`}
+          </button>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 function NewSessionQuickStart({

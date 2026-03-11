@@ -57,6 +57,7 @@ CREATE TABLE gateways (
   vps_id          TEXT    NOT NULL REFERENCES vps(id) ON DELETE CASCADE,
   auth_token_hash TEXT    NOT NULL,
   version         TEXT,
+  host_os         TEXT,
   last_seen_at    INTEGER,
   connected       INTEGER NOT NULL DEFAULT 0,
   created_at      INTEGER NOT NULL

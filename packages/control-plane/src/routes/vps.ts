@@ -51,6 +51,7 @@ interface VPSResponse {
   gateway_id?: string;
   gateway_connected?: boolean;
   gateway_version?: string | null;
+  gateway_os?: string | null;
 }
 
 interface VPSCreateResponse {
@@ -165,6 +166,7 @@ export async function handleVPSCreate(
       vps_id: vpsId,
       auth_token_hash: authTokenHash,
       version: null,
+      host_os: null,
       last_seen_at: null,
       connected: 0,
       created_at: now,
@@ -198,6 +200,7 @@ export async function handleVPSCreate(
     vps_id: vpsId,
     auth_token_hash: authTokenHash,
     version: null,
+    host_os: null,
     last_seen_at: null,
     connected: 0,
     created_at: now,
@@ -263,6 +266,7 @@ export async function handleVPSManualCreate(
     vps_id: vpsId,
     auth_token_hash: authTokenHash,
     version: null,
+    host_os: null,
     last_seen_at: null,
     connected: 0,
     created_at: now,
@@ -538,6 +542,7 @@ function toVPSResponse(vps: VPSRow, gateway?: GatewayRow): VPSResponse {
     gateway_id: gateway?.id,
     gateway_connected: Boolean(gateway?.connected),
     gateway_version: gateway?.version ?? null,
+    gateway_os: gateway?.host_os ?? null,
   };
 }
 

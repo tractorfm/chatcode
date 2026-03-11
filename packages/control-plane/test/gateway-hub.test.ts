@@ -4,6 +4,7 @@ import { GatewayHub } from "../src/durables/GatewayHub";
 const mocks = vi.hoisted(() => ({
   updateGatewayConnected: vi.fn(async () => {}),
   updateGatewayVersion: vi.fn(async () => {}),
+  updateGatewaySystemInfo: vi.fn(async () => {}),
   updateGatewayLastSeen: vi.fn(async () => {}),
   updateSessionStatus: vi.fn(async () => {}),
 }));
@@ -11,6 +12,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("../src/db/schema.js", () => ({
   updateGatewayConnected: mocks.updateGatewayConnected,
   updateGatewayVersion: mocks.updateGatewayVersion,
+  updateGatewaySystemInfo: mocks.updateGatewaySystemInfo,
   updateGatewayLastSeen: mocks.updateGatewayLastSeen,
   updateSessionStatus: mocks.updateSessionStatus,
 }));

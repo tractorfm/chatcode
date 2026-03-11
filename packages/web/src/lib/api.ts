@@ -75,6 +75,7 @@ export interface VPS {
   gateway_id?: string;
   gateway_connected?: boolean;
   gateway_version?: string | null;
+  gateway_os?: string | null;
 }
 
 export function listVPS() {
