@@ -14,6 +14,7 @@ export function App() {
   const [sidebarRefreshSignal, setSidebarRefreshSignal] = useState(0);
   const [selectedVpsIdHint, setSelectedVpsIdHint] = useState<string | null>(null);
   const [onboardingManualVpsId, setOnboardingManualVpsId] = useState<string | null>(null);
+  const [linkedProviders, setLinkedProviders] = useState<string[]>([]);
   const overlayRef = useRef<HTMLDivElement>(null);
 
   const handleNavigate = useCallback((target: "settings" | "status" | "onboarding", opts?: { manualVpsId?: string | null }) => {
@@ -42,6 +43,11 @@ export function App() {
     overlayRef.current?.focus();
   }, [overlay]);
 
+  useEffect(() => {
+    if (auth.status !== "authenticated") return;
+    setLinkedProviders(auth.user.providers ?? []);
+  }, [auth]);
+
   if (auth.status === "loading") {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
@@ -55,7 +61,6 @@ export function App() {
   }
 
   const userEmail = auth.user.email;
-  const linkedProviders = auth.user.providers ?? [];
 
   return (
     <>
@@ -86,6 +91,7 @@ export function App() {
             <SettingsPage
               userEmail={userEmail}
               linkedProviders={linkedProviders}
+              onProvidersChanged={setLinkedProviders}
               onBack={handleCloseOverlay}
               onLogout={auth.logout}
             />

@@ -233,6 +233,7 @@ export function AppPage({
   );
 
   const combinedRefreshSignal = sessionRefreshSignal + externalRefreshSignal;
+  const fullscreenActive = fullscreenElement !== null;
 
   useEffect(() => {
     if (!selectedVpsIdHint) return;
@@ -260,8 +261,11 @@ export function AppPage({
     <div className="h-screen flex overflow-hidden">
       {/* Sidebar */}
       <Sidebar
-        collapsed={collapsed}
-        onToggle={() => setCollapsed((c) => !c)}
+        collapsed={collapsed || fullscreenActive}
+        onToggle={() => {
+          if (fullscreenActive) return;
+          setCollapsed((c) => !c);
+        }}
         activeVpsId={activeVpsId}
         activeSessionId={activeTab?.sessionId ?? null}
         onSelectVps={handleSelectVps}

@@ -13,6 +13,7 @@ import {
   listAuthIdentitiesByUser,
   upsertDOConnection,
   getPrimaryEmailForUser,
+  deleteAuthIdentityByUserProvider,
 } from "../db/schema.js";
 import { importKEK, encryptToken } from "../lib/do-tokens.js";
 import {
@@ -570,6 +571,30 @@ export async function handleAuthMe(
     email,
     providers,
   });
+}
+
+export async function handleAuthUnlinkProvider(
+  _request: Request,
+  env: Env,
+  auth: AuthContext,
+  provider: "google" | "github",
+): Promise<Response> {
+  const identities = await listAuthIdentitiesByUser(env.DB, auth.userId);
+  const hasProvider = identities.some((row) => row.provider === provider);
+  if (!hasProvider) {
+    return jsonResponse({ error: "identity not linked" }, 404);
+  }
+
+  const primaryEmail = await getPrimaryEmailForUser(env.DB, auth.userId);
+  const remainingAuthProviders = identities.filter((row) => row.provider !== provider);
+  if (!primaryEmail && remainingAuthProviders.length === 0) {
+    return jsonResponse({ error: "cannot unlink last sign-in method" }, 400);
+  }
+
+  await deleteAuthIdentityByUserProvider(env.DB, auth.userId, provider);
+  const refreshed = await listAuthIdentitiesByUser(env.DB, auth.userId);
+  const providers = Array.from(new Set(refreshed.map((row) => row.provider)));
+  return jsonResponse({ ok: true, providers });
 }
 
 /**

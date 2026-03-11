@@ -7,12 +7,14 @@ import {
   handleEmailStart,
   handleEmailVerify,
   handleAuthMe,
+  handleAuthUnlinkProvider,
   handleDevSessionLogin,
 } from "../src/routes/auth";
 
 const mocks = vi.hoisted(() => ({
   deleteDOConnection: vi.fn(async () => {}),
   listAuthIdentitiesByUser: vi.fn(async () => []),
+  deleteAuthIdentityByUserProvider: vi.fn(async () => {}),
   upsertDOConnection: vi.fn(async () => {}),
   getPrimaryEmailForUser: vi.fn(async () => "user@example.test"),
   importKEK: vi.fn(async () => ({} as CryptoKey)),
@@ -26,6 +28,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("../src/db/schema.js", () => ({
   deleteDOConnection: mocks.deleteDOConnection,
   listAuthIdentitiesByUser: mocks.listAuthIdentitiesByUser,
+  deleteAuthIdentityByUserProvider: mocks.deleteAuthIdentityByUserProvider,
   upsertDOConnection: mocks.upsertDOConnection,
   getPrimaryEmailForUser: mocks.getPrimaryEmailForUser,
 }));
@@ -366,6 +369,34 @@ describe("routes/auth", () => {
       user_id: "usr-test-1",
       email: "user@example.test",
       providers: ["email", "github"],
+    });
+  });
+
+  it("unlinks a linked google account", async () => {
+    const { env } = makeEnv();
+    mocks.listAuthIdentitiesByUser
+      .mockResolvedValueOnce([
+        { provider: "google", user_id: "usr-test-1" },
+        { provider: "github", user_id: "usr-test-1" },
+      ])
+      .mockResolvedValueOnce([{ provider: "github", user_id: "usr-test-1" }]);
+
+    const res = await handleAuthUnlinkProvider(
+      new Request("https://cp.example.test/auth/google/disconnect", { method: "POST" }),
+      env,
+      { userId: "usr-test-1" },
+      "google",
+    );
+
+    expect(res.status).toBe(200);
+    expect(mocks.deleteAuthIdentityByUserProvider).toHaveBeenCalledWith(
+      env.DB,
+      "usr-test-1",
+      "google",
+    );
+    await expect(res.json()).resolves.toEqual({
+      ok: true,
+      providers: ["github"],
     });
   });
 });

@@ -196,6 +196,17 @@ export async function listAuthIdentitiesByUser(
   return result.results;
 }
 
+export async function deleteAuthIdentityByUserProvider(
+  db: D1Database,
+  userId: string,
+  provider: AuthIdentityRow["provider"],
+): Promise<void> {
+  await db
+    .prepare("DELETE FROM auth_identities WHERE user_id = ? AND provider = ?")
+    .bind(userId, provider)
+    .run();
+}
+
 // ---------------------------------------------------------------------------
 // DO Connections
 // ---------------------------------------------------------------------------

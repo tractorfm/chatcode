@@ -59,6 +59,12 @@ export function logout() {
   return request<{ ok: boolean }>("/auth/logout", { method: "POST" });
 }
 
+export function unlinkProvider(provider: "google" | "github") {
+  return request<{ ok: boolean; providers: string[] }>(`/auth/${provider}/disconnect`, {
+    method: "POST",
+  });
+}
+
 // -- VPS --
 
 export interface VPS {

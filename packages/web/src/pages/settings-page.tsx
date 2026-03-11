@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { ArrowLeft, ExternalLink } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { getOAuthURL, listVPS, type VPS } from "@/lib/api";
+import { getOAuthURL, listVPS, unlinkProvider, type VPS } from "@/lib/api";
 import {
   getStoredTerminalTheme,
   storeTerminalTheme,
@@ -11,6 +11,7 @@ import {
 interface SettingsPageProps {
   userEmail?: string;
   linkedProviders?: string[];
+  onProvidersChanged?: (providers: string[]) => void;
   onBack: () => void;
   onLogout: () => void;
 }
@@ -18,11 +19,13 @@ interface SettingsPageProps {
 export function SettingsPage({
   userEmail,
   linkedProviders = [],
+  onProvidersChanged,
   onBack,
   onLogout,
 }: SettingsPageProps) {
   const [termTheme, setTermTheme] = useState(getStoredTerminalTheme);
   const [vpsList, setVpsList] = useState<VPS[]>([]);
+  const [unlinkingProvider, setUnlinkingProvider] = useState<string | null>(null);
 
   useEffect(() => {
     listVPS()
@@ -65,11 +68,39 @@ export function SettingsPage({
             label="Google"
             linked={linkedProviderSet.has("google")}
             href={getOAuthURL("google")}
+            busy={unlinkingProvider === "google"}
+            onUnlink={
+              linkedProviderSet.has("google")
+                ? async () => {
+                    setUnlinkingProvider("google");
+                    try {
+                      const res = await unlinkProvider("google");
+                      onProvidersChanged?.(res.providers);
+                    } finally {
+                      setUnlinkingProvider(null);
+                    }
+                  }
+                : undefined
+            }
           />
           <AccountProviderRow
             label="GitHub"
             linked={linkedProviderSet.has("github")}
             href={getOAuthURL("github")}
+            busy={unlinkingProvider === "github"}
+            onUnlink={
+              linkedProviderSet.has("github")
+                ? async () => {
+                    setUnlinkingProvider("github");
+                    try {
+                      const res = await unlinkProvider("github");
+                      onProvidersChanged?.(res.providers);
+                    } finally {
+                      setUnlinkingProvider(null);
+                    }
+                  }
+                : undefined
+            }
           />
         </section>
 
@@ -82,7 +113,7 @@ export function SettingsPage({
           </div>
           <div className="flex items-center justify-between">
             <span className="text-sm text-muted-foreground">
-              Terminal theme
+              Terminal Theme
             </span>
             <select
               value={termTheme}
@@ -160,16 +191,31 @@ function AccountProviderRow({
   label,
   linked,
   href,
+  onUnlink,
+  busy = false,
 }: {
   label: string;
   linked: boolean;
   href: string;
+  onUnlink?: () => Promise<void> | void;
+  busy?: boolean;
 }) {
   return (
     <div className="flex items-center justify-between">
       <span className="text-sm text-muted-foreground">{label}</span>
       {linked ? (
-        <span className="text-sm text-foreground">Linked</span>
+        <div className="inline-flex items-center gap-2">
+          <span className="text-sm text-foreground">Linked</span>
+          {onUnlink && (
+            <button
+              onClick={() => void onUnlink()}
+              disabled={busy}
+              className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-sm text-foreground hover:bg-accent disabled:opacity-60"
+            >
+              {busy ? "Unlinking..." : "Unlink"}
+            </button>
+          )}
+        </div>
       ) : (
         <a
           href={href}

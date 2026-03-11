@@ -28,6 +28,7 @@ import {
   handleDOCallback,
   handleDODisconnect,
   handleAuthMe,
+  handleAuthUnlinkProvider,
   handleLogout,
   handleDevSessionLogin,
 } from "./routes/auth.js";
@@ -139,6 +140,19 @@ export default {
       // --- Auth (authenticated) ---
       if (path === "/auth/me" && method === "GET") {
         return withCORS(await handleAuthMe(request, env, auth), request, env);
+      }
+      const authUnlinkMatch = path.match(/^\/auth\/(google|github)\/disconnect$/);
+      if (authUnlinkMatch && method === "POST") {
+        return withCORS(
+          await handleAuthUnlinkProvider(
+            request,
+            env,
+            auth,
+            authUnlinkMatch[1] as "google" | "github",
+          ),
+          request,
+          env,
+        );
       }
       if (path === "/auth/dev/login" && method === "POST") {
         return withCORS(await handleDevSessionLogin(request, env, auth), request, env);

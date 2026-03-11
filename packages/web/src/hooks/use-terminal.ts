@@ -69,6 +69,7 @@ export function createTerminalHandle(opts: UseTerminalOptions): TerminalHandle {
   let initialSnapshotTimer: ReturnType<typeof setTimeout> | null = null;
   let initialSnapshotRetryTimer: ReturnType<typeof setTimeout> | null = null;
   let correctiveSnapshotTimer: ReturnType<typeof setTimeout> | null = null;
+  let resizeSnapshotTimer: ReturnType<typeof setTimeout> | null = null;
   let lastCols = 0;
   let lastRows = 0;
   let reconnectAttempts = 0;
@@ -191,6 +192,16 @@ export function createTerminalHandle(opts: UseTerminalOptions): TerminalHandle {
       correctiveSnapshotTimer = null;
       if (disposed || !socket || socket.readyState !== WebSocket.OPEN) return;
       initialSnapshotRequested = false;
+      requestSnapshot(reason);
+    }, delayMs);
+  }
+
+  function schedulePostResizeSnapshot(reason: string, delayMs = 180) {
+    if (awaitingInitialSnapshot) return;
+    if (resizeSnapshotTimer) clearTimeout(resizeSnapshotTimer);
+    resizeSnapshotTimer = setTimeout(() => {
+      resizeSnapshotTimer = null;
+      if (disposed || !socket || socket.readyState !== WebSocket.OPEN) return;
       requestSnapshot(reason);
     }, delayMs);
   }
@@ -466,7 +477,10 @@ export function createTerminalHandle(opts: UseTerminalOptions): TerminalHandle {
 
   term.onResize(({ cols, rows }) => {
     debugLog("term-onResize", { cols, rows });
-    sendResize(cols, rows, "term.onResize");
+    const resizeReqId = sendResize(cols, rows, "term.onResize");
+    if (resizeReqId) {
+      schedulePostResizeSnapshot("post-resize-reconcile");
+    }
   });
 
   const handle: TerminalHandle = {
@@ -506,6 +520,7 @@ export function createTerminalHandle(opts: UseTerminalOptions): TerminalHandle {
       if (initialSnapshotTimer) clearTimeout(initialSnapshotTimer);
       if (initialSnapshotRetryTimer) clearTimeout(initialSnapshotRetryTimer);
       if (correctiveSnapshotTimer) clearTimeout(correctiveSnapshotTimer);
+      if (resizeSnapshotTimer) clearTimeout(resizeSnapshotTimer);
       if (socket) {
         try {
           socket.close(1000, "disposed");
