@@ -162,28 +162,21 @@ export function Sidebar({
   }, [refreshSignal, refreshVPS]);
 
   useEffect(() => {
-    if (
-      !vpsList.some(
-        (vps) => vps.status === "provisioning" || (vps.status === "active" && vps.gateway_connected === false),
-      )
-    ) {
-      return;
-    }
+    if (vpsList.length === 0) return;
+    const needsFastPolling =
+      vpsList.some(
+        (vps) =>
+          vps.status === "provisioning" ||
+          (vps.status === "active" && vps.gateway_connected === false),
+      ) ||
+      confirmAction?.kind === "remove-server";
+    const intervalMs = needsFastPolling ? 5000 : 15000;
     const timer = window.setInterval(() => {
+      if (document.visibilityState !== "visible") return;
       void refreshVPS();
-    }, 5000);
+    }, intervalMs);
     return () => window.clearInterval(timer);
-  }, [refreshVPS, vpsList]);
-
-  useEffect(() => {
-    if (confirmAction?.kind !== "remove-server" || !confirmAction.watchVpsId) {
-      return;
-    }
-    const timer = window.setInterval(() => {
-      void refreshVPS();
-    }, 3000);
-    return () => window.clearInterval(timer);
-  }, [confirmAction, refreshVPS]);
+  }, [confirmAction, refreshVPS, vpsList]);
 
   const handleCreateSession = useCallback(
     async (agentType: AgentType = "claude-code") => {
