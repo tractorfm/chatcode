@@ -375,7 +375,7 @@ export function Sidebar({
                     : "hover:bg-accent/50 text-foreground font-normal",
                 )}
               >
-                <Server className="h-3.5 w-3.5 shrink-0" />
+                <ProviderServerIcon provider={vps.provider} />
                 <InlineEdit
                   value={vps.label || vps.region || vps.id}
                   onSave={(label) => handleRenameVps(vps.id, label)}
@@ -614,6 +614,24 @@ export function Sidebar({
       )}
     </aside>
   );
+}
+
+function ProviderServerIcon({ provider }: { provider?: "digitalocean" | "manual" }) {
+  if (provider === "digitalocean") {
+    return (
+      <svg
+        viewBox="67 175.2 176.4 176.5"
+        aria-hidden="true"
+        className="h-3.5 w-3.5 shrink-0 fill-current"
+      >
+        <path d="M155.2,351.7v-34.2c36.2,0,64.3-35.9,50.4-74c-5.1-14.1-16.4-25.4-30.5-30.5c-38.1-13.8-74,14.2-74,50.4l0,0H67c0-57.7,55.8-102.7,116.3-83.8c26.4,8.3,47.5,29.3,55.7,55.7C257.9,295.9,213,351.7,155.2,351.7z" />
+        <path d="M155.3,317.6h-34v-34h34V317.6z" />
+        <path d="M121.3,343.8H95.1v-26.2h26.2V343.8z" />
+        <path d="M95.1,317.6H73.2v-21.9h21.9V317.6z" />
+      </svg>
+    );
+  }
+  return <Server className="h-3.5 w-3.5 shrink-0" />;
 }
 
 function NewSessionQuickStart({
