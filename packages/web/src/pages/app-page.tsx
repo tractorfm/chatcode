@@ -424,14 +424,14 @@ function normalizeWorkspacePath(input: string): string {
 function workspaceSuffix(path: string): string {
   if (path === "/home/vibe/workspace") return "";
   if (path.startsWith("/home/vibe/workspace/")) {
-    return ` /${path.slice("/home/vibe/workspace/".length)}`;
+    return path.slice("/home/vibe/workspace/".length);
   }
   return "";
 }
 
 function withSessionPathSuffix(title: string, workdir: string): string {
   const suffix = workspaceSuffix(workdir);
-  return suffix ? `${title} -${suffix}` : title;
+  return suffix ? `${title} - ${suffix}` : title;
 }
 
 function EmptyState({
