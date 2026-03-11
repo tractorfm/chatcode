@@ -95,6 +95,7 @@ export function OnboardingPage({ onBack, onComplete, manualVpsId = null }: Onboa
     setCopiedCommand(false);
     try {
       const setup = await regenerateManualVPSCommand(manualVpsId);
+      setByoLabel(setup.vps.label ?? "");
       setManualSetup(setup);
     } catch (err: unknown) {
       const msg =
