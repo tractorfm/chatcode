@@ -118,7 +118,7 @@ Rationale: keep the first release focused on “create VPS → open terminal →
 - MVP merges “workspace” and “workspace instance” into **Session**.
 - One session = one tmux session = one terminal.
 - `session_id` is the canonical handle for cross-client continuity.
-- Limit: **max 5 concurrent sessions** per VPS (MVP).
+- Limit: **max 10 concurrent sessions** per VPS (MVP).
 - On session start, gateway writes an agent instruction file in the session workdir:
   - `CLAUDE.md` (Claude Code)
   - `AGENTS.md` (generic fallback)

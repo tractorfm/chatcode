@@ -33,7 +33,7 @@ type Config struct {
 	// HealthInterval is how often to send gateway.health events. Default 30s.
 	HealthInterval time.Duration `json:"health_interval"`
 
-	// MaxSessions is the maximum number of concurrent sessions. Default 5.
+	// MaxSessions is the maximum number of concurrent sessions. Default 10.
 	MaxSessions int `json:"max_sessions"`
 
 	// TempDir is used for file upload staging. Default /tmp/vibecode.
@@ -86,7 +86,7 @@ func defaults() *Config {
 	exe, _ := os.Executable()
 	return &Config{
 		HealthInterval: 30 * time.Second,
-		MaxSessions:    5,
+		MaxSessions:    10,
 		TempDir:        "/tmp/chatcode",
 		BinaryPath:     exe,
 		LogLevel:       "info",

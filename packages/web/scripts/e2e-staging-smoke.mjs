@@ -10,6 +10,7 @@ const devSecret = process.env.E2E_DEV_SECRET || "";
 const configuredVpsId = process.env.E2E_VPS_ID || "";
 const timeoutMs = Number(process.env.E2E_TIMEOUT_MS || 30000);
 const CLOSED_SESSION_STATUSES = new Set(["ended", "error", "killed"]);
+const maxOpenSessions = Number(process.env.E2E_MAX_OPEN_SESSIONS || 9);
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -56,13 +57,13 @@ async function listOpenSessions(context, vpsId) {
   return existingSessions.filter((s) => !isClosedStatus(s.status));
 }
 
-async function ensureSessionHeadroom(context, vpsId, maxOpenSessions = 4) {
+async function ensureSessionHeadroom(context, vpsId, allowedOpenSessions = maxOpenSessions) {
   const openSessions = await listOpenSessions(context, vpsId);
-  if (openSessions.length <= maxOpenSessions) {
+  if (openSessions.length <= allowedOpenSessions) {
     return openSessions;
   }
 
-  const victims = openSessions.slice(0, openSessions.length - maxOpenSessions);
+  const victims = openSessions.slice(0, openSessions.length - allowedOpenSessions);
   for (const victim of victims) {
     await jsonRequest(
       context,
@@ -73,11 +74,11 @@ async function ensureSessionHeadroom(context, vpsId, maxOpenSessions = 4) {
 
   const slotsFreed = await pollUntil(async () => {
     const updatedOpenSessions = await listOpenSessions(context, vpsId);
-    return updatedOpenSessions.length <= maxOpenSessions ? updatedOpenSessions : null;
+    return updatedOpenSessions.length <= allowedOpenSessions ? updatedOpenSessions : null;
   }, { timeout: 45000, interval: 1000 });
 
   if (!slotsFreed) {
-    throw new Error(`Timed out waiting for <=${maxOpenSessions} open sessions before creating smoke session`);
+    throw new Error(`Timed out waiting for <=${allowedOpenSessions} open sessions before creating smoke session`);
   }
   return slotsFreed;
 }
@@ -89,7 +90,7 @@ function isSessionLimitError(result) {
 
 async function createSmokeSession(context, vpsId, title) {
   for (let attempt = 0; attempt < 3; attempt += 1) {
-    await ensureSessionHeadroom(context, vpsId, Math.max(2, 4 - attempt));
+    await ensureSessionHeadroom(context, vpsId, Math.max(2, maxOpenSessions - attempt));
 
     const createResp = await jsonRequest(
       context,
@@ -110,7 +111,7 @@ async function createSmokeSession(context, vpsId, title) {
 
     await pollUntil(async () => {
       const updatedOpenSessions = await listOpenSessions(context, vpsId);
-      return updatedOpenSessions.length <= Math.max(2, 3 - attempt) ? true : null;
+      return updatedOpenSessions.length <= Math.max(2, maxOpenSessions - (attempt + 1)) ? true : null;
     }, { timeout: 10000, interval: 1000 });
   }
 

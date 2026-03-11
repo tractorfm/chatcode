@@ -88,6 +88,7 @@ export function Sidebar({
   const activeVps = vpsList.find((v) => v.id === activeVpsId);
   const activeVpsName = activeVps?.label || activeVps?.id || "this server";
   const isManagedVps = activeVps?.provider === "digitalocean";
+  const sessionHeading = sessions.length > 0 ? `Sessions (${sessions.length})` : "Sessions";
 
   useEffect(() => {
     activeSessionIdRef.current = activeSessionId;
@@ -469,7 +470,7 @@ export function Sidebar({
             <div className="p-3 space-y-2 border-t border-border">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                  Sessions
+                  {sessionHeading}
                 </span>
                 <div className="relative">
                   <button

@@ -458,15 +458,18 @@ export class GatewayHub {
       }
     }
 
-    const result = await this.env.DB
-      .prepare(
-        `SELECT id, status
+    const activeIDList = Array.from(activeIDs);
+    const binds: Array<string> = [vpsId];
+    let sql = `SELECT id, status
          FROM sessions
          WHERE vps_id = ?
-           AND status IN ('starting', 'running')`,
-      )
-      .bind(vpsId)
-      .all<{ id: string; status: string }>();
+           AND status IN ('starting', 'running')`;
+    if (activeIDList.length > 0) {
+      sql += ` OR (vps_id = ? AND id IN (${activeIDList.map(() => "?").join(", ")}))`;
+      binds.push(vpsId, ...activeIDList);
+    }
+
+    const result = await this.env.DB.prepare(sql).bind(...binds).all<{ id: string; status: string }>();
 
     for (const row of result.results ?? []) {
       const shouldBeRunning = activeIDs.has(row.id);
