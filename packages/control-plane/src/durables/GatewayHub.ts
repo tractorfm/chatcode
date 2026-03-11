@@ -372,7 +372,7 @@ export class GatewayHub {
       // Idempotent: only transition from provisioning
       await this.env.DB
         .prepare(
-          "UPDATE vps SET status = 'active', updated_at = ? WHERE id = ? AND status = 'provisioning'",
+          "UPDATE vps SET status = 'active', updated_at = ? WHERE id = ? AND status IN ('provisioning', 'provisioning_timeout')",
         )
         .bind(Math.floor(Date.now() / 1000), gw.vps_id)
         .run();
