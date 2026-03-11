@@ -89,6 +89,7 @@ export function Sidebar({
   const activeVpsName = activeVps?.label || activeVps?.id || "this server";
   const isManagedVps = activeVps?.provider === "digitalocean";
   const sessionHeading = sessions.length > 0 ? `Sessions (${sessions.length})` : "Sessions";
+  const transientPollCountRef = useRef(0);
 
   useEffect(() => {
     activeSessionIdRef.current = activeSessionId;
@@ -103,30 +104,32 @@ export function Sidebar({
     setErrorMessage(`${prefix}: ${detail}`);
   }, []);
 
+  const applyVPSList = useCallback((vps: VPS[]) => {
+    setVpsList(vps);
+    setErrorMessage("");
+    if (activeVpsId && !vps.some((row) => row.id === activeVpsId)) {
+      const nextVpsId = vps[0]?.id ?? null;
+      onVpsDeleted(activeVpsId, nextVpsId);
+      if (confirmAction?.kind === "remove-server" && confirmAction.watchVpsId === activeVpsId) {
+        setConfirmAction(null);
+      }
+      return;
+    }
+    if (selectedVpsIdHint && vps.some((row) => row.id === selectedVpsIdHint)) {
+      onSelectVps(selectedVpsIdHint);
+    } else if (vps.length > 0 && !activeVpsId) {
+      onSelectVps(vps[0].id);
+    }
+  }, [activeVpsId, confirmAction, onSelectVps, onVpsDeleted, selectedVpsIdHint]);
+
   const refreshVPS = useCallback(async () => {
     try {
       const { vps } = await listVPS();
-      setVpsList(vps);
-      setErrorMessage("");
-      if (activeVpsId && !vps.some((row) => row.id === activeVpsId)) {
-        const nextVpsId = vps[0]?.id ?? null;
-        onVpsDeleted(activeVpsId, nextVpsId);
-        if (confirmAction?.kind === "remove-server" && confirmAction.watchVpsId === activeVpsId) {
-          setConfirmAction(null);
-        }
-        return vps;
-      }
-      if (selectedVpsIdHint && vps.some((row) => row.id === selectedVpsIdHint)) {
-        onSelectVps(selectedVpsIdHint);
-      } else if (vps.length > 0 && !activeVpsId) {
-        onSelectVps(vps[0].id);
-      }
-      return vps;
+      applyVPSList(vps);
     } catch (err) {
       setOperationError("Failed to load servers", err);
-      return [];
     }
-  }, [activeVpsId, confirmAction, onSelectVps, onVpsDeleted, selectedVpsIdHint, setOperationError]);
+  }, [applyVPSList, setOperationError]);
 
   const refreshSessions = useCallback(async () => {
     if (!activeVpsId) return;
@@ -164,19 +167,22 @@ export function Sidebar({
 
   useEffect(() => {
     if (vpsList.length === 0) return;
-    const needsFastPolling =
+    const hasTransientVpsState =
       vpsList.some(
         (vps) =>
           vps.status === "provisioning" ||
           (vps.status === "active" && vps.gateway_connected === false),
       ) ||
       confirmAction?.kind === "remove-server";
-    const intervalMs = needsFastPolling ? 5000 : 15000;
-    const timer = window.setInterval(() => {
+    transientPollCountRef.current = hasTransientVpsState ? transientPollCountRef.current + 1 : 0;
+    const intervalMs = hasTransientVpsState
+      ? transientPollCountRef.current <= 12 ? 5000 : 30000
+      : 60000;
+    const timer = window.setTimeout(() => {
       if (document.visibilityState !== "visible") return;
       void refreshVPS();
     }, intervalMs);
-    return () => window.clearInterval(timer);
+    return () => window.clearTimeout(timer);
   }, [confirmAction, refreshVPS, vpsList]);
 
   const handleCreateSession = useCallback(
@@ -265,7 +271,8 @@ export function Sidebar({
     try {
       const deletedVpsId = activeVpsId;
       await deleteVPS(activeVpsId);
-      const vps = await refreshVPS();
+      const { vps } = await listVPS();
+      applyVPSList(vps);
       const nextVpsId = vps.find((entry) => entry.id !== deletedVpsId)?.id ?? null;
       onVpsDeleted(deletedVpsId, nextVpsId);
       setErrorMessage("");
@@ -275,7 +282,7 @@ export function Sidebar({
         err,
       );
     }
-  }, [activeVpsId, isManagedVps, onVpsDeleted, refreshVPS, setOperationError]);
+  }, [activeVpsId, applyVPSList, isManagedVps, onVpsDeleted, setOperationError]);
 
   const handleDeleteVPS = useCallback(() => {
     if (!activeVpsId) return;

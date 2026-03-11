@@ -25,6 +25,11 @@ import (
 )
 
 const downloadTimeout = 5 * time.Minute
+const (
+	sudoBinary      = "/usr/bin/sudo"
+	systemctlBinary = "/usr/bin/systemctl"
+	installBinary   = "/usr/bin/install"
+)
 
 // Updater performs gateway self-updates.
 type Updater struct {
@@ -48,10 +53,10 @@ func NewUpdater(binaryPath string, log *slog.Logger) *Updater {
 	switch runtime.GOOS {
 	case "linux":
 		u.restartFn = func() error {
-			return exec.Command("sudo", "systemctl", "restart", "chatcode-gateway").Run()
+			return exec.Command(sudoBinary, systemctlBinary, "restart", "chatcode-gateway").Run()
 		}
 		u.installFn = func(src, dst string) error {
-			return exec.Command("sudo", "install", "-m", "0755", src, dst).Run()
+			return exec.Command(sudoBinary, installBinary, "-m", "0755", src, dst).Run()
 		}
 		u.rollbackFn = u.installFn
 	case "darwin":

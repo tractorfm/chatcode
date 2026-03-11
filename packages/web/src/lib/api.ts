@@ -134,7 +134,7 @@ export function regenerateManualVPSCommand(id: string) {
 }
 
 export function deleteVPS(id: string) {
-  return request<{ ok: boolean }>(`/vps/${encodeURIComponent(id)}`, {
+  return request<void>(`/vps/${encodeURIComponent(id)}`, {
     method: "DELETE",
   });
 }
@@ -184,7 +184,7 @@ export function createSession(
 }
 
 export function deleteSession(vpsId: string, sessionId: string) {
-  return request<{ ok: boolean }>(
+  return request<void>(
     `/vps/${encodeURIComponent(vpsId)}/sessions/${encodeURIComponent(sessionId)}`,
     { method: "DELETE" },
   );

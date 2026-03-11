@@ -1,0 +1,4 @@
+-- Reserved migration slot.
+-- `vps.label` was temporarily applied directly in staging before we settled on
+-- keeping the current schema in `0001_initial.sql`. Keep `0002` occupied so
+-- future migrations remain monotonic.
