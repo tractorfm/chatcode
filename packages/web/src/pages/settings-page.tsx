@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { ArrowLeft, ExternalLink } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { listVPS, type VPS } from "@/lib/api";
+import { getOAuthURL, listVPS, type VPS } from "@/lib/api";
 import {
   getStoredTerminalTheme,
   storeTerminalTheme,
@@ -10,12 +10,14 @@ import {
 
 interface SettingsPageProps {
   userEmail?: string;
+  linkedProviders?: string[];
   onBack: () => void;
   onLogout: () => void;
 }
 
 export function SettingsPage({
   userEmail,
+  linkedProviders = [],
   onBack,
   onLogout,
 }: SettingsPageProps) {
@@ -37,6 +39,8 @@ export function SettingsPage({
     [],
   );
 
+  const linkedProviderSet = new Set(linkedProviders);
+
   return (
     <div className="min-h-screen bg-background p-6">
       <div className="max-w-lg mx-auto space-y-6">
@@ -57,13 +61,23 @@ export function SettingsPage({
             <span className="text-sm text-muted-foreground">Email</span>
             <span className="text-sm text-foreground">{userEmail ?? "-"}</span>
           </div>
+          <AccountProviderRow
+            label="Google"
+            linked={linkedProviderSet.has("google")}
+            href={getOAuthURL("google")}
+          />
+          <AccountProviderRow
+            label="GitHub"
+            linked={linkedProviderSet.has("github")}
+            href={getOAuthURL("github")}
+          />
         </section>
 
         {/* Appearance */}
         <section className="bg-card rounded-lg border border-border p-4 space-y-3">
           <h2 className="text-sm font-medium text-foreground">Appearance</h2>
           <div className="flex items-center justify-between">
-            <span className="text-sm text-muted-foreground">App theme</span>
+            <span className="text-sm text-muted-foreground">Color Scheme</span>
             <ThemeToggle />
           </div>
           <div className="flex items-center justify-between">
@@ -138,6 +152,32 @@ export function SettingsPage({
           </button>
         </section>
       </div>
+    </div>
+  );
+}
+
+function AccountProviderRow({
+  label,
+  linked,
+  href,
+}: {
+  label: string;
+  linked: boolean;
+  href: string;
+}) {
+  return (
+    <div className="flex items-center justify-between">
+      <span className="text-sm text-muted-foreground">{label}</span>
+      {linked ? (
+        <span className="text-sm text-foreground">Linked</span>
+      ) : (
+        <a
+          href={href}
+          className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-sm text-foreground hover:bg-accent"
+        >
+          Link account
+        </a>
+      )}
     </div>
   );
 }

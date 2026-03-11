@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Moon, Sun, Monitor } from "lucide-react";
 
 type Theme = "light" | "dark" | "system";
@@ -20,6 +20,17 @@ function applyTheme(theme: Theme) {
   }
 }
 
+function labelForTheme(theme: Theme) {
+  switch (theme) {
+    case "system":
+      return "System";
+    case "dark":
+      return "Dark";
+    case "light":
+      return "Light";
+  }
+}
+
 export function ThemeToggle() {
   const [theme, setTheme] = useState<Theme>(getTheme);
 
@@ -37,23 +48,36 @@ export function ThemeToggle() {
     return () => mq.removeEventListener("change", handler);
   }, []);
 
-  const cycle = useCallback(() => {
-    setTheme((prev) => {
-      const order: Theme[] = ["system", "light", "dark"];
-      const next = order[(order.indexOf(prev) + 1) % order.length];
-      return next;
-    });
-  }, []);
-
-  const Icon = theme === "dark" ? Moon : theme === "light" ? Sun : Monitor;
+  const themeOptions: Array<{ value: Theme; label: string; icon: typeof Monitor }> = [
+    { value: "system", label: "System", icon: Monitor },
+    { value: "dark", label: "Dark", icon: Moon },
+    { value: "light", label: "Light", icon: Sun },
+  ];
 
   return (
-    <button
-      onClick={cycle}
-      className="inline-flex items-center justify-center rounded-md p-2 text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
-      title={`Theme: ${theme}`}
+    <div
+      className="inline-flex items-center gap-1 rounded-md border border-border bg-background p-1"
+      aria-label={`Color Scheme: ${labelForTheme(theme)}`}
     >
-      <Icon className="h-4 w-4" />
-    </button>
+      {themeOptions.map((option) => {
+        const Icon = option.icon;
+        const active = theme === option.value;
+        return (
+          <button
+            key={option.value}
+            onClick={() => setTheme(option.value)}
+            className={
+              active
+                ? "inline-flex items-center gap-1.5 rounded px-2.5 py-1 text-sm font-medium bg-accent text-accent-foreground"
+                : "inline-flex items-center gap-1.5 rounded px-2.5 py-1 text-sm text-muted-foreground hover:bg-accent/60 hover:text-foreground"
+            }
+            title={option.label}
+          >
+            <Icon className="h-4 w-4" />
+            <span>{option.label}</span>
+          </button>
+        );
+      })}
+    </div>
   );
 }

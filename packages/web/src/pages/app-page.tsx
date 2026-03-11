@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useReducer, useState } from "react";
 import { Sidebar } from "@/components/sidebar";
 import { TerminalView } from "@/components/terminal-view";
-import { X, Plus, Terminal } from "lucide-react";
+import { X, Plus, Terminal, Maximize2, Minimize2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { createSession } from "@/lib/api";
 import { defaultSessionTitle } from "@/lib/constants";
@@ -124,6 +124,7 @@ export function AppPage({
     activeIndex: 0,
   });
   const [emptyActionBusy, setEmptyActionBusy] = useState(false);
+  const [fullscreenElement, setFullscreenElement] = useState<Element | null>(null);
 
   const handleSelectVps = useCallback((vpsId: string) => {
     setActiveVpsId(vpsId);
@@ -239,6 +240,22 @@ export function AppPage({
     setSidebarErrorMessage("");
   }, [selectedVpsIdHint]);
 
+  useEffect(() => {
+    const handleFullscreenChange = () => setFullscreenElement(document.fullscreenElement);
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
+  }, []);
+
+  const handleToggleFullscreen = useCallback(async () => {
+    const target = document.getElementById("app-terminal-shell");
+    if (!target) return;
+    if (document.fullscreenElement === target) {
+      await document.exitFullscreen().catch(() => {});
+      return;
+    }
+    await target.requestFullscreen().catch(() => {});
+  }, []);
+
   return (
     <div className="h-screen flex overflow-hidden">
       {/* Sidebar */}
@@ -261,7 +278,7 @@ export function AppPage({
       />
 
       {/* Main content */}
-      <main className="flex-1 flex flex-col min-w-0">
+      <main id="app-terminal-shell" className="flex-1 flex flex-col min-w-0 bg-background">
         {/* Tab bar */}
         {visibleTabs.length > 0 && (
           <div className="flex items-center border-b border-border bg-card">
@@ -290,6 +307,19 @@ export function AppPage({
                   </button>
                 </div>
               ))}
+            </div>
+            <div className="flex items-center pr-2">
+              <button
+                onClick={handleToggleFullscreen}
+                className="inline-flex items-center justify-center rounded-md p-2 text-muted-foreground hover:bg-accent hover:text-foreground"
+                title={fullscreenElement ? "Exit fullscreen" : "Enter fullscreen"}
+              >
+                {fullscreenElement ? (
+                  <Minimize2 className="h-4 w-4" />
+                ) : (
+                  <Maximize2 className="h-4 w-4" />
+                )}
+              </button>
             </div>
           </div>
         )}

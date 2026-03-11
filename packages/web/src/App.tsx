@@ -55,6 +55,7 @@ export function App() {
   }
 
   const userEmail = auth.user.email;
+  const linkedProviders = auth.user.providers ?? [];
 
   return (
     <>
@@ -84,6 +85,7 @@ export function App() {
           {overlay === "settings" && (
             <SettingsPage
               userEmail={userEmail}
+              linkedProviders={linkedProviders}
               onBack={handleCloseOverlay}
               onLogout={auth.logout}
             />

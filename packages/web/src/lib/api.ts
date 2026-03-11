@@ -41,6 +41,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export interface User {
   user_id: string;
   email?: string;
+  providers?: string[];
 }
 
 export function getMe() {
