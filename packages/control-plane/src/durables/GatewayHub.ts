@@ -462,8 +462,8 @@ export class GatewayHub {
     const binds: Array<string> = [vpsId];
     let sql = `SELECT id, status
          FROM sessions
-         WHERE vps_id = ?
-           AND status IN ('starting', 'running')`;
+         WHERE (vps_id = ?
+           AND status IN ('starting', 'running'))`;
     if (activeIDList.length > 0) {
       sql += ` OR (vps_id = ? AND id IN (${activeIDList.map(() => "?").join(", ")}))`;
       binds.push(vpsId, ...activeIDList);

@@ -334,6 +334,34 @@ describe("routes/sessions", () => {
     expect(stubFetch).not.toHaveBeenCalled();
   });
 
+  it("maps gateway hard-cap session limit errors to structured 409 responses", async () => {
+    const { env } = makeEnv(
+      new Response(JSON.stringify({ error: "session limit reached (50)" }), {
+        status: 502,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    const req = new Request("https://cp.example.test/vps/vps-1/sessions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: "Limit Session",
+        agent_type: "none",
+        workdir: "/home/vibe",
+      }),
+    });
+
+    const res = await handleSessionCreate(req, env, { userId: "usr-1" }, "vps-1");
+
+    expect(res.status).toBe(409);
+    await expect(res.json()).resolves.toMatchObject({
+      code: "session_limit_reached",
+      limit: 50,
+    });
+    expect(mocks.updateSessionStatus).toHaveBeenCalledWith(env.DB, "ses-test-1", "error");
+  });
+
   it("continues session creation when agents.list is unavailable", async () => {
     const { env, stubFetch } = makeEnv([
       new Response(JSON.stringify({ error: "gateway disconnected" }), { status: 502 }),

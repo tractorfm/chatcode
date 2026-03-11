@@ -235,7 +235,11 @@ export function createTerminalHandle(opts: UseTerminalOptions): TerminalHandle {
       if (keepaliveTimer) clearInterval(keepaliveTimer);
       keepaliveTimer = setInterval(() => sendJSON({ type: "ping" }), 20000);
 
-      // Request initial snapshot
+      // Initial attach state machine:
+      // 1. fit terminal and send resize
+      // 2. wait for resize ack when possible
+      // 3. request first snapshot
+      // 4. allow one corrective snapshot only during this initial window
       awaitingInitialSnapshot = true;
       initialResizeRequestId = null;
       initialSnapshotRequested = false;
@@ -341,7 +345,9 @@ export function createTerminalHandle(opts: UseTerminalOptions): TerminalHandle {
           if (msg.cursor_visible === false) term.write("\x1b[?25l");
           else if (msg.cursor_visible === true) term.write("\x1b[?25h");
 
+          const inInitialSnapshotFlow = awaitingInitialSnapshot;
           const bootstrapMismatch =
+            inInitialSnapshotFlow &&
             snapshotCols === 80 &&
             snapshotRows === 24 &&
             lastCols > 0 &&
@@ -358,6 +364,7 @@ export function createTerminalHandle(opts: UseTerminalOptions): TerminalHandle {
           }
 
           const looksBlank =
+            inInitialSnapshotFlow &&
             lines.length > 0 &&
             lines.every((line) => line.trim().length === 0) &&
             typeof msg.cursor_y === "number" &&

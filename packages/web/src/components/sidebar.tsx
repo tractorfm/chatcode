@@ -174,6 +174,11 @@ export function Sidebar({
           (vps.status === "active" && vps.gateway_connected === false),
       ) ||
       confirmAction?.kind === "remove-server";
+    const hasManualVps = vpsList.some((vps) => vps.provider === "manual");
+    if (!hasTransientVpsState && !hasManualVps) {
+      transientPollCountRef.current = 0;
+      return;
+    }
     transientPollCountRef.current = hasTransientVpsState ? transientPollCountRef.current + 1 : 0;
     const intervalMs = hasTransientVpsState
       ? transientPollCountRef.current <= 12 ? 5000 : 30000

@@ -21,6 +21,7 @@ const SESSION_CREATE_RETRY_INTERVAL_MS = 250;
 const MANAGED_AGENT_TYPES = new Set(["claude-code", "codex", "gemini", "opencode"]);
 const FREE_PLAN_SESSION_LIMIT = 10;
 const OPEN_SESSION_STATUSES = new Set(["starting", "running"]);
+const SESSION_LIMIT_ERROR = /^session limit reached \((\d+)\)$/;
 
 interface GatewayAgentStatus {
   agent: string;
@@ -186,6 +187,17 @@ export async function handleSessionCreate(
     if (error === "gateway not connected") {
       await updateGatewayConnected(env.DB, gateway.id, false);
       return jsonResponse({ error }, 503);
+    }
+    const gatewayLimitMatch = error.match(SESSION_LIMIT_ERROR);
+    if (gatewayLimitMatch) {
+      return jsonResponse(
+        {
+          error,
+          code: "session_limit_reached",
+          limit: Number(gatewayLimitMatch[1]),
+        },
+        409,
+      );
     }
     if (error.endsWith("is not installed. Run agents.install first.")) {
       return jsonResponse(
