@@ -185,6 +185,16 @@ export function createTerminalHandle(opts: UseTerminalOptions): TerminalHandle {
     }, 0);
   }
 
+  function scheduleCorrectiveSnapshot(reason: string, delayMs = 75) {
+    if (correctiveSnapshotTimer) clearTimeout(correctiveSnapshotTimer);
+    correctiveSnapshotTimer = setTimeout(() => {
+      correctiveSnapshotTimer = null;
+      if (disposed || !socket || socket.readyState !== WebSocket.OPEN) return;
+      initialSnapshotRequested = false;
+      requestSnapshot(reason);
+    }, delayMs);
+  }
+
   // Arrow key handler: force application cursor sequences for curses apps
   term.attachCustomKeyEventHandler((event) => {
     if (event.type !== "keydown") return true;
@@ -344,12 +354,20 @@ export function createTerminalHandle(opts: UseTerminalOptions): TerminalHandle {
               expectedCols: lastCols,
               expectedRows: lastRows,
             });
-            initialSnapshotRequested = false;
-            if (correctiveSnapshotTimer) clearTimeout(correctiveSnapshotTimer);
-            correctiveSnapshotTimer = setTimeout(() => {
-              if (disposed || ws !== socket) return;
-              requestSnapshot("correct-bootstrap-mismatch");
-            }, 75);
+            scheduleCorrectiveSnapshot("correct-bootstrap-mismatch");
+          }
+
+          const looksBlank =
+            lines.length > 0 &&
+            lines.every((line) => line.trim().length === 0) &&
+            typeof msg.cursor_y === "number" &&
+            Math.floor(msg.cursor_y as number) === 0;
+          if (looksBlank) {
+            debugLog("render-blank-snapshot-then-correct", {
+              snapshotCols,
+              snapshotRows,
+            });
+            scheduleCorrectiveSnapshot("correct-blank-snapshot", 125);
           }
 
           awaitingInitialSnapshot = false;
