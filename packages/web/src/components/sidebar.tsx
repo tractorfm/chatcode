@@ -274,12 +274,9 @@ export function Sidebar({
   const doDeleteVPS = useCallback(async () => {
     if (!activeVpsId) return;
     try {
-      const deletedVpsId = activeVpsId;
       await deleteVPS(activeVpsId);
       const { vps } = await listVPS();
       applyVPSList(vps);
-      const nextVpsId = vps.find((entry) => entry.id !== deletedVpsId)?.id ?? null;
-      onVpsDeleted(deletedVpsId, nextVpsId);
       setErrorMessage("");
     } catch (err) {
       setOperationError(
@@ -287,7 +284,7 @@ export function Sidebar({
         err,
       );
     }
-  }, [activeVpsId, applyVPSList, isManagedVps, onVpsDeleted, setOperationError]);
+  }, [activeVpsId, applyVPSList, isManagedVps, setOperationError]);
 
   const handleDeleteVPS = useCallback(() => {
     if (!activeVpsId) return;
