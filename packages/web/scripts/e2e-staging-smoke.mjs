@@ -56,6 +56,67 @@ async function listOpenSessions(context, vpsId) {
   return existingSessions.filter((s) => !isClosedStatus(s.status));
 }
 
+async function ensureSessionHeadroom(context, vpsId, maxOpenSessions = 4) {
+  const openSessions = await listOpenSessions(context, vpsId);
+  if (openSessions.length <= maxOpenSessions) {
+    return openSessions;
+  }
+
+  const victims = openSessions.slice(0, openSessions.length - maxOpenSessions);
+  for (const victim of victims) {
+    await jsonRequest(
+      context,
+      "DELETE",
+      `/vps/${encodeURIComponent(vpsId)}/sessions/${encodeURIComponent(victim.id)}`,
+    );
+  }
+
+  const slotsFreed = await pollUntil(async () => {
+    const updatedOpenSessions = await listOpenSessions(context, vpsId);
+    return updatedOpenSessions.length <= maxOpenSessions ? updatedOpenSessions : null;
+  }, { timeout: 45000, interval: 1000 });
+
+  if (!slotsFreed) {
+    throw new Error(`Timed out waiting for <=${maxOpenSessions} open sessions before creating smoke session`);
+  }
+  return slotsFreed;
+}
+
+function isSessionLimitError(result) {
+  const message = typeof result?.payload?.error === "string" ? result.payload.error : "";
+  return result?.resp?.status() === 502 && message.includes("session limit reached");
+}
+
+async function createSmokeSession(context, vpsId, title) {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await ensureSessionHeadroom(context, vpsId, Math.max(2, 4 - attempt));
+
+    const createResp = await jsonRequest(
+      context,
+      "POST",
+      `/vps/${encodeURIComponent(vpsId)}/sessions`,
+      {
+        title,
+        agent_type: "none",
+        workdir: "/home/vibe/workspace",
+      },
+    );
+    if (createResp.resp.ok()) {
+      return createResp;
+    }
+    if (!isSessionLimitError(createResp) || attempt === 2) {
+      return createResp;
+    }
+
+    await pollUntil(async () => {
+      const updatedOpenSessions = await listOpenSessions(context, vpsId);
+      return updatedOpenSessions.length <= Math.max(2, 3 - attempt) ? true : null;
+    }, { timeout: 10000, interval: 1000 });
+  }
+
+  throw new Error("unreachable");
+}
+
 async function main() {
   if (!devUser || !devSecret) {
     throw new Error("Missing E2E_DEV_USER/E2E_DEV_SECRET");
@@ -97,35 +158,7 @@ async function main() {
     await page.waitForSelector('[data-testid="sidebar"]', { timeout: timeoutMs });
     await page.click(`[data-testid="vps-item-${vpsId}"]`, { timeout: timeoutMs });
 
-    const openSessions = await listOpenSessions(context, vpsId);
-    if (openSessions.length >= 5) {
-      const victims = openSessions.slice(0, openSessions.length - 4);
-      for (const victim of victims) {
-        await jsonRequest(
-          context,
-          "DELETE",
-          `/vps/${encodeURIComponent(vpsId)}/sessions/${encodeURIComponent(victim.id)}`,
-        );
-      }
-      const slotsFreed = await pollUntil(async () => {
-        const updatedOpenSessions = await listOpenSessions(context, vpsId);
-        return updatedOpenSessions.length < 5;
-      }, { timeout: 45000, interval: 1000 });
-      if (!slotsFreed) {
-        throw new Error("Timed out waiting for free session slots before creating smoke session");
-      }
-    }
-
-    const createResp = await jsonRequest(
-      context,
-      "POST",
-      `/vps/${encodeURIComponent(vpsId)}/sessions`,
-      {
-        title: `smoke-${Date.now()}`,
-        agent_type: "none",
-        workdir: "/home/vibe/workspace",
-      },
-    );
+    const createResp = await createSmokeSession(context, vpsId, `smoke-${Date.now()}`);
     if (!createResp.resp.ok()) {
       throw new Error(`Session create failed: ${createResp.resp.status()} ${JSON.stringify(createResp.payload)}`);
     }

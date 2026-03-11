@@ -68,6 +68,7 @@ export function createTerminalHandle(opts: UseTerminalOptions): TerminalHandle {
   let initialSnapshotRequested = false;
   let initialSnapshotTimer: ReturnType<typeof setTimeout> | null = null;
   let initialSnapshotRetryTimer: ReturnType<typeof setTimeout> | null = null;
+  let correctiveSnapshotTimer: ReturnType<typeof setTimeout> | null = null;
   let lastCols = 0;
   let lastRows = 0;
   let reconnectAttempts = 0;
@@ -302,27 +303,6 @@ export function createTerminalHandle(opts: UseTerminalOptions): TerminalHandle {
           const snapshotCols = typeof msg.cols === "number" ? msg.cols : null;
           const snapshotRows =
             typeof msg.rows === "number" && msg.rows > 0 ? msg.rows : null;
-          if (
-            awaitingInitialSnapshot &&
-            snapshotCols === 80 &&
-            snapshotRows === 24 &&
-            lastCols > 0 &&
-            lastRows > 0 &&
-            (lastCols !== 80 || lastRows !== 24)
-          ) {
-            debugLog("ignore-bootstrap-snapshot", {
-              snapshotCols,
-              snapshotRows,
-              expectedCols: lastCols,
-              expectedRows: lastRows,
-            });
-            initialSnapshotRequested = false;
-            setTimeout(() => {
-              if (disposed || ws !== socket || !awaitingInitialSnapshot) return;
-              requestSnapshot("after-bootstrap-snapshot-ignore");
-            }, 75);
-            return;
-          }
           const rowsHint =
             snapshotRows ?? 80;
           const normalized = msg.content
@@ -350,6 +330,27 @@ export function createTerminalHandle(opts: UseTerminalOptions): TerminalHandle {
           }
           if (msg.cursor_visible === false) term.write("\x1b[?25l");
           else if (msg.cursor_visible === true) term.write("\x1b[?25h");
+
+          const bootstrapMismatch =
+            snapshotCols === 80 &&
+            snapshotRows === 24 &&
+            lastCols > 0 &&
+            lastRows > 0 &&
+            (lastCols !== 80 || lastRows !== 24);
+          if (bootstrapMismatch) {
+            debugLog("render-bootstrap-snapshot-then-correct", {
+              snapshotCols,
+              snapshotRows,
+              expectedCols: lastCols,
+              expectedRows: lastRows,
+            });
+            initialSnapshotRequested = false;
+            if (correctiveSnapshotTimer) clearTimeout(correctiveSnapshotTimer);
+            correctiveSnapshotTimer = setTimeout(() => {
+              if (disposed || ws !== socket) return;
+              requestSnapshot("correct-bootstrap-mismatch");
+            }, 75);
+          }
 
           awaitingInitialSnapshot = false;
           initialResizeRequestId = null;
@@ -479,6 +480,7 @@ export function createTerminalHandle(opts: UseTerminalOptions): TerminalHandle {
       if (reconnectTimer) clearTimeout(reconnectTimer);
       if (initialSnapshotTimer) clearTimeout(initialSnapshotTimer);
       if (initialSnapshotRetryTimer) clearTimeout(initialSnapshotRetryTimer);
+      if (correctiveSnapshotTimer) clearTimeout(correctiveSnapshotTimer);
       if (socket) {
         try {
           socket.close(1000, "disposed");
