@@ -15,7 +15,7 @@ import {
   Copy,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { AGENT_TYPES, agentLabel, defaultSessionTitle, type AgentType } from "@/lib/constants";
+import { AGENT_TYPES, defaultSessionTitle, type AgentType } from "@/lib/constants";
 import {
   listVPS,
   listSessions,
@@ -153,7 +153,8 @@ export function Sidebar({
         openSessions.length > 0 &&
         !openSessions.some((session) => session.id === activeSessionIdRef.current)
       ) {
-        onSelectSession(activeVpsId, openSessions[0].id, openSessions[0].title);
+        const first = openSessions[0];
+        onSelectSession(activeVpsId, first.id, buildTabTitle(first.title, first.workdir));
       }
     } catch (err) {
       setOperationError("Failed to load sessions", err);
@@ -771,7 +772,7 @@ function normalizeSessionWorkdir(input: string): string {
 }
 
 function formatSessionSubtitle(session: Session, groupKey: string): string {
-  const label = session.agent_type === "none" ? "Shell" : agentLabel(session.agent_type);
+  const label = sessionCommandLabel(session.agent_type);
   const subpath = sessionSubpathWithinGroup(session.workdir, groupKey);
   return subpath ? `${label} · ${subpath}` : label;
 }
@@ -825,6 +826,23 @@ function tabPathSuffix(path: string): string {
     return path.slice(DEFAULT_SESSION_WORKDIR.length + 1);
   }
   return "";
+}
+
+function sessionCommandLabel(agentType: string): string {
+  switch (agentType) {
+    case "claude-code":
+      return "claude";
+    case "codex":
+      return "codex";
+    case "gemini":
+      return "gemini";
+    case "opencode":
+      return "opencode";
+    case "none":
+      return "bash";
+    default:
+      return agentType || "shell";
+  }
 }
 
 function cleanupCommandForOS(os: string | null | undefined): string | null {
@@ -924,7 +942,7 @@ function NewSessionQuickStart({
 }) {
   return (
     <div className="space-y-1">
-      {AGENT_TYPES.map(({ value, label }) => (
+      {AGENT_TYPES.filter(({ value }) => value === "claude-code" || value === "codex" || value === "none").map(({ value, label }) => (
         <button
           key={value}
           onClick={() => onCreate(value)}
