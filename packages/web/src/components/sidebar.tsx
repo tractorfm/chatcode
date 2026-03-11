@@ -627,6 +627,7 @@ export function Sidebar({
         <ConfirmDialog
           title={confirmAction.title}
           description={confirmAction.description}
+          details={confirmAction.details}
           destructive={confirmAction.destructive}
           onConfirm={async () => {
             await confirmAction.onConfirm();
