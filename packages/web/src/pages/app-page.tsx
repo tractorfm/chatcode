@@ -357,25 +357,27 @@ export function AppPage({
 
         {/* Terminal area */}
         <div className="flex-1 relative bg-[#111111] dark:bg-[#111111]">
-          {visibleTabs.length === 0 ? (
-            <EmptyState
-              onNavigate={onNavigate}
-              selectedVpsId={activeVpsId}
-              onCreateSession={handleCreateSessionFromEmpty}
-              creatingSession={emptyActionBusy}
+          {tabState.tabs.map((tab, i) => (
+            <TerminalView
+              key={`${tab.vpsId}-${tab.sessionId}`}
+              vpsId={tab.vpsId}
+              sessionId={tab.sessionId}
+              active={i === effectiveActiveIndex}
+              suspended={overlayOpen}
+              onSessionEnded={handleSessionEnded}
+              onSessionStateRefreshNeeded={handleSessionStateRefreshNeeded}
             />
-          ) : (
-            tabState.tabs.map((tab, i) => (
-              <TerminalView
-                key={`${tab.vpsId}-${tab.sessionId}`}
-                vpsId={tab.vpsId}
-                sessionId={tab.sessionId}
-                active={i === effectiveActiveIndex}
-                suspended={overlayOpen}
-                onSessionEnded={handleSessionEnded}
-                onSessionStateRefreshNeeded={handleSessionStateRefreshNeeded}
+          ))}
+
+          {visibleTabs.length === 0 && (
+            <div className="absolute inset-0 z-10 bg-[#111111] dark:bg-[#111111]">
+              <EmptyState
+                onNavigate={onNavigate}
+                selectedVpsId={activeVpsId}
+                onCreateSession={handleCreateSessionFromEmpty}
+                creatingSession={emptyActionBusy}
               />
-            ))
+            </div>
           )}
         </div>
       </main>
