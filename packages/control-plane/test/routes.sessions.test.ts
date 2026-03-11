@@ -462,6 +462,35 @@ describe("routes/sessions", () => {
     );
   });
 
+  it("normalizes requested workdir under workspace root", async () => {
+    const { env } = makeEnv(
+      new Response(JSON.stringify({ type: "ack", schema_version: "1", request_id: "ses-test-1", ok: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    const req = new Request("https://cp.example.test/vps/vps-1/sessions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: "Workspace Child Session",
+        agent_type: "none",
+        workdir: "/tmp/demo",
+      }),
+    });
+
+    const res = await handleSessionCreate(req, env, { userId: "usr-1" }, "vps-1");
+
+    expect(res.status).toBe(201);
+    expect(mocks.createSession).toHaveBeenCalledWith(
+      env.DB,
+      expect.objectContaining({
+        workdir: "/home/vibe/workspace/tmp/demo",
+      }),
+    );
+  });
+
   it("returns 503 for terminal upgrade when gateway is disconnected", async () => {
     mocks.getGatewayByVPS.mockResolvedValue({ id: "gw-1", connected: 0 });
     const { env } = makeEnv(new Response(JSON.stringify({ ok: true }), { status: 200 }));

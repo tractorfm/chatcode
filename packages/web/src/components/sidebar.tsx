@@ -505,12 +505,12 @@ export function Sidebar({
                     <div className="absolute right-0 top-full mt-1 z-50 w-56 rounded-md border border-border bg-card shadow-lg p-2 space-y-2">
                       <div className="space-y-1">
                         <label className="block text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-                          Folder
+                          Folder under ~/workspace
                         </label>
                         <input
                           value={sessionWorkdir}
                           onChange={(e) => setSessionWorkdir(e.target.value)}
-                          placeholder={DEFAULT_SESSION_WORKDIR}
+                          placeholder="."
                           className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs text-foreground outline-none focus:border-primary"
                         />
                       </div>
@@ -539,52 +539,59 @@ export function Sidebar({
                 <p className="text-xs text-muted-foreground">Loading...</p>
               )}
 
-              {sessions.map((session) => (
-                <div
-                  key={session.id}
-                  data-testid={`session-item-${session.id}`}
-                  onClick={() => onSelectSession(activeVpsId, session.id, session.title)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") {
-                      e.preventDefault();
-                      onSelectSession(activeVpsId, session.id, session.title);
-                    }
-                  }}
-                  role="button"
-                  tabIndex={0}
-                  className={cn(
-                    "group flex items-center gap-2 p-2 rounded-md text-sm cursor-pointer transition-colors",
-                    session.id === activeSessionId
-                      ? "bg-primary/10 text-primary font-medium"
-                      : "hover:bg-accent/50 text-foreground font-normal",
-                  )}
-                >
-                  <div className="flex items-start gap-2 flex-1 min-w-0 text-left">
-                    <Terminal className="h-3.5 w-3.5 shrink-0" />
-                    <div className="min-w-0 flex-1">
-                      <InlineEdit
-                        value={session.title}
-                        onSave={(title) => handleRenameSession(session.id, title)}
-                        maxLength={80}
-                        editable={session.id === activeSessionId}
-                        editMode="single"
-                        className="min-w-0"
-                      />
-                      <div className="truncate text-[11px] font-normal text-muted-foreground">
-                        {formatSessionSubtitle(session)}
-                      </div>
-                    </div>
+              {groupSessionsByFolder(sessions).map((group) => (
+                <div key={group.key} className="space-y-1">
+                  <div className="px-2 pt-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                    {group.label}
                   </div>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleEndSession(session.id);
-                    }}
-                    className="hidden group-hover:block p-0.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive"
-                    title="End session"
-                  >
-                    <Trash2 className="h-3 w-3" />
-                  </button>
+                  {group.sessions.map((session) => (
+                    <div
+                      key={session.id}
+                      data-testid={`session-item-${session.id}`}
+                      onClick={() => onSelectSession(activeVpsId, session.id, session.title)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          onSelectSession(activeVpsId, session.id, session.title);
+                        }
+                      }}
+                      role="button"
+                      tabIndex={0}
+                      className={cn(
+                        "group flex items-center gap-2 p-2 rounded-md text-sm cursor-pointer transition-colors",
+                        session.id === activeSessionId
+                          ? "bg-primary/10 text-primary font-medium"
+                          : "hover:bg-accent/50 text-foreground font-normal",
+                      )}
+                    >
+                      <div className="flex items-start gap-2 flex-1 min-w-0 text-left">
+                        <Terminal className="h-3.5 w-3.5 shrink-0" />
+                        <div className="min-w-0 flex-1">
+                          <InlineEdit
+                            value={session.title}
+                            onSave={(title) => handleRenameSession(session.id, title)}
+                            maxLength={80}
+                            editable={session.id === activeSessionId}
+                            editMode="single"
+                            className="min-w-0"
+                          />
+                          <div className="truncate text-[11px] font-normal text-muted-foreground">
+                            {formatSessionSubtitle(session)}
+                          </div>
+                        </div>
+                      </div>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleEndSession(session.id);
+                        }}
+                        className="hidden group-hover:block p-0.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive"
+                        title="End session"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </button>
+                    </div>
+                  ))}
                 </div>
               ))}
 
@@ -724,23 +731,52 @@ function ProviderServerIcon({
 
 function normalizeSessionWorkdir(input: string): string {
   const trimmed = input.trim();
-  if (!trimmed) return DEFAULT_SESSION_WORKDIR;
-  if (trimmed.startsWith("/")) return trimmed;
-  if (trimmed === "~") return "/home/vibe";
-  if (trimmed.startsWith("~/")) return `/home/vibe/${trimmed.slice(2)}`;
-  return `${DEFAULT_SESSION_WORKDIR}/${trimmed.replace(/^\.\//, "").replace(/^\/+/, "")}`;
-}
-
-function compactSessionPath(path: string): string {
-  if (!path) return "~";
-  if (path === "/home/vibe") return "~";
-  if (path.startsWith("/home/vibe/")) return `~/${path.slice("/home/vibe/".length)}`;
-  return path;
+  if (!trimmed || trimmed === "." || trimmed === "/") return DEFAULT_SESSION_WORKDIR;
+  if (trimmed === "~" || trimmed === "~/workspace" || trimmed === DEFAULT_SESSION_WORKDIR) {
+    return DEFAULT_SESSION_WORKDIR;
+  }
+  let relative = trimmed;
+  if (relative.startsWith("~/workspace/")) {
+    relative = relative.slice("~/workspace/".length);
+  } else if (relative.startsWith(DEFAULT_SESSION_WORKDIR + "/")) {
+    relative = relative.slice((DEFAULT_SESSION_WORKDIR + "/").length);
+  } else if (relative.startsWith("/")) {
+    relative = relative.replace(/^\/+/, "");
+  }
+  return `${DEFAULT_SESSION_WORKDIR}/${relative.replace(/^\.\//, "").replace(/^\/+/, "")}`;
 }
 
 function formatSessionSubtitle(session: Session): string {
-  const kind = session.agent_type === "none" ? "Shell" : agentLabel(session.agent_type);
-  return `${kind} · ${compactSessionPath(session.workdir)}`;
+  return session.agent_type === "none" ? "Shell" : agentLabel(session.agent_type);
+}
+
+function sessionFolderKey(path: string): string {
+  if (!path || path === DEFAULT_SESSION_WORKDIR) return "";
+  if (path.startsWith(`${DEFAULT_SESSION_WORKDIR}/`)) {
+    return path.slice(DEFAULT_SESSION_WORKDIR.length + 1);
+  }
+  return path;
+}
+
+function groupSessionsByFolder(sessions: Session[]) {
+  const groups = new Map<string, Session[]>();
+  for (const session of sessions) {
+    const key = sessionFolderKey(session.workdir);
+    const bucket = groups.get(key);
+    if (bucket) bucket.push(session);
+    else groups.set(key, [session]);
+  }
+  return Array.from(groups.entries())
+    .sort(([a], [b]) => {
+      if (a === "") return -1;
+      if (b === "") return 1;
+      return a.localeCompare(b);
+    })
+    .map(([key, grouped]) => ({
+      key,
+      label: key === "" ? "~/workspace" : `~/workspace/${key}`,
+      sessions: grouped,
+    }));
 }
 
 function cleanupCommandForOS(os: string | null | undefined): string | null {

@@ -113,6 +113,7 @@ export async function handleSessionCreate(
     workdir?: string;
   };
   const agentType = body.agent_type || "claude-code";
+  const normalizedWorkdir = normalizeSessionWorkdir(body.workdir);
 
   const existingSessions = await listSessionsByVPS(env.DB, vpsId);
   const openSessionCount = existingSessions.filter((session) => OPEN_SESSION_STATUSES.has(session.status)).length;
@@ -157,7 +158,7 @@ export async function handleSessionCreate(
     vps_id: vpsId,
     title: body.title || "New Session",
     agent_type: agentType,
-    workdir: body.workdir || DEFAULT_SESSION_WORKDIR,
+    workdir: normalizedWorkdir,
     status: "starting",
     created_at: now,
     last_activity_at: now,
@@ -173,7 +174,7 @@ export async function handleSessionCreate(
     request_id: sessionId,
     session_id: sessionId,
     name: body.title || "New Session",
-    workdir: body.workdir || DEFAULT_SESSION_WORKDIR,
+    workdir: normalizedWorkdir,
     agent: agentType,
   };
 
@@ -220,6 +221,27 @@ export async function handleSessionCreate(
     { session_id: sessionId, status: "starting" },
     201,
   );
+}
+
+function normalizeSessionWorkdir(input?: string): string {
+  const trimmed = (input || "").trim();
+  if (!trimmed || trimmed === "." || trimmed === "/") return DEFAULT_SESSION_WORKDIR;
+  if (trimmed === "~" || trimmed === "~/workspace" || trimmed === "/home/vibe/workspace") {
+    return DEFAULT_SESSION_WORKDIR;
+  }
+
+  let relative = trimmed;
+  if (relative.startsWith("/home/vibe/workspace/")) {
+    relative = relative.slice("/home/vibe/workspace/".length);
+  } else if (relative.startsWith("~/workspace/")) {
+    relative = relative.slice("~/workspace/".length);
+  } else if (relative.startsWith("/")) {
+    relative = relative.replace(/^\/+/, "");
+  }
+
+  relative = relative.replace(/^\.\//, "").replace(/^\/+/, "");
+  if (!relative) return DEFAULT_SESSION_WORKDIR;
+  return `${DEFAULT_SESSION_WORKDIR}/${relative}`;
 }
 
 /**
