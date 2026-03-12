@@ -78,8 +78,7 @@ export function createTerminalHandle(opts: UseTerminalOptions): TerminalHandle {
   let interactive = opts.interactive !== false;
   const debugTerminal =
     typeof window !== "undefined" &&
-    (window.location.hostname === "app.staging.chatcode.dev" ||
-      window.location.hostname === "localhost" ||
+    (window.location.hostname === "localhost" ||
       window.location.search.includes("debugTerm=1"));
 
   function debugLog(event: string, detail: Record<string, unknown> = {}) {
