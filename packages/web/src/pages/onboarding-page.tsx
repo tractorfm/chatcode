@@ -364,7 +364,7 @@ export function OnboardingPage({ onBack, onComplete, manualVpsId = null }: Onboa
                             <span className="text-sm font-medium text-foreground">
                               {option.label}
                             </span>
-                            <span className="text-xs text-muted-foreground">
+                            <span className="text-xs font-medium text-foreground">
                               ${option.price_monthly}/mo
                             </span>
                           </div>
