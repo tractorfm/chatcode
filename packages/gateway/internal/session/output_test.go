@@ -180,3 +180,30 @@ func TestPathologicalRedrawBreakerResetsAfterQuietWindow(t *testing.T) {
 		t.Fatalf("large redraw after quiet window should reset burst state")
 	}
 }
+
+func TestCaptureIntervalUsesBackoffOnlyDuringSuppressionWindow(t *testing.T) {
+	c := &outputCapturer{}
+	start := time.Unix(1, 0)
+	large := pathologicalRedrawBytes + 1
+
+	if got := c.captureInterval(start); got != batchInterval {
+		t.Fatalf("initial captureInterval = %s, want %s", got, batchInterval)
+	}
+
+	c.shouldSuppressPathologicalRedraw(large, start)
+	c.shouldSuppressPathologicalRedraw(large, start.Add(50*time.Millisecond))
+	c.shouldSuppressPathologicalRedraw(large, start.Add(100*time.Millisecond))
+
+	suppressedAt := start.Add(150 * time.Millisecond)
+	if !c.shouldSuppressPathologicalRedraw(large, suppressedAt) {
+		t.Fatalf("expected suppression to be active")
+	}
+	if got := c.captureInterval(suppressedAt); got != pathologicalPollInterval {
+		t.Fatalf("suppressed captureInterval = %s, want %s", got, pathologicalPollInterval)
+	}
+
+	afterCooldown := start.Add(100*time.Millisecond + pathologicalRedrawCooldown)
+	if got := c.captureInterval(afterCooldown); got != batchInterval {
+		t.Fatalf("post-cooldown captureInterval = %s, want %s", got, batchInterval)
+	}
+}

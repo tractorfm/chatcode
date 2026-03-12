@@ -11,6 +11,7 @@ import (
 
 const (
 	batchInterval                = 50 * time.Millisecond
+	pathologicalPollInterval     = 250 * time.Millisecond
 	cursorPollInterval           = 150 * time.Millisecond
 	bufferCapacity               = 64
 	maxPayload                   = 16 * 1024 // 16KB per frame
@@ -31,7 +32,7 @@ type outputCapturer struct {
 
 	cancel context.CancelFunc
 	buf    []byte
-	ticker *time.Ticker
+	timer  *time.Timer
 
 	lastRawContent        string
 	lastContent           string
@@ -68,7 +69,7 @@ func newOutputCapturer(
 func (c *outputCapturer) start() {
 	ctx, cancel := context.WithCancel(context.Background())
 	c.cancel = cancel
-	c.ticker = time.NewTicker(batchInterval)
+	c.timer = time.NewTimer(batchInterval)
 
 	// Seed initial content so browser's initial snapshot is not duplicated
 	// by the first capture tick after websocket connect/reconnect.
@@ -90,8 +91,8 @@ func (c *outputCapturer) stop() {
 	if c.cancel != nil {
 		c.cancel()
 	}
-	if c.ticker != nil {
-		c.ticker.Stop()
+	if c.timer != nil {
+		c.timer.Stop()
 	}
 }
 
@@ -103,25 +104,30 @@ func (c *outputCapturer) pollLoop(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			return
-		case <-c.ticker.C:
+		case <-c.timer.C:
 			rawContent, err := c.capturePane()
+			nextInterval := c.captureInterval(time.Now())
 			if err != nil {
+				c.resetTimer(nextInterval)
 				continue
 			}
 			if rawContent == c.lastRawContent {
 				// Some full-screen apps move cursor without changing text content.
 				// Emit cursor-only control sequence so remote terminal stays aligned.
 				if !c.lastCursorAt.IsZero() && time.Since(c.lastCursorAt) < cursorPollInterval {
+					c.resetTimer(nextInterval)
 					continue
 				}
 				cursorX, cursorY, cursorV, cursorErr := c.captureCursor()
 				if cursorErr != nil {
+					c.resetTimer(nextInterval)
 					continue
 				}
 				c.lastCursorAt = time.Now()
 				moved := cursorX != c.lastCursorX || cursorY != c.lastCursorY
 				visCtrl := c.cursorVisibilityControl(cursorV)
 				if !moved && visCtrl == "" {
+					c.resetTimer(nextInterval)
 					continue
 				}
 				c.lastCursorX = cursorX
@@ -132,6 +138,7 @@ func (c *outputCapturer) pollLoop(ctx context.Context) {
 					delta += cursorMove(cursorX, cursorY)
 				}
 				c.emitDelta(delta)
+				c.resetTimer(nextInterval)
 				continue
 			}
 
@@ -156,6 +163,7 @@ func (c *outputCapturer) pollLoop(ctx context.Context) {
 						c.emitDelta(visCtrl)
 					}
 				}
+				c.resetTimer(nextInterval)
 				continue
 			}
 
@@ -175,10 +183,12 @@ func (c *outputCapturer) pollLoop(ctx context.Context) {
 				delta += cursorMove(cursorX, cursorY)
 			}
 			if redraw && c.shouldSuppressPathologicalRedraw(len(delta), time.Now()) {
+				c.resetTimer(c.captureInterval(time.Now()))
 				continue
 			}
 
 			c.emitDelta(delta)
+			c.resetTimer(c.captureInterval(time.Now()))
 		}
 	}
 }
@@ -209,6 +219,26 @@ func (c *outputCapturer) shouldSuppressPathologicalRedraw(deltaBytes int, now ti
 		c.redrawSuppressedUntil = now.Add(pathologicalRedrawCooldown)
 	}
 	return false
+}
+
+func (c *outputCapturer) captureInterval(now time.Time) time.Duration {
+	if now.Before(c.redrawSuppressedUntil) {
+		return pathologicalPollInterval
+	}
+	return batchInterval
+}
+
+func (c *outputCapturer) resetTimer(interval time.Duration) {
+	if c.timer == nil {
+		return
+	}
+	if !c.timer.Stop() {
+		select {
+		case <-c.timer.C:
+		default:
+		}
+	}
+	c.timer.Reset(interval)
 }
 
 func (c *outputCapturer) emitDelta(delta string) {
