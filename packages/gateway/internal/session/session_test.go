@@ -239,6 +239,27 @@ func TestSetDefaultTerminalArgs(t *testing.T) {
 	}
 }
 
+func TestIsShellCommand(t *testing.T) {
+	tests := []struct {
+		name string
+		cmd  string
+		want bool
+	}{
+		{name: "bash", cmd: "bash", want: true},
+		{name: "path zsh", cmd: "/bin/zsh", want: true},
+		{name: "trimmed sh", cmd: " sh\n", want: true},
+		{name: "htop", cmd: "htop", want: false},
+		{name: "vim", cmd: "/usr/bin/vim", want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isShellCommand(tt.cmd); got != tt.want {
+				t.Fatalf("isShellCommand(%q) = %v, want %v", tt.cmd, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestSelectTmuxDefaultTerminal(t *testing.T) {
 	tests := []struct {
 		name     string

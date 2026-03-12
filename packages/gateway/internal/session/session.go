@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -321,16 +322,27 @@ func (s *Session) requestGracefulExit() error {
 		return nil
 	}
 
-	// Prefer an explicit shell exit first so normal shell/profile exit hooks
-	// run before we fall back to EOF semantics.
-	if err := s.sendLiteral("exit"); err != nil && s.isAlive() {
-		return err
+	if isShell, err := s.isForegroundShell(); err == nil && isShell {
+		// Only send literal "exit" when the foreground program is a shell, so
+		// we do not inject text into editors or other interactive programs.
+		if err := s.sendLiteral("exit"); err != nil && s.isAlive() {
+			return err
+		}
+		if err := s.sendKeys("Enter"); err != nil && s.isAlive() {
+			return err
+		}
+		if s.waitForExit(gracefulExitWait, 100*time.Millisecond) {
+			return nil
+		}
 	}
-	if err := s.sendKeys("Enter"); err != nil && s.isAlive() {
-		return err
-	}
-	if s.waitForExit(gracefulExitWait, 100*time.Millisecond) {
-		return nil
+
+	// Interrupt first so interactive foreground programs can flush/stop before
+	// we fall back to EOF semantics.
+	if s.isAlive() {
+		if err := s.sendKeys("C-c"); err != nil && s.isAlive() {
+			return err
+		}
+		time.Sleep(150 * time.Millisecond)
 	}
 
 	// One EOF fallback helps when the foreground shell/program is waiting for
@@ -345,6 +357,23 @@ func (s *Session) requestGracefulExit() error {
 	}
 
 	return nil
+}
+
+func (s *Session) isForegroundShell() (bool, error) {
+	out, err := exec.Command("tmux", "display-message", "-t", s.tmuxName, "-p", "#{pane_current_command}").Output()
+	if err != nil {
+		return false, err
+	}
+	return isShellCommand(string(out)), nil
+}
+
+func isShellCommand(cmd string) bool {
+	switch strings.ToLower(filepath.Base(strings.TrimSpace(cmd))) {
+	case "sh", "bash", "zsh", "dash", "fish", "ksh", "ash":
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *Session) killTmuxSession() error {

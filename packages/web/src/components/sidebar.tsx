@@ -109,6 +109,7 @@ export function Sidebar({
   const sessionHeading = sessions.length > 0 ? `Sessions (${sessions.length})` : "Sessions";
   const canCreateSessions = activeVps?.status === "active" && activeVps?.gateway_connected === true;
   const transientPollCountRef = useRef(0);
+  const workspaceFoldersCacheRef = useRef<{ vpsId: string; fetchedAt: number; folders: string[] } | null>(null);
 
   useEffect(() => {
     activeSessionIdRef.current = activeSessionId;
@@ -145,8 +146,10 @@ export function Sidebar({
     try {
       const { vps } = await listVPS();
       applyVPSList(vps);
+      return true;
     } catch (err) {
       setOperationError("Failed to load servers", err);
+      return false;
     }
   }, [applyVPSList, setOperationError]);
 
@@ -174,17 +177,28 @@ export function Sidebar({
     }
   }, [activeVpsId, onSelectSession, onSessionTitleSync, onSessionsLoaded, setOperationError]);
 
-  const refreshWorkspaceFolders = useCallback(async () => {
+  const refreshWorkspaceFolders = useCallback(async (force = false) => {
     if (!activeVpsId || !canCreateSessions) {
+      workspaceFoldersCacheRef.current = null;
       setWorkspaceFolders([]);
+      return;
+    }
+    const now = Date.now();
+    const cached = workspaceFoldersCacheRef.current;
+    if (!force && cached && cached.vpsId === activeVpsId && now-cached.fetchedAt < 5000) {
+      setWorkspaceFolders(cached.folders);
       return;
     }
     try {
       const { folders } = await listWorkspaceFolders(activeVpsId);
-      setWorkspaceFolders(
-        folders.filter((value) => value && !value.includes("/") && !value.startsWith(".")),
-      );
+      workspaceFoldersCacheRef.current = {
+        vpsId: activeVpsId,
+        fetchedAt: now,
+        folders,
+      };
+      setWorkspaceFolders(folders);
     } catch {
+      workspaceFoldersCacheRef.current = null;
       setWorkspaceFolders([]);
     }
   }, [activeVpsId, canCreateSessions]);
@@ -247,7 +261,7 @@ export function Sidebar({
           workdir,
         });
         await refreshSessions();
-        await refreshWorkspaceFolders();
+        await refreshWorkspaceFolders(true);
         onNewSession(activeVpsId, res.session_id, buildSessionTabTitle(title, workdir));
         setErrorMessage("");
         setShowAgentPicker(false);
@@ -259,13 +273,14 @@ export function Sidebar({
         setCreating(false);
       }
     },
-    [activeVpsId, creating, sessions, sessionWorkdir, refreshSessions, onNewSession, setOperationError],
+    [activeVpsId, creating, sessions, sessionWorkdir, refreshSessions, refreshWorkspaceFolders, onNewSession, setOperationError],
   );
 
   const handleRefreshActiveVps = useCallback(async () => {
     if (!activeVpsId) return;
-    await refreshVPS();
-    await Promise.all([refreshSessions(), refreshWorkspaceFolders()]);
+    const refreshed = await refreshVPS();
+    if (!refreshed) return;
+    await Promise.all([refreshSessions(), refreshWorkspaceFolders(true)]);
   }, [activeVpsId, refreshSessions, refreshVPS, refreshWorkspaceFolders]);
 
   const doEndSession = useCallback(
@@ -274,13 +289,13 @@ export function Sidebar({
       try {
         await deleteSession(activeVpsId, sessionId);
         await refreshSessions();
-        await refreshWorkspaceFolders();
+        await refreshWorkspaceFolders(true);
         setErrorMessage("");
       } catch (err) {
         setOperationError("Failed to end session", err);
       }
     },
-    [activeVpsId, refreshSessions, setOperationError],
+    [activeVpsId, refreshSessions, refreshWorkspaceFolders, setOperationError],
   );
 
   const handleEndSession = useCallback(

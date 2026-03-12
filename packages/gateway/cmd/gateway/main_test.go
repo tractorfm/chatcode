@@ -105,3 +105,25 @@ func TestTrimSnapshotTailKeepsRecentOutput(t *testing.T) {
 		t.Fatalf("expected tail to be preserved, got: %q", got)
 	}
 }
+
+func TestResolveWorkspaceRootFromHome(t *testing.T) {
+	t.Setenv("HOME", "/home/vibe")
+	got, err := resolveWorkspaceRoot()
+	if err != nil {
+		t.Fatalf("resolveWorkspaceRoot returned error: %v", err)
+	}
+	if got != "/home/vibe/workspace" {
+		t.Fatalf("resolveWorkspaceRoot = %q, want %q", got, "/home/vibe/workspace")
+	}
+}
+
+func TestResolveWorkspaceRootKeepsWorkspaceHome(t *testing.T) {
+	t.Setenv("HOME", "/home/vibe/workspace")
+	got, err := resolveWorkspaceRoot()
+	if err != nil {
+		t.Fatalf("resolveWorkspaceRoot returned error: %v", err)
+	}
+	if got != "/home/vibe/workspace" {
+		t.Fatalf("resolveWorkspaceRoot = %q, want %q", got, "/home/vibe/workspace")
+	}
+}

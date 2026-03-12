@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"regexp"
 	"runtime"
 	"syscall"
@@ -91,11 +92,10 @@ func main() {
 
 	// Create file handler (sender will be wired after WS client is set up)
 	// We use a late-binding sender so the WS client can be nil during startup
-	workspaceRoot, err := os.UserHomeDir()
-	if err != nil || workspaceRoot == "" {
-		workspaceRoot = "/home/vibe"
+	workspaceRoot, err := resolveWorkspaceRoot()
+	if err != nil {
+		workspaceRoot = "/home/vibe/workspace"
 	}
-	workspaceRoot = workspaceRoot + "/workspace"
 	g.workspaceRoot = workspaceRoot
 	g.files = files.NewHandler(cfg.TempDir, workspaceRoot, func(ctx context.Context, v any) error {
 		return g.wsClient.SendJSON(ctx, v)
@@ -148,6 +148,18 @@ type gateway struct {
 	files    *files.Handler
 	outputCh chan session.OutputChunk
 	workspaceRoot string
+}
+
+func resolveWorkspaceRoot() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return "", err
+	}
+	cleanHome := filepath.Clean(home)
+	if filepath.Base(cleanHome) == "workspace" {
+		return cleanHome, nil
+	}
+	return filepath.Join(cleanHome, "workspace"), nil
 }
 
 func (g *gateway) onSessionExit(sessionID string) {
