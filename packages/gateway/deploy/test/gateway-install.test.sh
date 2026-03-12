@@ -225,6 +225,14 @@ test_service_template_preserves_tmux_children() {
   assert_contains "${SERVICE_TEMPLATE}" "KillMode=process"
 }
 
+test_linux_installer_service_unit_preserves_tmux_children() {
+  assert_contains "${INSTALL_SCRIPT}" "KillMode=process"
+  assert_contains "${INSTALL_SCRIPT}" "PrivateTmp=false"
+  if grep -Fq "ExecStartPre=/usr/bin/install -d -m 700 -o \${TARGET_USER} -g \${TARGET_USER} /tmp/chatcode" "${INSTALL_SCRIPT}"; then
+    fail "installer still embeds ExecStartPre tmp dir setup in service unit"
+  fi
+}
+
 test_linux_installer_bootstraps_base_packages() {
   assert_contains "${INSTALL_SCRIPT}" "ensure_linux_base_packages"
   assert_contains "${INSTALL_SCRIPT}" "missing+=(\"tmux\")"
@@ -237,6 +245,7 @@ main() {
   test_linux_requires_root
   test_linux_installer_bootstraps_base_packages
   test_service_template_preserves_tmux_children
+  test_linux_installer_service_unit_preserves_tmux_children
   echo "[gateway-install.test] PASS"
 }
 

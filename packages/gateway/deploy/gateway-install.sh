@@ -342,6 +342,7 @@ write_linux_service_unit() {
   cat > "${SERVICE_FILE}" <<UNIT
 [Unit]
 Description=Chatcode.dev Gateway Daemon
+Documentation=https://chatcode.dev/docs/gateway
 After=network-online.target
 Wants=network-online.target
 StartLimitIntervalSec=60
@@ -352,11 +353,16 @@ Type=simple
 User=${TARGET_USER}
 Group=${TARGET_USER}
 WorkingDirectory=${TARGET_HOME}
-ExecStartPre=/usr/bin/install -d -m 700 -o ${TARGET_USER} -g ${TARGET_USER} /tmp/chatcode
 ExecStart=${BINARY_PATH}
 EnvironmentFile=${ENV_FILE}
 Restart=on-failure
 RestartSec=5s
+KillMode=process
+
+# Keep service environment close to host defaults so explicitly-approved sudo
+# commands behave the same as on a normal SSH shell.
+PrivateTmp=false
+
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=chatcode-gateway
