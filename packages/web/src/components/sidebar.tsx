@@ -13,6 +13,7 @@ import {
   LogOut,
   Loader2,
   Copy,
+  RefreshCw,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AGENT_TYPES, defaultSessionTitle, type AgentType } from "@/lib/constants";
@@ -260,6 +261,12 @@ export function Sidebar({
     },
     [activeVpsId, creating, sessions, sessionWorkdir, refreshSessions, onNewSession, setOperationError],
   );
+
+  const handleRefreshActiveVps = useCallback(async () => {
+    if (!activeVpsId) return;
+    await refreshVPS();
+    await Promise.all([refreshSessions(), refreshWorkspaceFolders()]);
+  }, [activeVpsId, refreshSessions, refreshVPS, refreshWorkspaceFolders]);
 
   const doEndSession = useCallback(
     async (sessionId: string) => {
@@ -532,6 +539,16 @@ export function Sidebar({
                 <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
                   {sessionHeading}
                 </span>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => void handleRefreshActiveVps()}
+                    disabled={!activeVpsId || loading}
+                    className="rounded p-0.5 text-muted-foreground hover:bg-accent disabled:opacity-50"
+                    title="Refresh sessions and folders"
+                  >
+                    <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
+                  </button>
                 <div className="relative">
                   <button
                     data-testid="create-session-button"
@@ -561,6 +578,7 @@ export function Sidebar({
                       />
                     </div>
                   )}
+                </div>
                 </div>
               </div>
 
