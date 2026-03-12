@@ -1,10 +1,15 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
-import { AuthPage } from "@/pages/auth-page";
-import { AppPage } from "@/pages/app-page";
-import { OnboardingPage } from "@/pages/onboarding-page";
-import { SettingsPage } from "@/pages/settings-page";
-import { StatusPage } from "@/pages/status-page";
+
+const AuthPage = lazy(() => import("@/pages/auth-page").then((m) => ({ default: m.AuthPage })));
+const AppPage = lazy(() => import("@/pages/app-page").then((m) => ({ default: m.AppPage })));
+const OnboardingPage = lazy(() =>
+  import("@/pages/onboarding-page").then((m) => ({ default: m.OnboardingPage })),
+);
+const SettingsPage = lazy(() =>
+  import("@/pages/settings-page").then((m) => ({ default: m.SettingsPage })),
+);
+const StatusPage = lazy(() => import("@/pages/status-page").then((m) => ({ default: m.StatusPage })));
 
 type Overlay = "settings" | "status" | "onboarding" | null;
 
@@ -57,50 +62,64 @@ export function App() {
   }
 
   if (auth.status === "unauthenticated") {
-    return <AuthPage />;
+    return (
+      <Suspense fallback={<PageLoading />}>
+        <AuthPage />
+      </Suspense>
+    );
   }
 
   const userEmail = auth.user.email;
 
   return (
-    <>
-      <AppPage
-        userEmail={userEmail}
-        onLogout={auth.logout}
-        onNavigate={handleNavigate}
-        overlayOpen={overlay !== null}
-        externalRefreshSignal={sidebarRefreshSignal}
-        selectedVpsIdHint={selectedVpsIdHint}
-      />
-      {overlay && (
-        <div
-          ref={overlayRef}
-          className="fixed inset-0 z-50 bg-background overflow-y-auto"
-          role="dialog"
-          aria-modal="true"
-          tabIndex={-1}
-        >
-          {overlay === "onboarding" && (
-            <OnboardingPage
-              onBack={handleCloseOverlay}
-              onComplete={handleOnboardingComplete}
-              manualVpsId={onboardingManualVpsId}
-            />
-          )}
-          {overlay === "settings" && (
-            <SettingsPage
-              userEmail={userEmail}
-              linkedProviders={linkedProviders}
-              onProvidersChanged={setLinkedProviders}
-              onBack={handleCloseOverlay}
-              onLogout={auth.logout}
-            />
-          )}
-          {overlay === "status" && (
-            <StatusPage onBack={handleCloseOverlay} />
-          )}
-        </div>
-      )}
-    </>
+    <Suspense fallback={<PageLoading />}>
+      <>
+        <AppPage
+          userEmail={userEmail}
+          onLogout={auth.logout}
+          onNavigate={handleNavigate}
+          overlayOpen={overlay !== null}
+          externalRefreshSignal={sidebarRefreshSignal}
+          selectedVpsIdHint={selectedVpsIdHint}
+        />
+        {overlay && (
+          <div
+            ref={overlayRef}
+            className="fixed inset-0 z-50 bg-background overflow-y-auto"
+            role="dialog"
+            aria-modal="true"
+            tabIndex={-1}
+          >
+            {overlay === "onboarding" && (
+              <OnboardingPage
+                onBack={handleCloseOverlay}
+                onComplete={handleOnboardingComplete}
+                manualVpsId={onboardingManualVpsId}
+              />
+            )}
+            {overlay === "settings" && (
+              <SettingsPage
+                userEmail={userEmail}
+                linkedProviders={linkedProviders}
+                onProvidersChanged={setLinkedProviders}
+                onBack={handleCloseOverlay}
+                onLogout={auth.logout}
+              />
+            )}
+            {overlay === "status" && (
+              <StatusPage onBack={handleCloseOverlay} />
+            )}
+          </div>
+        )}
+      </>
+    </Suspense>
+  );
+}
+
+function PageLoading() {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-background">
+      <div className="text-sm text-muted-foreground">Loading...</div>
+    </div>
   );
 }
