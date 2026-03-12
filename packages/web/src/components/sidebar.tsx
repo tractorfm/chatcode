@@ -564,9 +564,17 @@ export function Sidebar({
           {activeVpsId && (
             <div className="p-3 space-y-2 border-t border-border">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                  {sessionHeading}
-                </span>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                    {sessionHeading}
+                  </span>
+                  {loading ? (
+                    <Loader2
+                      className="h-3 w-3 animate-spin text-muted-foreground/80"
+                      aria-label="Refreshing sessions"
+                    />
+                  ) : null}
+                </div>
                 <div className="flex items-center gap-1">
                 <div className="relative">
                   <button
@@ -600,10 +608,6 @@ export function Sidebar({
                 </div>
                 </div>
               </div>
-
-              {loading && sessions.length === 0 && (
-                <p className="text-xs text-muted-foreground">Loading...</p>
-              )}
 
               {groupSessionsByFolder(sessions, workspaceFolders).map((group) => (
                 <div key={group.key} className="group/folder space-y-1">

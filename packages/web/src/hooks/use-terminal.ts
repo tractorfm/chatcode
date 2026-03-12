@@ -362,15 +362,16 @@ export function createTerminalHandle(opts: UseTerminalOptions): TerminalHandle {
             .replace(/\r/g, "\n");
           const lines = normalized.split("\n");
           if (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
-          const tail = lines.slice(-rowsHint).join("\r\n");
+          const snapshotContent = lines.join("\r\n");
           debugLog("recv-snapshot", {
             cols: typeof msg.cols === "number" ? msg.cols : null,
             rows: rowsHint,
+            lineCount: lines.length,
             cursorX: typeof msg.cursor_x === "number" ? msg.cursor_x : null,
             cursorY: typeof msg.cursor_y === "number" ? msg.cursor_y : null,
           });
           term.reset();
-          term.write(tail);
+          term.write(snapshotContent);
 
           if (
             typeof msg.cursor_x === "number" &&
