@@ -49,6 +49,7 @@ LINUX_AGENT_INSTALLER_SCRIPTS=(
 DARWIN_LABEL="dev.chatcode.gateway"
 DARWIN_MAINTENANCE_LABEL="dev.chatcode.maintenance"
 LINUX_ENV_FILE="${LINUX_CONFIG_DIR}/gateway.env"
+CHATCODE_TMP_DIR="${CHATCODE_TMP_DIR:-/tmp/chatcode}"
 
 CONFIRM=0
 KEEP_USER=0
@@ -253,7 +254,7 @@ case "${OS_NAME}" in
     safe_rm_file "${LINUX_SUDO_LOG_FILE}"
     safe_rm_dir "${LINUX_SUDO_LOG_DIR}"
     safe_rm_dir "${LINUX_CONFIG_DIR}"
-    safe_rm_dir "/tmp/chatcode"
+    safe_rm_dir "${CHATCODE_TMP_DIR}"
     safe_rm_dir "/opt/chatcode"
 
     if [[ "${KEEP_USER}" -eq 1 ]]; then
@@ -315,7 +316,7 @@ case "${OS_NAME}" in
     safe_rm_file "${INSTALLER_OPENCODE}"
     safe_rm_file "${INSTALLER_GIT}"
     safe_rm_dir "${CONFIG_DIR}"
-    safe_rm_dir "/tmp/chatcode"
+    safe_rm_dir "${CHATCODE_TMP_DIR}"
 
     if [[ "${REMOVE_WORKSPACE}" -eq 1 ]]; then
       safe_rm_dir "${WORKSPACE_DIR}"

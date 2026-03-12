@@ -62,6 +62,7 @@ test_darwin_binary_source_no_start() {
 
   local stub_dir="${tmp}/stubs"
   local home_dir="${tmp}/home"
+  local chatcode_tmp_dir="${tmp}/chatcode-tmp"
   local src_bin="${tmp}/chatcode-gateway-src"
   mkdir -p "${stub_dir}" "${home_dir}"
   setup_darwin_stubs "${stub_dir}"
@@ -75,6 +76,7 @@ EOF
   env \
     HOME="${home_dir}" \
     PATH="${stub_dir}:${PATH}" \
+    CHATCODE_TMP_DIR="${chatcode_tmp_dir}" \
     "${INSTALL_SCRIPT}" \
       --binary-source "${src_bin}" \
       --gateway-id "gw-test-binary-source" \
@@ -90,11 +92,11 @@ EOF
   assert_file_exists "${installed_bin}"
   assert_file_exists "${env_file}"
   assert_file_exists "${plist_file}"
-  assert_dir_exists "/tmp/chatcode"
+  assert_dir_exists "${chatcode_tmp_dir}"
 
   cmp -s "${src_bin}" "${installed_bin}" || fail "installed binary differs from source"
   assert_contains "${env_file}" "GATEWAY_ID=gw-test-binary-source"
-  assert_contains "${env_file}" "TMUX_TMPDIR=/tmp/chatcode"
+  assert_contains "${env_file}" "TMUX_TMPDIR=${chatcode_tmp_dir}"
   rm -rf "${tmp}"
 }
 
@@ -104,6 +106,7 @@ test_darwin_release_download_latest() {
 
   local stub_dir="${tmp}/stubs"
   local home_dir="${tmp}/home"
+  local chatcode_tmp_dir="${tmp}/chatcode-tmp"
   mkdir -p "${stub_dir}" "${home_dir}"
   setup_darwin_stubs "${stub_dir}"
 
@@ -172,6 +175,7 @@ EOF
   env \
     HOME="${home_dir}" \
     PATH="${stub_dir}:${PATH}" \
+    CHATCODE_TMP_DIR="${chatcode_tmp_dir}" \
     "${INSTALL_SCRIPT}" \
       --version latest \
       --release-base-url "https://releases.example.test/gateway" \
@@ -187,7 +191,7 @@ EOF
   assert_file_exists "${installed_bin}"
   assert_file_exists "${env_file}"
   assert_contains "${env_file}" "GATEWAY_VERSION=v9.9.9-test"
-  assert_contains "${env_file}" "TMUX_TMPDIR=/tmp/chatcode"
+  assert_contains "${env_file}" "TMUX_TMPDIR=${chatcode_tmp_dir}"
 
   grep -Fq "release-binary" "${installed_bin}" || fail "downloaded binary content mismatch"
   rm -rf "${tmp}"

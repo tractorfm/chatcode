@@ -41,6 +41,7 @@ GATEWAY_MAX_SESSIONS="${GATEWAY_MAX_SESSIONS:-50}"
 BINARY_SOURCE="${BINARY_SOURCE:-}"
 GATEWAY_VERSION="${GATEWAY_VERSION:-latest}"
 GATEWAY_RELEASE_BASE_URL="${GATEWAY_RELEASE_BASE_URL:-https://releases.chatcode.dev/gateway}"
+CHATCODE_TMP_DIR="${CHATCODE_TMP_DIR:-/tmp/chatcode}"
 BINARY_PATH="${BINARY_PATH:-}"
 NO_START=0
 SKIP_AGENT_PREINSTALL=0
@@ -325,8 +326,8 @@ GATEWAY_ID=${GATEWAY_ID}
 GATEWAY_AUTH_TOKEN=${GATEWAY_AUTH_TOKEN}
 GATEWAY_CP_URL=${GATEWAY_CP_URL}
 GATEWAY_SSH_KEYS_FILE=${TARGET_HOME}/.ssh/authorized_keys
-GATEWAY_TEMP_DIR=/tmp/chatcode
-TMUX_TMPDIR=/tmp/chatcode
+GATEWAY_TEMP_DIR=${CHATCODE_TMP_DIR}
+TMUX_TMPDIR=${CHATCODE_TMP_DIR}
 GATEWAY_BINARY_PATH=${BINARY_PATH}
 GATEWAY_LOG_LEVEL=${GATEWAY_LOG_LEVEL}
 GATEWAY_HEALTH_INTERVAL=${GATEWAY_HEALTH_INTERVAL}
@@ -428,7 +429,7 @@ PLIST
     <key>GATEWAY_SSH_KEYS_FILE</key>
     <string>$(xml_escape "${TARGET_HOME}/.ssh/authorized_keys")</string>
     <key>GATEWAY_TEMP_DIR</key>
-    <string>/tmp/chatcode</string>
+    <string>$(xml_escape "${CHATCODE_TMP_DIR}")</string>
     <key>GATEWAY_BINARY_PATH</key>
     <string>$(xml_escape "${BINARY_PATH}")</string>
     <key>GATEWAY_LOG_LEVEL</key>
@@ -531,7 +532,7 @@ prepare_linux_user() {
   chown "${TARGET_USER}:${TARGET_USER}" "${TARGET_HOME}/.ssh/authorized_keys"
   chmod 600 "${TARGET_HOME}/.ssh/authorized_keys"
   install -d -m 755 -o "${TARGET_USER}" -g "${TARGET_USER}" "${TARGET_HOME}/workspace"
-  install -d -m 700 -o "${TARGET_USER}" -g "${TARGET_USER}" /tmp/chatcode
+  install -d -m 700 -o "${TARGET_USER}" -g "${TARGET_USER}" "${CHATCODE_TMP_DIR}"
 
   # Root-owned sudo command log, readable by vibe for user review.
   install -d -m 750 -o root -g "${TARGET_USER}" "${LINUX_SUDO_LOG_DIR}"
@@ -853,7 +854,7 @@ prepare_darwin_user() {
   touch "${TARGET_HOME}/.ssh/authorized_keys"
   chmod 600 "${TARGET_HOME}/.ssh/authorized_keys"
   install -d -m 755 "${TARGET_HOME}/workspace"
-  install -d -m 700 /tmp/chatcode
+  install -d -m 700 "${CHATCODE_TMP_DIR}"
 }
 
 install_binary() {
