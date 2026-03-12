@@ -599,6 +599,11 @@ export function Sidebar({
                       />
                     </div>
                   )}
+                  {group.sessions.length === 0 ? (
+                    <div className="px-2 py-1 text-xs text-muted-foreground/70">
+                      No sessions yet
+                    </div>
+                  ) : null}
                   {group.sessions.map((session) => (
                     <div
                       key={session.id}
