@@ -196,7 +196,7 @@ export function createTerminalHandle(opts: UseTerminalOptions): TerminalHandle {
     }, delayMs);
   }
 
-  function schedulePostResizeSnapshot(reason: string, delayMs = 180) {
+  function schedulePostResizeSnapshot(reason: string, delayMs = 500) {
     if (awaitingInitialSnapshot) return;
     if (resizeSnapshotTimer) clearTimeout(resizeSnapshotTimer);
     resizeSnapshotTimer = setTimeout(() => {

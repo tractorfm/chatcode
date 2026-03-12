@@ -45,13 +45,8 @@ export const TerminalView = memo(function TerminalView({
       handleRef.current?.fit();
       handleRef.current?.focus();
     }, 0);
-    const settleTimer = setTimeout(() => {
-      handleRef.current?.fit();
-      handleRef.current?.focus();
-    }, 120);
     return () => {
       clearTimeout(timer);
-      clearTimeout(settleTimer);
     };
   }, [active, suspended, sessionId, vpsId, handleRef]);
 

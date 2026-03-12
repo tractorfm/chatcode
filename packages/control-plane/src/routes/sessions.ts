@@ -3,6 +3,7 @@
  */
 
 import type { Env, AuthContext } from "../types.js";
+import { normalizeSessionWorkdir } from "@chatcode/protocol";
 import {
   getVPS,
   getGatewayByVPS,
@@ -22,7 +23,6 @@ const MANAGED_AGENT_TYPES = new Set(["claude-code", "codex", "gemini", "opencode
 const FREE_PLAN_SESSION_LIMIT = 10;
 const OPEN_SESSION_STATUSES = new Set(["starting", "running"]);
 const SESSION_LIMIT_ERROR = /^session limit reached \((\d+)\)$/;
-const DEFAULT_SESSION_WORKDIR = "/home/vibe/workspace";
 
 interface GatewayAgentStatus {
   agent: string;
@@ -223,26 +223,6 @@ export async function handleSessionCreate(
   );
 }
 
-function normalizeSessionWorkdir(input?: string): string {
-  const trimmed = (input || "").trim();
-  if (!trimmed || trimmed === "." || trimmed === "/") return DEFAULT_SESSION_WORKDIR;
-  if (trimmed === "~" || trimmed === "~/workspace" || trimmed === "/home/vibe/workspace") {
-    return DEFAULT_SESSION_WORKDIR;
-  }
-
-  let relative = trimmed;
-  if (relative.startsWith("/home/vibe/workspace/")) {
-    relative = relative.slice("/home/vibe/workspace/".length);
-  } else if (relative.startsWith("~/workspace/")) {
-    relative = relative.slice("~/workspace/".length);
-  } else if (relative.startsWith("/")) {
-    relative = relative.replace(/^\/+/, "");
-  }
-
-  relative = relative.replace(/^\.\//, "").replace(/^\/+/, "");
-  if (!relative) return DEFAULT_SESSION_WORKDIR;
-  return `${DEFAULT_SESSION_WORKDIR}/${relative}`;
-}
 
 /**
  * DELETE /vps/:id/sessions/:sid – End session.

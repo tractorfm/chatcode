@@ -17,6 +17,13 @@ import {
 import { cn } from "@/lib/utils";
 import { AGENT_TYPES, defaultSessionTitle, type AgentType } from "@/lib/constants";
 import {
+  buildSessionTabTitle,
+  DEFAULT_SESSION_WORKDIR,
+  normalizeSessionWorkdir,
+  sessionFolderKey,
+  sessionSubpathWithinGroup,
+} from "@chatcode/protocol";
+import {
   listVPS,
   listSessions,
   createSession,
@@ -32,8 +39,6 @@ import {
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { InlineEdit } from "@/components/inline-edit";
 import { SessionCreatePicker } from "@/components/session-create-picker";
-
-const DEFAULT_SESSION_WORKDIR = "/home/vibe/workspace";
 const DEFAULT_SESSION_WORKDIR_INPUT = ".";
 
 interface SidebarProps {
@@ -154,7 +159,7 @@ export function Sidebar({
         !openSessions.some((session) => session.id === activeSessionIdRef.current)
       ) {
         const first = openSessions[0];
-        onSelectSession(activeVpsId, first.id, buildTabTitle(first.title, first.workdir));
+        onSelectSession(activeVpsId, first.id, buildSessionTabTitle(first.title, first.workdir));
       }
     } catch (err) {
       setOperationError("Failed to load sessions", err);
@@ -217,7 +222,7 @@ export function Sidebar({
           workdir,
         });
         await refreshSessions();
-        onNewSession(activeVpsId, res.session_id, buildTabTitle(title, workdir));
+        onNewSession(activeVpsId, res.session_id, buildSessionTabTitle(title, workdir));
         setErrorMessage("");
         setShowAgentPicker(false);
         setGroupPickerKey(null);
@@ -343,7 +348,7 @@ export function Sidebar({
       try {
         const session = sessions.find((entry) => entry.id === sessionId);
         await updateSession(activeVpsId, sessionId, { title });
-        onSessionRenamed(sessionId, buildTabTitle(title, session?.workdir || DEFAULT_SESSION_WORKDIR));
+        onSessionRenamed(sessionId, buildSessionTabTitle(title, session?.workdir || DEFAULT_SESSION_WORKDIR));
         await refreshSessions();
       } catch (err) {
         setOperationError("Failed to rename session", err);
@@ -572,11 +577,11 @@ export function Sidebar({
                     <div
                       key={session.id}
                       data-testid={`session-item-${session.id}`}
-                      onClick={() => onSelectSession(activeVpsId, session.id, buildTabTitle(session.title, session.workdir))}
+                      onClick={() => onSelectSession(activeVpsId, session.id, buildSessionTabTitle(session.title, session.workdir))}
                       onKeyDown={(e) => {
                         if (e.key === "Enter" || e.key === " ") {
                           e.preventDefault();
-                          onSelectSession(activeVpsId, session.id, buildTabTitle(session.title, session.workdir));
+                          onSelectSession(activeVpsId, session.id, buildSessionTabTitle(session.title, session.workdir));
                         }
                       }}
                       role="button"
@@ -754,34 +759,10 @@ function ProviderServerIcon({
   return <Server className="h-3.5 w-3.5 shrink-0" />;
 }
 
-function normalizeSessionWorkdir(input: string): string {
-  const trimmed = input.trim();
-  if (!trimmed || trimmed === "." || trimmed === "/") return DEFAULT_SESSION_WORKDIR;
-  if (trimmed === "~" || trimmed === "~/workspace" || trimmed === DEFAULT_SESSION_WORKDIR) {
-    return DEFAULT_SESSION_WORKDIR;
-  }
-  let relative = trimmed;
-  if (relative.startsWith("~/workspace/")) {
-    relative = relative.slice("~/workspace/".length);
-  } else if (relative.startsWith(DEFAULT_SESSION_WORKDIR + "/")) {
-    relative = relative.slice((DEFAULT_SESSION_WORKDIR + "/").length);
-  } else if (relative.startsWith("/")) {
-    relative = relative.replace(/^\/+/, "");
-  }
-  return `${DEFAULT_SESSION_WORKDIR}/${relative.replace(/^\.\//, "").replace(/^\/+/, "")}`;
-}
-
 function formatSessionSubtitle(session: Session, groupKey: string): string {
   const label = sessionCommandLabel(session.agent_type);
   const subpath = sessionSubpathWithinGroup(session.workdir, groupKey);
   return subpath ? `${label} · ${subpath}` : label;
-}
-
-function sessionFolderKey(path: string): string {
-  if (!path || path === DEFAULT_SESSION_WORKDIR) return "";
-  if (!path.startsWith(`${DEFAULT_SESSION_WORKDIR}/`)) return path;
-  const relative = path.slice(DEFAULT_SESSION_WORKDIR.length + 1);
-  return relative.split("/")[0] || "";
 }
 
 function groupSessionsByFolder(sessions: Session[]) {
@@ -806,27 +787,6 @@ function groupSessionsByFolder(sessions: Session[]) {
     }));
 }
 
-function sessionSubpathWithinGroup(path: string, groupKey: string): string {
-  if (!path.startsWith(DEFAULT_SESSION_WORKDIR)) return "";
-  if (groupKey === "") return "";
-  const groupRoot = `${DEFAULT_SESSION_WORKDIR}/${groupKey}`;
-  if (path === groupRoot) return "";
-  if (path.startsWith(`${groupRoot}/`)) return path.slice(groupRoot.length + 1);
-  return "";
-}
-
-function buildTabTitle(title: string, workdir: string): string {
-  const suffix = tabPathSuffix(workdir);
-  return suffix ? `${title} - ${suffix}` : title;
-}
-
-function tabPathSuffix(path: string): string {
-  if (path === DEFAULT_SESSION_WORKDIR) return "";
-  if (path.startsWith(`${DEFAULT_SESSION_WORKDIR}/`)) {
-    return path.slice(DEFAULT_SESSION_WORKDIR.length + 1);
-  }
-  return "";
-}
 
 function sessionCommandLabel(agentType: string): string {
   switch (agentType) {
