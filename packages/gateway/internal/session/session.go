@@ -16,6 +16,8 @@ const (
 	terminationPollInterval = 500 * time.Millisecond
 	terminationTimeout      = 3 * time.Second
 	forceKillWait           = 500 * time.Millisecond
+	gracefulExitWait        = 750 * time.Millisecond
+	gracefulExitAttempts    = 3
 	tmuxHistoryLimitLines   = 200000
 	snapshotHistoryLines    = 50000
 	preferredTmuxTerminal   = "tmux-256color"
@@ -168,6 +170,23 @@ func (s *Session) Input(data []byte) error {
 	return nil
 }
 
+func (s *Session) sendKeys(keys ...string) error {
+	args := append([]string{"send-keys", "-t", s.tmuxName}, keys...)
+	cmd := exec.Command("tmux", args...)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("tmux send-keys: %w: %s", err, out)
+	}
+	return nil
+}
+
+func (s *Session) sendLiteral(text string) error {
+	cmd := exec.Command("tmux", "send-keys", "-t", s.tmuxName, "-l", text)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("tmux send-keys: %w: %s", err, out)
+	}
+	return nil
+}
+
 // Resize resizes the tmux window.
 func (s *Session) Resize(cols, rows int) error {
 	cmd := exec.Command("tmux", "resize-window", "-t", s.tmuxName,
@@ -269,11 +288,13 @@ func snapshotCaptureArgs(tmuxName string) []string {
 
 // kill terminates the tmux session.
 func (s *Session) kill() error {
-	s.stopCapture()
+	defer s.stopCapture()
 	panePIDs := s.listPanePIDs()
 
-	// Graceful attempt via tmux session kill.
-	if err := s.killTmuxSession(); err != nil && s.isAlive() {
+	// First, ask the foreground program/shell to exit gracefully so agents can
+	// flush final output (resume tokens, status lines, etc.) before the session
+	// is torn down.
+	if err := s.requestGracefulExit(); err != nil && s.isAlive() {
 		return err
 	}
 	if s.waitForExit(terminationTimeout, terminationPollInterval) {
@@ -294,6 +315,37 @@ func (s *Session) kill() error {
 	}
 
 	return fmt.Errorf("session %q did not terminate within %s", s.opts.SessionID, terminationTimeout+2*forceKillWait)
+}
+
+func (s *Session) requestGracefulExit() error {
+	if !s.isAlive() {
+		return nil
+	}
+
+	// Repeated EOF mirrors an interactive user exiting nested shells/programs
+	// with Ctrl-D while keeping tmux alive long enough to capture the final
+	// output they emit on shutdown.
+	for i := 0; i < gracefulExitAttempts && s.isAlive(); i++ {
+		if err := s.sendKeys("C-d"); err != nil && s.isAlive() {
+			return err
+		}
+		if s.waitForExit(gracefulExitWait, 100*time.Millisecond) {
+			return nil
+		}
+	}
+
+	// Plain shells often respond better to an explicit exit command than more
+	// EOF presses once the user is already at a prompt.
+	if s.isAlive() {
+		if err := s.sendLiteral("exit"); err != nil && s.isAlive() {
+			return err
+		}
+		if err := s.sendKeys("Enter"); err != nil && s.isAlive() {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (s *Session) killTmuxSession() error {

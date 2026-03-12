@@ -427,6 +427,51 @@ func TestSnapshotIncludesScrollbackAndANSI(t *testing.T) {
 	}
 }
 
+func TestManagerEndGracefullyCapturesExitOutput(t *testing.T) {
+	if !hasTmux() {
+		t.Skip("tmux not available")
+	}
+
+	outCh := make(chan OutputChunk, 128)
+	m := NewManager(5)
+
+	s, err := m.Create(Options{
+		SessionID: "end-" + time.Now().Format("150405"),
+		Name:      "end",
+		Workdir:   t.TempDir(),
+		OutputCh:  outCh,
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	time.Sleep(300 * time.Millisecond)
+	if err := s.Input([]byte("trap 'printf \"graceful_exit_test\\n\"' EXIT\n")); err != nil {
+		t.Fatalf("Input trap: %v", err)
+	}
+	time.Sleep(300 * time.Millisecond)
+
+	if err := m.End(s.opts.SessionID); err != nil {
+		t.Fatalf("End: %v", err)
+	}
+
+	deadline := time.Now().Add(3 * time.Second)
+	var got string
+	for time.Now().Before(deadline) {
+		select {
+		case chunk := <-outCh:
+			got += string(chunk.Data)
+			if contains(got, "graceful_exit_test") {
+				return
+			}
+		default:
+			time.Sleep(100 * time.Millisecond)
+		}
+	}
+
+	t.Fatalf("expected graceful exit output, got:\n%s", got)
+}
+
 func contains(s, sub string) bool {
 	return len(s) >= len(sub) && (s == sub || len(s) > 0 && containsStr(s, sub))
 }
