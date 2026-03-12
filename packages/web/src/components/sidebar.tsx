@@ -495,39 +495,50 @@ export function Sidebar({
 
           {/* VPS Actions */}
           {activeVps && (
-            <div className="px-3 pb-2 flex gap-1">
-              {activeVps.provider === "manual" && !activeVps.gateway_connected ? (
+            <div className="px-3 pb-2 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1">
+                {activeVps.provider === "manual" && !activeVps.gateway_connected ? (
+                  <button
+                    onClick={() => onNavigate("onboarding", { manualVpsId: activeVps.id })}
+                    className="p-1.5 rounded hover:bg-accent text-muted-foreground"
+                    title="Show install command"
+                  >
+                    <Terminal className="h-3.5 w-3.5" />
+                  </button>
+                ) : null}
                 <button
-                  onClick={() => onNavigate("onboarding", { manualVpsId: activeVps.id })}
-                  className="p-1.5 rounded hover:bg-accent text-muted-foreground"
-                  title="Show install command"
+                  onClick={() => {
+                    if (!isManagedVps) return;
+                    handlePowerAction(activeVps.status === "active" ? "off" : "on");
+                  }}
+                  disabled={!isManagedVps}
+                  className="p-1.5 rounded hover:bg-accent text-muted-foreground disabled:cursor-not-allowed disabled:opacity-40"
+                  title={
+                    isManagedVps
+                      ? activeVps.status === "active"
+                        ? "Power off"
+                        : "Power on"
+                      : "Power control is not available for manual servers yet"
+                  }
                 >
-                  <Terminal className="h-3.5 w-3.5" />
+                  <Power className="h-3.5 w-3.5" />
                 </button>
-              ) : null}
+                <button
+                  onClick={handleDeleteVPS}
+                  className="p-1.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive"
+                  title={isManagedVps ? "Destroy server" : "Remove server"}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
               <button
-                onClick={() => {
-                  if (!isManagedVps) return;
-                  handlePowerAction(activeVps.status === "active" ? "off" : "on");
-                }}
-                disabled={!isManagedVps}
-                className="p-1.5 rounded hover:bg-accent text-muted-foreground disabled:cursor-not-allowed disabled:opacity-40"
-                title={
-                  isManagedVps
-                    ? activeVps.status === "active"
-                      ? "Power off"
-                      : "Power on"
-                    : "Power control is not available for manual servers yet"
-                }
+                type="button"
+                onClick={() => void handleRefreshActiveVps()}
+                disabled={!activeVpsId || loading}
+                className="rounded p-1.5 text-muted-foreground hover:bg-accent disabled:opacity-50"
+                title="Refresh sessions and folders"
               >
-                <Power className="h-3.5 w-3.5" />
-              </button>
-              <button
-                onClick={handleDeleteVPS}
-                className="p-1.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive"
-                title={isManagedVps ? "Destroy server" : "Remove server"}
-              >
-                <Trash2 className="h-3.5 w-3.5" />
+                <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
               </button>
             </div>
           )}
@@ -540,15 +551,6 @@ export function Sidebar({
                   {sessionHeading}
                 </span>
                 <div className="flex items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={() => void handleRefreshActiveVps()}
-                    disabled={!activeVpsId || loading}
-                    className="rounded p-0.5 text-muted-foreground hover:bg-accent disabled:opacity-50"
-                    title="Refresh sessions and folders"
-                  >
-                    <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
-                  </button>
                 <div className="relative">
                   <button
                     data-testid="create-session-button"
@@ -618,7 +620,7 @@ export function Sidebar({
                     </div>
                   )}
                   {group.sessions.length === 0 ? (
-                    <div className="px-2 py-1 text-xs text-muted-foreground/70">
+                    <div className="px-2 py-1 pl-8 text-xs text-muted-foreground/70">
                       No sessions yet
                     </div>
                   ) : null}
@@ -651,11 +653,12 @@ export function Sidebar({
                             maxLength={80}
                             editable={session.id === activeSessionId}
                             editMode="single"
-                            className="min-w-0"
+                            className="min-w-0 px-0"
+                            inputClassName="px-0"
                           />
                           <div
                             className={cn(
-                              "truncate text-xs text-muted-foreground",
+                              "ml-px truncate text-xs text-muted-foreground",
                               session.id === activeSessionId ? "font-medium" : "font-normal",
                             )}
                           >
