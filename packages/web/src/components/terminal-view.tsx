@@ -53,7 +53,7 @@ export const TerminalView = memo(function TerminalView({
   return (
     <div
       data-testid={`terminal-${sessionId}`}
-      className="terminal-shell absolute inset-0 py-2 pl-2"
+      className="terminal-shell absolute inset-0 p-2"
       style={{
         backgroundColor: terminalBackground,
         visibility: active ? "visible" : "hidden",

@@ -75,7 +75,6 @@ export function createTerminalHandle(opts: UseTerminalOptions): TerminalHandle {
   let lastRows = 0;
   let pendingAckSessionId: string | null = null;
   let pendingAckSeq: number | null = null;
-  let suppressResizeEvent = false;
   let reconnectAttempts = 0;
   let sessionEnded = false;
   let disposed = false;
@@ -184,49 +183,6 @@ export function createTerminalHandle(opts: UseTerminalOptions): TerminalHandle {
     ackFlushTimer = setTimeout(() => flushPendingAck("batched"), 75);
   }
 
-  function clampColsToViewport(reason: string) {
-    if (!mountEl) return;
-    const screen = mountEl.querySelector(".xterm-screen");
-    if (!(screen instanceof HTMLElement)) return;
-
-    // Use the viewport's clientWidth as the hard constraint — it already
-    // excludes the native scrollbar on systems where scrollbars take space.
-    const viewport = mountEl.querySelector(".xterm-viewport");
-    const hostEl = viewport instanceof HTMLElement ? viewport : mountEl;
-    const availableWidth = hostEl.clientWidth;
-    if (availableWidth <= 0) return;
-
-    // Actual rendered width of the terminal grid (set by xterm on
-    // .xterm-screen via inline style).
-    const screenWidth = screen.getBoundingClientRect().width;
-    if (screenWidth <= availableWidth + 0.5) return; // fits — nothing to do
-
-    // Derive actual cell width from what the browser laid out, then compute
-    // the maximum cols that fit.
-    const currentCols = term.cols;
-    const rows = term.rows || 24;
-    if (currentCols <= 2 || screenWidth <= 0) return;
-    const renderedCellWidth = screenWidth / currentCols;
-    const maxCols = Math.max(2, Math.floor(availableWidth / renderedCellWidth));
-    if (maxCols >= currentCols) return;
-
-    debugLog("fit-clamp-cols", {
-      reason,
-      fromCols: currentCols,
-      toCols: maxCols,
-      availableWidth: Math.round(availableWidth),
-      screenWidth: Math.round(screenWidth),
-      renderedCellWidth: Number(renderedCellWidth.toFixed(2)),
-    });
-
-    suppressResizeEvent = true;
-    try {
-      term.resize(maxCols, rows);
-    } finally {
-      suppressResizeEvent = false;
-    }
-  }
-
   function scheduleFit(
     reason = "unknown",
     afterFit?: (cols: number, rows: number, resizeReqId: string | null) => void,
@@ -247,7 +203,6 @@ export function createTerminalHandle(opts: UseTerminalOptions): TerminalHandle {
           } catch {
             /* ignore */
           }
-          clampColsToViewport(reason);
           const cols = term.cols || 80;
           const rows = term.rows || 24;
           debugLog("fit", { reason, cols, rows });
@@ -544,7 +499,6 @@ export function createTerminalHandle(opts: UseTerminalOptions): TerminalHandle {
   }
 
   term.onResize(({ cols, rows }) => {
-    if (suppressResizeEvent) return;
     debugLog("term-onResize", { cols, rows });
     const resizeReqId = sendResize(cols, rows, "term.onResize");
     if (resizeReqId) {
