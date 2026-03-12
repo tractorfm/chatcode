@@ -72,6 +72,7 @@ export function createTerminalHandle(opts: UseTerminalOptions): TerminalHandle {
   let resizeSnapshotTimer: ReturnType<typeof setTimeout> | null = null;
   let lastCols = 0;
   let lastRows = 0;
+  let suppressResizeEvent = false;
   let reconnectAttempts = 0;
   let sessionEnded = false;
   let disposed = false;
@@ -155,6 +156,45 @@ export function createTerminalHandle(opts: UseTerminalOptions): TerminalHandle {
     });
   }
 
+  function clampColsToViewport(reason: string) {
+    if (!mountEl) return;
+    const screen = mountEl.querySelector(".xterm-screen");
+    if (!(screen instanceof HTMLElement)) return;
+
+    const viewport = mountEl.querySelector(".xterm-viewport");
+    const host =
+      viewport instanceof HTMLElement ? viewport : mountEl;
+    const hostWidth = Math.floor(host.getBoundingClientRect().width);
+    if (hostWidth <= 0) return;
+
+    let cols = term.cols || 80;
+    const rows = term.rows || 24;
+    let screenWidth = Math.ceil(screen.getBoundingClientRect().width);
+    let adjusted = false;
+
+    while (cols > 2 && screenWidth > hostWidth + 1) {
+      adjusted = true;
+      cols -= 1;
+      suppressResizeEvent = true;
+      try {
+        term.resize(cols, rows);
+      } finally {
+        suppressResizeEvent = false;
+      }
+      screenWidth = Math.ceil(screen.getBoundingClientRect().width);
+    }
+
+    if (adjusted) {
+      debugLog("fit-clamp-cols", {
+        reason,
+        cols,
+        rows,
+        hostWidth,
+        screenWidth,
+      });
+    }
+  }
+
   function scheduleFit(
     reason = "unknown",
     afterFit?: (cols: number, rows: number, resizeReqId: string | null) => void,
@@ -175,6 +215,7 @@ export function createTerminalHandle(opts: UseTerminalOptions): TerminalHandle {
           } catch {
             /* ignore */
           }
+          clampColsToViewport(reason);
           const cols = term.cols || 80;
           const rows = term.rows || 24;
           debugLog("fit", { reason, cols, rows });
@@ -475,6 +516,7 @@ export function createTerminalHandle(opts: UseTerminalOptions): TerminalHandle {
   }
 
   term.onResize(({ cols, rows }) => {
+    if (suppressResizeEvent) return;
     debugLog("term-onResize", { cols, rows });
     const resizeReqId = sendResize(cols, rows, "term.onResize");
     if (resizeReqId) {
