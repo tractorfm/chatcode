@@ -594,7 +594,7 @@ export function Sidebar({
                       )}
                     >
                       <div className="flex items-start gap-2 flex-1 min-w-0 text-left">
-                        <Terminal className="h-3.5 w-3.5 shrink-0" />
+                        <Terminal className="mt-1 h-3.5 w-3.5 shrink-0" />
                         <div className="min-w-0 flex-1">
                           <InlineEdit
                             value={session.title}
