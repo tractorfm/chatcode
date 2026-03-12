@@ -70,8 +70,11 @@ export function createTerminalHandle(opts: UseTerminalOptions): TerminalHandle {
   let initialSnapshotRetryTimer: ReturnType<typeof setTimeout> | null = null;
   let correctiveSnapshotTimer: ReturnType<typeof setTimeout> | null = null;
   let resizeSnapshotTimer: ReturnType<typeof setTimeout> | null = null;
+  let ackFlushTimer: ReturnType<typeof setTimeout> | null = null;
   let lastCols = 0;
   let lastRows = 0;
+  let pendingAckSessionId: string | null = null;
+  let pendingAckSeq: number | null = null;
   let suppressResizeEvent = false;
   let reconnectAttempts = 0;
   let sessionEnded = false;
@@ -154,6 +157,31 @@ export function createTerminalHandle(opts: UseTerminalOptions): TerminalHandle {
       request_id: requestId("snapshot"),
       session_id: sessionId,
     });
+  }
+
+  function flushPendingAck(reason = "timer") {
+    if (ackFlushTimer) {
+      clearTimeout(ackFlushTimer);
+      ackFlushTimer = null;
+    }
+    if (!pendingAckSessionId || pendingAckSeq === null) return;
+    debugLog("flush-ack", { reason, ackSessionId: pendingAckSessionId, ackSeq: pendingAckSeq });
+    sendJSON({
+      type: "session.ack",
+      schema_version: "1",
+      request_id: requestId("ack"),
+      session_id: pendingAckSessionId,
+      seq: pendingAckSeq,
+    });
+    pendingAckSessionId = null;
+    pendingAckSeq = null;
+  }
+
+  function queueAck(ackSessionId: string, seq: number) {
+    pendingAckSessionId = ackSessionId;
+    pendingAckSeq = pendingAckSeq === null ? seq : Math.max(pendingAckSeq, seq);
+    if (ackFlushTimer) return;
+    ackFlushTimer = setTimeout(() => flushPendingAck("batched"), 75);
   }
 
   function getViewportMetrics() {
@@ -521,23 +549,13 @@ export function createTerminalHandle(opts: UseTerminalOptions): TerminalHandle {
         if (!frame || frame.kind !== 0x01) return;
         if (frame.sessionId !== sessionId) return;
 
-        const sendAck = () => {
-          sendJSON({
-            type: "session.ack",
-            schema_version: "1",
-            request_id: requestId("ack"),
-            session_id: frame.sessionId,
-            seq: Number(frame.seq),
-          });
-        };
-
         if (awaitingInitialSnapshot) {
-          sendAck();
+          queueAck(frame.sessionId, Number(frame.seq));
           return;
         }
         const text = new TextDecoder().decode(frame.payload);
         term.write(text);
-        sendAck();
+        queueAck(frame.sessionId, Number(frame.seq));
       }
     });
 
@@ -549,6 +567,12 @@ export function createTerminalHandle(opts: UseTerminalOptions): TerminalHandle {
         clearInterval(keepaliveTimer);
         keepaliveTimer = null;
       }
+      if (ackFlushTimer) {
+        clearTimeout(ackFlushTimer);
+        ackFlushTimer = null;
+      }
+      pendingAckSessionId = null;
+      pendingAckSeq = null;
       const reason = ev.reason ? ` reason=${ev.reason}` : "";
       term.writeln(`\r\n[disconnected code=${ev.code}${reason}]`);
       socket = null;
@@ -619,6 +643,7 @@ export function createTerminalHandle(opts: UseTerminalOptions): TerminalHandle {
       if (initialSnapshotRetryTimer) clearTimeout(initialSnapshotRetryTimer);
       if (correctiveSnapshotTimer) clearTimeout(correctiveSnapshotTimer);
       if (resizeSnapshotTimer) clearTimeout(resizeSnapshotTimer);
+      if (ackFlushTimer) clearTimeout(ackFlushTimer);
       if (socket) {
         try {
           socket.close(1000, "disposed");
@@ -626,6 +651,8 @@ export function createTerminalHandle(opts: UseTerminalOptions): TerminalHandle {
           /* ignore */
         }
       }
+      pendingAckSessionId = null;
+      pendingAckSeq = null;
       if (windowResizeHandler) {
         window.removeEventListener("resize", windowResizeHandler);
         windowResizeHandler = null;

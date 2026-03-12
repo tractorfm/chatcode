@@ -50,10 +50,13 @@ export const STAGING_TERMINAL_COMPONENT_SCRIPT = `
     let termSocket = null;
     let termInputDisposable = null;
     let termKeepaliveTimer = null;
+    let ackFlushTimer = null;
     let awaitingInitialSnapshot = false;
     let initialSnapshotTimer = null;
     let lastResizeCols = 0;
     let lastResizeRows = 0;
+    let pendingAckSessionId = "";
+    let pendingAckSeq = null;
     let activeSessionId = "";
     const terminalMinHeightPx = Number(config.terminalMinHeightPx || 720);
     const terminalThemeStorageKey = "chatcode.staging.terminal.theme";
@@ -311,6 +314,35 @@ export const STAGING_TERMINAL_COMPONENT_SCRIPT = `
       } catch {}
     }
 
+    function flushPendingAck() {
+      if (ackFlushTimer) {
+        clearTimeout(ackFlushTimer);
+        ackFlushTimer = null;
+      }
+      if (!termSocket || termSocket.readyState !== WebSocket.OPEN) return;
+      if (!pendingAckSessionId || pendingAckSeq === null) return;
+      const ackMsg = {
+        type: "session.ack",
+        schema_version: "1",
+        request_id: config.requestId("ack"),
+        session_id: pendingAckSessionId,
+        seq: pendingAckSeq,
+      };
+      pendingAckSessionId = "";
+      pendingAckSeq = null;
+      try { termSocket.send(JSON.stringify(ackMsg)); } catch {}
+    }
+
+    function queueAck(sessionId, seq) {
+      pendingAckSessionId = sessionId;
+      pendingAckSeq = pendingAckSeq === null ? seq : Math.max(pendingAckSeq, seq);
+      if (ackFlushTimer) return;
+      ackFlushTimer = setTimeout(() => {
+        ackFlushTimer = null;
+        flushPendingAck();
+      }, 75);
+    }
+
     function scheduleFit() {
       if (!term) return;
       if (fitTimer) clearTimeout(fitTimer);
@@ -338,11 +370,17 @@ export const STAGING_TERMINAL_COMPONENT_SCRIPT = `
         clearInterval(termKeepaliveTimer);
         termKeepaliveTimer = null;
       }
+      if (ackFlushTimer) {
+        clearTimeout(ackFlushTimer);
+        ackFlushTimer = null;
+      }
       if (initialSnapshotTimer) {
         clearTimeout(initialSnapshotTimer);
         initialSnapshotTimer = null;
       }
       awaitingInitialSnapshot = false;
+      pendingAckSessionId = "";
+      pendingAckSeq = null;
       if (termSocket) {
         try { termSocket.close(1000, "user disconnect"); } catch {}
       }
@@ -480,25 +518,13 @@ export const STAGING_TERMINAL_COMPONENT_SCRIPT = `
           const frame = decodeTerminalFrame(event.data);
           if (!frame || frame.kind !== 0x01) return;
           if (frame.sessionId !== activeSessionId) return;
-
-          const sendAck = () => {
-            if (socket.readyState !== WebSocket.OPEN) return;
-            const ackMsg = {
-              type: "session.ack",
-              schema_version: "1",
-              request_id: config.requestId("ack"),
-              session_id: frame.sessionId,
-              seq: frame.seq,
-            };
-            try { socket.send(JSON.stringify(ackMsg)); } catch {}
-          };
           if (awaitingInitialSnapshot) {
-            sendAck();
+            queueAck(frame.sessionId, frame.seq);
             return;
           }
           const text = new TextDecoder().decode(frame.payload);
           term.write(text);
-          sendAck();
+          queueAck(frame.sessionId, frame.seq);
         }
       });
 
@@ -512,6 +538,12 @@ export const STAGING_TERMINAL_COMPONENT_SCRIPT = `
           clearInterval(termKeepaliveTimer);
           termKeepaliveTimer = null;
         }
+        if (ackFlushTimer) {
+          clearTimeout(ackFlushTimer);
+          ackFlushTimer = null;
+        }
+        pendingAckSessionId = "";
+        pendingAckSeq = null;
         if (term) {
           const reason = ev && ev.reason ? " reason=" + ev.reason : "";
           term.writeln("\\r\\n[terminal socket closed code=" + ev.code + reason + "]");

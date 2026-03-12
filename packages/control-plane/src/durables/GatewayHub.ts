@@ -689,10 +689,13 @@ export class GatewayHub {
         break;
 
       case "session.snapshot":
-      case "session.ack":
         if (typeof msg.request_id === "string" && msg.request_id.length > 0) {
           this.trackBrowserAck(msg.request_id, ws);
         }
+        this.sendRealtime(data);
+        break;
+
+      case "session.ack":
         this.sendRealtime(data);
         break;
 

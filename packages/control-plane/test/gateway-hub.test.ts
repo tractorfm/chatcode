@@ -366,6 +366,36 @@ describe("GatewayHub", () => {
     expect(wsSend.mock.calls[0][0]).toBe(JSON.stringify({ type: "pong", schema_version: "1" }));
   });
 
+  it("does not track browser waiters for session.ack realtime messages", () => {
+    const hub = makeHub();
+    const gatewaySend = vi.fn();
+    const ws = makeSocket();
+
+    (hub as unknown as { gatewaySocket: WebSocket | null }).gatewaySocket = makeSocket(gatewaySend);
+
+    (
+      hub as unknown as {
+        onBrowserText: (ws: WebSocket, sessionId: string, data: string) => void;
+      }
+    ).onBrowserText(
+      ws,
+      "ses-1",
+      JSON.stringify({
+        type: "session.ack",
+        schema_version: "1",
+        request_id: "req-ack-1",
+        session_id: "ses-1",
+        seq: 42,
+      }),
+    );
+
+    expect(gatewaySend).toHaveBeenCalledOnce();
+    expect(gatewaySend.mock.calls[0][0]).toContain("\"type\":\"session.ack\"");
+    expect(
+      (hub as unknown as { browserAckWaiters: Map<string, unknown> }).browserAckWaiters.size,
+    ).toBe(0);
+  });
+
   it("reconciles active sessions from gateway.health", async () => {
     const hub = makeHub("vps-1", [
       { id: "ses-active-running", status: "running" },
