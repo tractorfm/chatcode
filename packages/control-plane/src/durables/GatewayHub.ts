@@ -41,6 +41,16 @@ const IDLE_TIMEOUT_MS = 600_000; // 10 minutes
 const GRACE_PERIOD_MS = 30_000; // 30s reconnect grace
 const SESSION_RECONCILE_END_GRACE_MS = 90_000; // avoid ending sessions right after reconnect
 const SESSION_CONTROL_LEASE_MS = 30_000; // lock input/resize source for 30s since last write
+const TRAFFIC_BUCKET_MS = 10_000;
+const TRAFFIC_BUCKET_COUNT = 6;
+const TRAFFIC_SHORT_WINDOW_MS = 10_000;
+const TRAFFIC_LONG_WINDOW_MS = TRAFFIC_BUCKET_MS * TRAFFIC_BUCKET_COUNT;
+const TRAFFIC_WARN_COOLDOWN_MS = 60_000;
+const SESSION_TRAFFIC_RETENTION_MS = 30 * 60_000;
+const MAX_HOT_SESSIONS = 5;
+const DEFAULT_GATEWAY_EVENT_RATE_WARN_PER_SEC = 400;
+const DEFAULT_SESSION_RUNAWAY_RATE_WARN_PER_SEC = 200;
+const DEFAULT_SESSION_ACK_RATE_WARN_PER_SEC = 120;
 
 interface PendingEntry {
   resolve: (result: GatewayCommandResult) => void;
@@ -65,6 +75,35 @@ interface SocketAttachment {
   expectedGatewayId?: string;
   gatewayId?: string;
   vpsId?: string;
+}
+
+interface TrafficBucket {
+  startedAtMs: number;
+  count: number;
+  bytes: number;
+}
+
+interface TrafficCounterSnapshot {
+  total_count: number;
+  total_bytes: number;
+  last_10s_count: number;
+  last_10s_bytes: number;
+  last_minute_count: number;
+  last_minute_bytes: number;
+  rate_10s: number;
+  rate_60s: number;
+}
+
+interface SessionTrafficSnapshot {
+  session_id: string;
+  active_subscribers: number;
+  last_seen_at: string | null;
+  gateway_events: TrafficCounterSnapshot;
+  gateway_frames: TrafficCounterSnapshot;
+  browser_messages: TrafficCounterSnapshot;
+  browser_acks: TrafficCounterSnapshot;
+  incoming_events: TrafficCounterSnapshot;
+  runaway_signal: TrafficCounterSnapshot;
 }
 
 type GatewayEvent =
@@ -93,6 +132,93 @@ type GatewayCommandResult =
   | AgentInstalled
   | GatewayUpdated;
 type GatewayCommandEvent = SSHKeyList | AgentsStatus | WorkspaceFolders | AgentInstalled | GatewayUpdated;
+
+class RollingTrafficCounter {
+  private buckets: TrafficBucket[] = Array.from({ length: TRAFFIC_BUCKET_COUNT }, () => ({
+    startedAtMs: 0,
+    count: 0,
+    bytes: 0,
+  }));
+  private totalCount = 0;
+  private totalBytes = 0;
+
+  record(bytes: number, nowMs: number): void {
+    const bucketStart = Math.floor(nowMs / TRAFFIC_BUCKET_MS) * TRAFFIC_BUCKET_MS;
+    const bucketIndex = Math.floor(bucketStart / TRAFFIC_BUCKET_MS) % TRAFFIC_BUCKET_COUNT;
+    const bucket = this.buckets[bucketIndex];
+    if (bucket.startedAtMs !== bucketStart) {
+      bucket.startedAtMs = bucketStart;
+      bucket.count = 0;
+      bucket.bytes = 0;
+    }
+
+    bucket.count += 1;
+    bucket.bytes += bytes;
+    this.totalCount += 1;
+    this.totalBytes += bytes;
+  }
+
+  snapshot(nowMs: number): TrafficCounterSnapshot {
+    const last10s = this.sumWindow(nowMs, TRAFFIC_SHORT_WINDOW_MS);
+    const lastMinute = this.sumWindow(nowMs, TRAFFIC_LONG_WINDOW_MS);
+    return {
+      total_count: this.totalCount,
+      total_bytes: this.totalBytes,
+      last_10s_count: last10s.count,
+      last_10s_bytes: last10s.bytes,
+      last_minute_count: lastMinute.count,
+      last_minute_bytes: lastMinute.bytes,
+      rate_10s: roundRate(last10s.count / (TRAFFIC_SHORT_WINDOW_MS / 1000)),
+      rate_60s: roundRate(lastMinute.count / (TRAFFIC_LONG_WINDOW_MS / 1000)),
+    };
+  }
+
+  private sumWindow(nowMs: number, windowMs: number): { count: number; bytes: number } {
+    const cutoff = nowMs - windowMs;
+    let count = 0;
+    let bytes = 0;
+    for (const bucket of this.buckets) {
+      if (bucket.startedAtMs === 0) continue;
+      if (bucket.startedAtMs + TRAFFIC_BUCKET_MS <= cutoff) continue;
+      if (bucket.startedAtMs > nowMs) continue;
+      count += bucket.count;
+      bytes += bucket.bytes;
+    }
+    return { count, bytes };
+  }
+}
+
+class SessionTrafficStats {
+  lastSeenAt = 0;
+  lastWarnAt = 0;
+  gatewayEvents = new RollingTrafficCounter();
+  gatewayFrames = new RollingTrafficCounter();
+  browserMessages = new RollingTrafficCounter();
+  browserAcks = new RollingTrafficCounter();
+
+  markSeen(nowMs: number): void {
+    this.lastSeenAt = nowMs;
+  }
+
+  snapshot(sessionId: string, activeSubscribers: number, nowMs: number): SessionTrafficSnapshot {
+    const gatewayEvents = this.gatewayEvents.snapshot(nowMs);
+    const gatewayFrames = this.gatewayFrames.snapshot(nowMs);
+    const browserMessages = this.browserMessages.snapshot(nowMs);
+    const browserAcks = this.browserAcks.snapshot(nowMs);
+
+    return {
+      session_id: sessionId,
+      active_subscribers: activeSubscribers,
+      last_seen_at: this.lastSeenAt > 0 ? new Date(this.lastSeenAt).toISOString() : null,
+      gateway_events: gatewayEvents,
+      gateway_frames: gatewayFrames,
+      browser_messages: browserMessages,
+      browser_acks: browserAcks,
+      incoming_events: combineTrafficSnapshots([gatewayEvents, gatewayFrames, browserMessages]),
+      runaway_signal: combineTrafficSnapshots([gatewayFrames, browserAcks]),
+    };
+  }
+}
 
 export class GatewayHub {
   private state: DurableObjectState;
@@ -124,6 +250,15 @@ export class GatewayHub {
   private sessionControllers = new Map<string, SessionController>();
   private controlledSessionBySocket = new Map<WebSocket, string>();
 
+  // Rolling traffic counters for the current gateway DO instance.
+  private fetchRequests = new RollingTrafficCounter();
+  private gatewayTextMessages = new RollingTrafficCounter();
+  private gatewayBinaryFrames = new RollingTrafficCounter();
+  private browserTextMessages = new RollingTrafficCounter();
+  private browserAckMessages = new RollingTrafficCounter();
+  private sessionTraffic = new Map<string, SessionTrafficStats>();
+  private lastGatewayTrafficWarnAt = 0;
+
   // Grace period timer for gateway reconnect
   private graceTimer: ReturnType<typeof setTimeout> | null = null;
   private sessionEndReconcileNotBeforeMs = 0;
@@ -141,6 +276,9 @@ export class GatewayHub {
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
     const path = url.pathname;
+    const now = Date.now();
+    this.fetchRequests.record(0, now);
+    this.pruneSessionTraffic(now);
 
     if (path === "/gateway-ws") {
       return this.handleGatewayWS(request);
@@ -175,15 +313,21 @@ export class GatewayHub {
       return;
     }
 
+    const now = Date.now();
+
     if (meta.role === "gateway") {
       if (typeof message === "string") {
+        this.gatewayTextMessages.record(this.byteLength(message), now);
         void this.onGatewayText(message, ws).catch((err) => {
           console.warn("gateway ws text handler failed", err);
           safeClose(ws, 1011, "gateway event handler failure");
         });
       } else {
-        this.onGatewayBinary(new Uint8Array(message));
+        const payload = new Uint8Array(message);
+        this.gatewayBinaryFrames.record(payload.byteLength, now);
+        this.onGatewayBinary(payload);
       }
+      this.maybeWarnGatewayTraffic(now);
       return;
     }
 
@@ -191,11 +335,13 @@ export class GatewayHub {
       if (typeof message !== "string") {
         return;
       }
+      this.browserTextMessages.record(this.byteLength(message), now);
       const sessionId = meta.sessionId ?? this.browserSessionMap.get(ws);
       if (!sessionId) {
         return;
       }
       this.onBrowserText(ws, sessionId, message);
+      this.maybeWarnGatewayTraffic(now);
     }
   }
 
@@ -285,6 +431,14 @@ export class GatewayHub {
     } catch {
       console.warn("malformed JSON from gateway, ignoring");
       return;
+    }
+
+    const sessionId = getSessionId(msg);
+    if (sessionId) {
+      const now = Date.now();
+      const traffic = this.getSessionTraffic(sessionId, now);
+      traffic.gatewayEvents.record(this.byteLength(data), now);
+      this.maybeWarnSessionTraffic(sessionId, now);
     }
 
     switch (msg.type) {
@@ -565,6 +719,11 @@ export class GatewayHub {
       return;
     }
 
+    const now = Date.now();
+    const traffic = this.getSessionTraffic(frame.sessionId, now);
+    traffic.gatewayFrames.record(data.byteLength, now);
+    this.maybeWarnSessionTraffic(frame.sessionId, now);
+
     // Fan out raw bytes to subscribers of this session
     const subs = this.subscribers.get(frame.sessionId);
     if (!subs) return;
@@ -654,8 +813,10 @@ export class GatewayHub {
       return;
     }
 
-    this.lastActivity.set(ws, Date.now());
-    this.cleanupIdleSockets();
+    const now = Date.now();
+    this.lastActivity.set(ws, now);
+    const traffic = this.getSessionTraffic(sessionId, now);
+    traffic.browserMessages.record(this.byteLength(data), now);
 
     // Realtime relay (fire-and-forget)
     switch (msg.type) {
@@ -696,6 +857,8 @@ export class GatewayHub {
         break;
 
       case "session.ack":
+        traffic.browserAcks.record(this.byteLength(data), now);
+        this.browserAckMessages.record(this.byteLength(data), now);
         this.sendRealtime(data);
         break;
 
@@ -706,6 +869,8 @@ export class GatewayHub {
       default:
         this.sendProtocolError(ws, "unknown_type", `unknown message type: ${msg.type}`);
     }
+
+    this.maybeWarnSessionTraffic(sessionId, now);
   }
 
   private upsertBrowserSocket(ws: WebSocket, sessionId: string, lastSeenMs: number): void {
@@ -811,16 +976,172 @@ export class GatewayHub {
   }
 
   private handleStatus(): Response {
+    const now = Date.now();
+    this.pruneSessionTraffic(now);
     return new Response(
       JSON.stringify({
         connected: this.gatewaySocket !== null,
         gateway_id: this.gatewayId,
         vps_id: this.vpsId,
+        traffic: this.buildTrafficStatus(now),
       }),
       {
         headers: { "Content-Type": "application/json" },
       },
     );
+  }
+
+  private buildTrafficStatus(nowMs: number): {
+    fetch_requests: TrafficCounterSnapshot;
+    gateway_events: TrafficCounterSnapshot;
+    gateway_frames: TrafficCounterSnapshot;
+    browser_messages: TrafficCounterSnapshot;
+    browser_acks: TrafficCounterSnapshot;
+    realtime_events: TrafficCounterSnapshot;
+    incoming_events: TrafficCounterSnapshot;
+    hot_sessions: SessionTrafficSnapshot[];
+  } {
+    const fetchRequests = this.fetchRequests.snapshot(nowMs);
+    const gatewayEvents = this.gatewayTextMessages.snapshot(nowMs);
+    const gatewayFrames = this.gatewayBinaryFrames.snapshot(nowMs);
+    const browserMessages = this.browserTextMessages.snapshot(nowMs);
+    const browserAcks = this.browserAckMessages.snapshot(nowMs);
+    const realtimeEvents = combineTrafficSnapshots([gatewayEvents, gatewayFrames, browserMessages]);
+
+    const hotSessions = Array.from(this.sessionTraffic.entries())
+      .map(([sessionId, traffic]) =>
+        traffic.snapshot(sessionId, this.subscribers.get(sessionId)?.size ?? 0, nowMs),
+      )
+      .filter(
+        (session) =>
+          session.incoming_events.last_minute_count > 0 || session.active_subscribers > 0,
+      )
+      .sort((left, right) => {
+        if (right.runaway_signal.last_10s_count !== left.runaway_signal.last_10s_count) {
+          return right.runaway_signal.last_10s_count - left.runaway_signal.last_10s_count;
+        }
+        if (right.incoming_events.last_10s_count !== left.incoming_events.last_10s_count) {
+          return right.incoming_events.last_10s_count - left.incoming_events.last_10s_count;
+        }
+        return (right.last_seen_at ?? "").localeCompare(left.last_seen_at ?? "");
+      })
+      .slice(0, MAX_HOT_SESSIONS);
+
+    return {
+      fetch_requests: fetchRequests,
+      gateway_events: gatewayEvents,
+      gateway_frames: gatewayFrames,
+      browser_messages: browserMessages,
+      browser_acks: browserAcks,
+      realtime_events: realtimeEvents,
+      incoming_events: combineTrafficSnapshots([fetchRequests, realtimeEvents]),
+      hot_sessions: hotSessions,
+    };
+  }
+
+  private getSessionTraffic(sessionId: string, nowMs: number): SessionTrafficStats {
+    let traffic = this.sessionTraffic.get(sessionId);
+    if (!traffic) {
+      traffic = new SessionTrafficStats();
+      this.sessionTraffic.set(sessionId, traffic);
+    }
+    traffic.markSeen(nowMs);
+    return traffic;
+  }
+
+  private pruneSessionTraffic(nowMs = Date.now()): void {
+    for (const [sessionId, traffic] of this.sessionTraffic) {
+      if (traffic.lastSeenAt === 0) continue;
+      if (nowMs - traffic.lastSeenAt <= SESSION_TRAFFIC_RETENTION_MS) continue;
+      if ((this.subscribers.get(sessionId)?.size ?? 0) > 0) continue;
+      this.sessionTraffic.delete(sessionId);
+    }
+  }
+
+  private maybeWarnGatewayTraffic(nowMs: number): void {
+    const threshold = parseRateThreshold(
+      this.env.GATEWAY_HUB_GATEWAY_EVENT_RATE_WARN_PER_SEC,
+      DEFAULT_GATEWAY_EVENT_RATE_WARN_PER_SEC,
+    );
+    if (threshold === 0) return;
+    if (nowMs - this.lastGatewayTrafficWarnAt < TRAFFIC_WARN_COOLDOWN_MS) return;
+
+    const snapshot = this.buildTrafficStatus(nowMs);
+    if (snapshot.realtime_events.rate_10s < threshold) {
+      return;
+    }
+
+    this.lastGatewayTrafficWarnAt = nowMs;
+    console.warn({
+      event: "gatewayhub.incoming_traffic_threshold_exceeded",
+      gatewayId: this.gatewayId,
+      vpsId: this.vpsId,
+      incomingRate10s: snapshot.realtime_events.rate_10s,
+      incomingEvents10s: snapshot.realtime_events.last_10s_count,
+      incomingEvents1m: snapshot.realtime_events.last_minute_count,
+      gatewayFrames10s: snapshot.gateway_frames.last_10s_count,
+      browserMessages10s: snapshot.browser_messages.last_10s_count,
+      browserAcks10s: snapshot.browser_acks.last_10s_count,
+      fetchRequests10s: snapshot.fetch_requests.last_10s_count,
+      hotSessions: snapshot.hot_sessions
+        .slice(0, 3)
+        .map((session) => ({
+          sessionId: session.session_id,
+          runawayRate10s: session.runaway_signal.rate_10s,
+          gatewayFrames10s: session.gateway_frames.last_10s_count,
+          browserAcks10s: session.browser_acks.last_10s_count,
+        })),
+    });
+  }
+
+  private maybeWarnSessionTraffic(sessionId: string, nowMs: number): void {
+    const traffic = this.sessionTraffic.get(sessionId);
+    if (!traffic) return;
+    if (nowMs - traffic.lastWarnAt < TRAFFIC_WARN_COOLDOWN_MS) return;
+
+    const runawayThreshold = parseRateThreshold(
+      this.env.GATEWAY_HUB_SESSION_RUNAWAY_RATE_WARN_PER_SEC ??
+        this.env.GATEWAY_HUB_SESSION_MESSAGE_RATE_WARN_PER_SEC,
+      DEFAULT_SESSION_RUNAWAY_RATE_WARN_PER_SEC,
+    );
+    const ackThreshold = parseRateThreshold(
+      this.env.GATEWAY_HUB_SESSION_ACK_RATE_WARN_PER_SEC,
+      DEFAULT_SESSION_ACK_RATE_WARN_PER_SEC,
+    );
+
+    const snapshot = traffic.snapshot(sessionId, this.subscribers.get(sessionId)?.size ?? 0, nowMs);
+    const exceedsRunawayThreshold =
+      runawayThreshold > 0 && snapshot.runaway_signal.rate_10s >= runawayThreshold;
+    const exceedsAckThreshold =
+      ackThreshold > 0 && snapshot.browser_acks.rate_10s >= ackThreshold;
+
+    if (!exceedsRunawayThreshold && !exceedsAckThreshold) {
+      return;
+    }
+
+    traffic.lastWarnAt = nowMs;
+    console.warn({
+      event: "gatewayhub.session_traffic_threshold_exceeded",
+      gatewayId: this.gatewayId,
+      vpsId: this.vpsId,
+      sessionId,
+      runawayRate10s: snapshot.runaway_signal.rate_10s,
+      incomingRate10s: snapshot.incoming_events.rate_10s,
+      gatewayFrames10s: snapshot.gateway_frames.last_10s_count,
+      gatewayFramesBytes10s: snapshot.gateway_frames.last_10s_bytes,
+      browserMessages10s: snapshot.browser_messages.last_10s_count,
+      browserAcks10s: snapshot.browser_acks.last_10s_count,
+      browserAckBytes10s: snapshot.browser_acks.last_10s_bytes,
+      gatewayFrames1m: snapshot.gateway_frames.last_minute_count,
+      browserAcks1m: snapshot.browser_acks.last_minute_count,
+      activeSubscribers: snapshot.active_subscribers,
+    });
+  }
+
+  private byteLength(data: string): number {
+    // Message payloads are overwhelmingly ASCII/JSON. `length` is close enough for
+    // traffic monitoring and avoids allocating a Uint8Array on every text message.
+    return data.length;
   }
 
   private restoreHibernatedSockets(): void {
@@ -1096,6 +1417,50 @@ export class GatewayHub {
 // ---------------------------------------------------------------------------
 // Utility functions
 // ---------------------------------------------------------------------------
+
+function getSessionId(msg: GatewayEvent): string | null {
+  const sessionId = (msg as { session_id?: unknown }).session_id;
+  return typeof sessionId === "string" && sessionId.length > 0 ? sessionId : null;
+}
+
+function combineTrafficSnapshots(snapshots: TrafficCounterSnapshot[]): TrafficCounterSnapshot {
+  const combined = {
+    total_count: 0,
+    total_bytes: 0,
+    last_10s_count: 0,
+    last_10s_bytes: 0,
+    last_minute_count: 0,
+    last_minute_bytes: 0,
+  };
+
+  for (const snapshot of snapshots) {
+    combined.total_count += snapshot.total_count;
+    combined.total_bytes += snapshot.total_bytes;
+    combined.last_10s_count += snapshot.last_10s_count;
+    combined.last_10s_bytes += snapshot.last_10s_bytes;
+    combined.last_minute_count += snapshot.last_minute_count;
+    combined.last_minute_bytes += snapshot.last_minute_bytes;
+  }
+
+  return {
+    ...combined,
+    rate_10s: roundRate(combined.last_10s_count / (TRAFFIC_SHORT_WINDOW_MS / 1000)),
+    rate_60s: roundRate(combined.last_minute_count / (TRAFFIC_LONG_WINDOW_MS / 1000)),
+  };
+}
+
+function parseRateThreshold(raw: string | undefined, fallback: number): number {
+  if (!raw) return fallback;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return fallback;
+  }
+  return parsed;
+}
+
+function roundRate(value: number): number {
+  return Math.round(value * 10) / 10;
+}
 
 function safeSend(ws: WebSocket, data: string): void {
   if (ws.readyState !== WebSocket.OPEN) return;

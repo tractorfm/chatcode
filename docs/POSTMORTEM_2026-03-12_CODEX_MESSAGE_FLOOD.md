@@ -102,7 +102,7 @@ Release:
 - the staging droplet was upgraded to the fixed gateway build during investigation
 - the pre-existing active Codex session did not survive the manual service restart used for deployment
 - the reproduced validation session was cleaned up after confirmation
-- a separate web-only fit fix was prepared to address right-edge line cropping in the browser terminal
+- a separate web-only fix was prepared to address right-edge line cropping in the browser terminal
 
 ## What We Propose Next
 
@@ -157,7 +157,7 @@ Release:
 - gateway adaptive polling during redraw suppression: done
 - hardened gateway stack promoted as default install release: done (`v0.1.0`)
 - browser terminal fit bug: still open separately
-- per-session/per-gateway message-rate metrics: left for later
-- rate-based alerts / Cloudflare usage thresholds: left for later
-- server-side relay budgeting / mute behavior in GatewayHub: left for later
+- per-session/per-gateway message-rate metrics: done in control-plane (`GatewayHub` rolling counters + `/status`)
+- rate-based alerts / Cloudflare usage thresholds: initial defaults + guidance doc landed (`docs/GATEWAY_HUB_TRAFFIC_ALERTING.md`)
+- server-side relay budgeting / mute behavior in GatewayHub: evaluated, not implemented yet
 - snapshot-only degraded mode for extreme redraw sessions: left for later

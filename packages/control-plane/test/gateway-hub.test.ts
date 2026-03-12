@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { GatewayHub } from "../src/durables/GatewayHub";
+import { encodeTerminalFrame } from "@chatcode/protocol";
 
 const mocks = vi.hoisted(() => ({
   updateGatewayConnected: vi.fn(async () => {}),
@@ -27,6 +28,7 @@ afterEach(() => {
 function makeHub(
   vpsId: string | null = "vps-1",
   runningSessions: Array<{ id: string; status: string }> = [],
+  envOverrides: Record<string, unknown> = {},
 ): GatewayHub {
   const prepare = vi.fn((sql: string) => ({
     bind: vi.fn(() => ({
@@ -45,6 +47,7 @@ function makeHub(
     JWT_SECRET: "jwt-secret",
     GATEWAY_TOKEN_SALT: "gateway-salt",
     DO_TOKEN_KEK: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+    ...envOverrides,
   };
 
   const hub = new GatewayHub({} as DurableObjectState, env);
@@ -57,6 +60,19 @@ function makeSocket(send = vi.fn(), readyState = WebSocket.OPEN): WebSocket {
     readyState,
     send,
     close: vi.fn(),
+  } as unknown as WebSocket;
+}
+
+function makeAttachedSocket(
+  attachment: Record<string, unknown>,
+  send = vi.fn(),
+  readyState = WebSocket.OPEN,
+): WebSocket {
+  return {
+    readyState,
+    send,
+    close: vi.fn(),
+    deserializeAttachment: vi.fn(() => attachment),
   } as unknown as WebSocket;
 }
 
@@ -394,6 +410,230 @@ describe("GatewayHub", () => {
     expect(
       (hub as unknown as { browserAckWaiters: Map<string, unknown> }).browserAckWaiters.size,
     ).toBe(0);
+  });
+
+  it("reports rolling GatewayHub traffic counters in status", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-12T10:00:00.000Z"));
+
+    const hub = makeHub();
+    const gatewayWs = makeAttachedSocket({ role: "gateway", gatewayId: "gw-1" });
+    const browserWs = makeAttachedSocket({ role: "browser", sessionId: "ses-1" });
+
+    hub.webSocketMessage(
+      gatewayWs,
+      encodeTerminalFrame("ses-1", 1n, new Uint8Array([1, 2, 3, 4])).buffer,
+    );
+    hub.webSocketMessage(
+      browserWs,
+      JSON.stringify({
+        type: "session.ack",
+        schema_version: "1",
+        request_id: "req-ack-1",
+        session_id: "ses-1",
+        seq: 1,
+      }),
+    );
+
+    const response = await hub.fetch(new Request("https://example.test/status"));
+    const body = await response.json<{
+      traffic: {
+        gateway_frames: { total_count: number; last_minute_count: number };
+        browser_acks: { total_count: number; last_minute_count: number };
+        realtime_events: { total_count: number };
+        incoming_events: { total_count: number };
+        hot_sessions: Array<{
+          session_id: string;
+          gateway_frames: { total_count: number };
+          browser_acks: { total_count: number };
+          runaway_signal: { total_count: number };
+        }>;
+      };
+    }>();
+
+    expect(body.traffic.gateway_frames.total_count).toBe(1);
+    expect(body.traffic.gateway_frames.last_minute_count).toBe(1);
+    expect(body.traffic.browser_acks.total_count).toBe(1);
+    expect(body.traffic.browser_acks.last_minute_count).toBe(1);
+    expect(body.traffic.realtime_events.total_count).toBe(2);
+    expect(body.traffic.incoming_events.total_count).toBe(3);
+    expect(body.traffic.hot_sessions).toHaveLength(1);
+    expect(body.traffic.hot_sessions[0]).toMatchObject({
+      session_id: "ses-1",
+      gateway_frames: { total_count: 1 },
+      browser_acks: { total_count: 1 },
+      runaway_signal: { total_count: 2 },
+    });
+
+    vi.useRealTimers();
+  });
+
+  it("logs a warning when a session crosses the runaway traffic threshold", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-12T10:00:00.000Z"));
+
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const hub = makeHub("vps-1", [], {
+      GATEWAY_HUB_GATEWAY_EVENT_RATE_WARN_PER_SEC: "999",
+      GATEWAY_HUB_SESSION_RUNAWAY_RATE_WARN_PER_SEC: "0.1",
+      GATEWAY_HUB_SESSION_ACK_RATE_WARN_PER_SEC: "999",
+    });
+    const browserWs = makeAttachedSocket({ role: "browser", sessionId: "ses-1" });
+
+    hub.webSocketMessage(
+      browserWs,
+      JSON.stringify({
+        type: "session.ack",
+        schema_version: "1",
+        request_id: "req-ack-1",
+        session_id: "ses-1",
+        seq: 1,
+      }),
+    );
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: "gatewayhub.session_traffic_threshold_exceeded",
+        sessionId: "ses-1",
+        browserAcks10s: 1,
+      }),
+    );
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+
+    warnSpy.mockRestore();
+    vi.useRealTimers();
+  });
+
+  it("suppresses duplicate runaway warnings during the cooldown window", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-12T10:00:00.000Z"));
+
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const hub = makeHub("vps-1", [], {
+      GATEWAY_HUB_GATEWAY_EVENT_RATE_WARN_PER_SEC: "999",
+      GATEWAY_HUB_SESSION_RUNAWAY_RATE_WARN_PER_SEC: "0.1",
+      GATEWAY_HUB_SESSION_ACK_RATE_WARN_PER_SEC: "999",
+    });
+    const browserWs = makeAttachedSocket({ role: "browser", sessionId: "ses-1" });
+
+    const payload = JSON.stringify({
+      type: "session.ack",
+      schema_version: "1",
+      request_id: "req-ack-1",
+      session_id: "ses-1",
+      seq: 1,
+    });
+
+    hub.webSocketMessage(browserWs, payload);
+    hub.webSocketMessage(browserWs, payload);
+
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+
+    warnSpy.mockRestore();
+    vi.useRealTimers();
+  });
+
+  it("disables runaway warnings when the threshold is set to zero", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-12T10:00:00.000Z"));
+
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const hub = makeHub("vps-1", [], {
+      GATEWAY_HUB_GATEWAY_EVENT_RATE_WARN_PER_SEC: "999",
+      GATEWAY_HUB_SESSION_RUNAWAY_RATE_WARN_PER_SEC: "0",
+      GATEWAY_HUB_SESSION_ACK_RATE_WARN_PER_SEC: "999",
+    });
+    const browserWs = makeAttachedSocket({ role: "browser", sessionId: "ses-1" });
+
+    hub.webSocketMessage(
+      browserWs,
+      JSON.stringify({
+        type: "session.ack",
+        schema_version: "1",
+        request_id: "req-ack-1",
+        session_id: "ses-1",
+        seq: 1,
+      }),
+    );
+
+    expect(warnSpy).not.toHaveBeenCalled();
+
+    warnSpy.mockRestore();
+    vi.useRealTimers();
+  });
+
+  it("prunes stale session traffic after the retention window", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-12T10:00:00.000Z"));
+
+    const hub = makeHub();
+    const browserWs = makeAttachedSocket({ role: "browser", sessionId: "ses-stale" });
+
+    hub.webSocketMessage(
+      browserWs,
+      JSON.stringify({
+        type: "session.ack",
+        schema_version: "1",
+        request_id: "req-ack-1",
+        session_id: "ses-stale",
+        seq: 1,
+      }),
+    );
+
+    vi.advanceTimersByTime(30 * 60_000 + 1);
+
+    const response = await hub.fetch(new Request("https://example.test/status"));
+    const body = await response.json<{ traffic: { hot_sessions: Array<{ session_id: string }> } }>();
+
+    expect(body.traffic.hot_sessions).toHaveLength(0);
+
+    vi.useRealTimers();
+  });
+
+  it("sorts hot sessions by runaway signal strength", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-12T10:00:00.000Z"));
+
+    const hub = makeHub();
+    const gatewayWs = makeAttachedSocket({ role: "gateway", gatewayId: "gw-1" });
+    const browserWs1 = makeAttachedSocket({ role: "browser", sessionId: "ses-1" });
+    const browserWs2 = makeAttachedSocket({ role: "browser", sessionId: "ses-2" });
+
+    hub.webSocketMessage(
+      browserWs1,
+      JSON.stringify({
+        type: "session.ack",
+        schema_version: "1",
+        request_id: "req-ack-1",
+        session_id: "ses-1",
+        seq: 1,
+      }),
+    );
+
+    hub.webSocketMessage(
+      gatewayWs,
+      encodeTerminalFrame("ses-2", 1n, new Uint8Array([1, 2, 3])).buffer,
+    );
+    hub.webSocketMessage(
+      browserWs2,
+      JSON.stringify({
+        type: "session.ack",
+        schema_version: "1",
+        request_id: "req-ack-2",
+        session_id: "ses-2",
+        seq: 2,
+      }),
+    );
+
+    const response = await hub.fetch(new Request("https://example.test/status"));
+    const body = await response.json<{ traffic: { hot_sessions: Array<{ session_id: string }> } }>();
+
+    expect(body.traffic.hot_sessions.map((session) => session.session_id)).toEqual([
+      "ses-2",
+      "ses-1",
+    ]);
+
+    vi.useRealTimers();
   });
 
   it("reconciles active sessions from gateway.health", async () => {

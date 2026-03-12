@@ -51,8 +51,13 @@ STAGING_PAGES_PREVIEW_SUFFIX = "chatcode-app-staging.pages.dev"
 DEFAULT_DROPLET_REGION = "ams3"
 DEFAULT_DROPLET_SIZE = "s-2vcpu-2gb"
 DEFAULT_DROPLET_IMAGE = "ubuntu-24-04-x64"
-GATEWAY_VERSION = "v0.1.2"
+GATEWAY_VERSION = "v0.1.3"
 GATEWAY_RELEASE_BASE_URL = "https://releases.chatcode.dev/gateway"
+# Sustained gateway websocket inbound rate (gateway text/binary + browser text; excludes HTTP fetches).
+GATEWAY_HUB_GATEWAY_EVENT_RATE_WARN_PER_SEC = "400"
+# Sustained per-session runaway signal (gateway frames + browser acks).
+GATEWAY_HUB_SESSION_RUNAWAY_RATE_WARN_PER_SEC = "200"
+GATEWAY_HUB_SESSION_ACK_RATE_WARN_PER_SEC = "120"
 AUTH_MODE = "dev"
 # Optional hardening for AUTH_MODE=dev:
 # set with `wrangler secret put DEV_AUTH_SECRET --env <env>`
@@ -103,6 +108,11 @@ STAGING_PAGES_PREVIEW_SUFFIX = "chatcode-app-staging.pages.dev"
 DEFAULT_DROPLET_REGION = "ams3"
 DEFAULT_DROPLET_SIZE = "s-2vcpu-2gb"
 DEFAULT_DROPLET_IMAGE = "ubuntu-24-04-x64"
-GATEWAY_VERSION = "v0.1.2"
+GATEWAY_VERSION = "v0.1.3"
 GATEWAY_RELEASE_BASE_URL = "https://releases.chatcode.dev/gateway"
+# Sustained gateway websocket inbound rate (gateway text/binary + browser text; excludes HTTP fetches).
+GATEWAY_HUB_GATEWAY_EVENT_RATE_WARN_PER_SEC = "400"
+# Sustained per-session runaway signal (gateway frames + browser acks).
+GATEWAY_HUB_SESSION_RUNAWAY_RATE_WARN_PER_SEC = "200"
+GATEWAY_HUB_SESSION_ACK_RATE_WARN_PER_SEC = "120"
 AUTH_MODE = "dev"

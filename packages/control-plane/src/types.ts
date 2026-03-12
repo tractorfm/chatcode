@@ -24,6 +24,10 @@ export interface Env {
   DEFAULT_DROPLET_IMAGE?: string;
   GATEWAY_VERSION?: string;
   GATEWAY_RELEASE_BASE_URL?: string;
+  GATEWAY_HUB_GATEWAY_EVENT_RATE_WARN_PER_SEC?: string;
+  GATEWAY_HUB_SESSION_RUNAWAY_RATE_WARN_PER_SEC?: string;
+  GATEWAY_HUB_SESSION_MESSAGE_RATE_WARN_PER_SEC?: string; // deprecated compatibility alias
+  GATEWAY_HUB_SESSION_ACK_RATE_WARN_PER_SEC?: string;
   AUTH_MODE?: string; // "dev" for local dev only
   DEV_AUTH_SECRET?: string; // optional shared secret for dev header auth
 
