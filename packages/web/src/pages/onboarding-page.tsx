@@ -1,6 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
 import { ArrowLeft, Cloud, Server, Check, Loader2, Copy } from "lucide-react";
-import { createManualVPS, createVPS, listVPS, regenerateManualVPSCommand, type ManualVPSResponse } from "@/lib/api";
+import {
+  createManualVPS,
+  createVPS,
+  getDODropletOptions,
+  listVPS,
+  regenerateManualVPSCommand,
+  type DODropletOptions,
+  type ManualVPSResponse,
+} from "@/lib/api";
 
 interface OnboardingPageProps {
   onBack: () => void;
@@ -10,26 +18,14 @@ interface OnboardingPageProps {
 
 type Step = "choose" | "do-setup" | "byo-setup" | "creating";
 
-const REGIONS = [
-  { value: "nyc1", label: "New York 1" },
-  { value: "sfo3", label: "San Francisco 3" },
-  { value: "ams3", label: "Amsterdam 3" },
-  { value: "sgp1", label: "Singapore 1" },
-  { value: "lon1", label: "London 1" },
-  { value: "fra1", label: "Frankfurt 1" },
-];
-
-const SIZES = [
-  { value: "s-1vcpu-512mb-10gb", label: "Micro", desc: "1 vCPU, 512MB, 10GB", cost: "~$4/mo" },
-  { value: "s-1vcpu-1gb", label: "Small", desc: "1 vCPU, 1GB, 25GB", cost: "~$6/mo" },
-  { value: "s-2vcpu-2gb", label: "Medium", desc: "2 vCPU, 2GB, 50GB", cost: "~$12/mo" },
-  { value: "s-2vcpu-4gb", label: "Large", desc: "2 vCPU, 4GB, 80GB", cost: "~$24/mo" },
-];
-
 export function OnboardingPage({ onBack, onComplete, manualVpsId = null }: OnboardingPageProps) {
   const [step, setStep] = useState<Step>("choose");
-  const [region, setRegion] = useState("nyc1");
-  const [size, setSize] = useState("s-1vcpu-512mb-10gb");
+  const [doOptions, setDoOptions] = useState<DODropletOptions | null>(null);
+  const [doOptionsLoading, setDoOptionsLoading] = useState(false);
+  const [planFamily, setPlanFamily] = useState<"regular" | "premium_intel">("regular");
+  const [region, setRegion] = useState("ams3");
+  const [size, setSize] = useState("s-2vcpu-2gb");
+  const [image, setImage] = useState("ubuntu-24-04-x64");
   const [error, setError] = useState("");
   const [doLabel, setDoLabel] = useState("");
   const [byoLabel, setByoLabel] = useState("");
@@ -46,6 +42,7 @@ export function OnboardingPage({ onBack, onComplete, manualVpsId = null }: Onboa
       const result = await createVPS({
         region,
         size,
+        image,
         label: doLabel || `chatcode-${region}`,
       });
       if (result.vps.id) {
@@ -65,7 +62,7 @@ export function OnboardingPage({ onBack, onComplete, manualVpsId = null }: Onboa
       setError(msg);
       setStep("do-setup");
     }
-  }, [region, size, doLabel, onComplete]);
+  }, [region, size, image, doLabel, onComplete]);
 
   const handlePrepareManualSetup = useCallback(async () => {
     setManualLoading(true);
@@ -129,6 +126,52 @@ export function OnboardingPage({ onBack, onComplete, manualVpsId = null }: Onboa
     if (!manualVpsId) return;
     void loadExistingManualSetup();
   }, [loadExistingManualSetup, manualVpsId]);
+
+  useEffect(() => {
+    if (step !== "do-setup" || doOptionsLoading || doOptions) return;
+    let cancelled = false;
+    setDoOptionsLoading(true);
+    void getDODropletOptions()
+      .then((options) => {
+        if (cancelled) return;
+        setDoOptions(options);
+        setPlanFamily(options.defaults.plan_family);
+        setRegion(options.defaults.region);
+        setSize(options.defaults.size);
+        setImage(options.defaults.image);
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        const msg = err instanceof Error ? err.message : "Failed to load current DigitalOcean options";
+        setError(msg);
+      })
+      .finally(() => {
+        if (!cancelled) setDoOptionsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [step, doOptions, doOptionsLoading]);
+
+  useEffect(() => {
+    if (!doOptions) return;
+    const nextSizes = doOptions.plans[planFamily].filter((option) => option.regions.includes(region));
+    if (nextSizes.length === 0) {
+      const fallbackSize = doOptions.plans[planFamily][0]?.slug;
+      if (fallbackSize && fallbackSize !== size) setSize(fallbackSize);
+      return;
+    }
+    if (!nextSizes.some((option) => option.slug === size)) {
+      setSize(nextSizes[0]?.slug ?? size);
+    }
+  }, [doOptions, planFamily, region, size]);
+
+  const visibleSizes = doOptions
+    ? (() => {
+        const filtered = doOptions.plans[planFamily].filter((option) => option.regions.includes(region));
+        return filtered.length > 0 ? filtered : doOptions.plans[planFamily];
+      })()
+    : [];
 
   useEffect(() => {
     const vpsId = manualSetup?.vps?.id;
@@ -223,59 +266,131 @@ export function OnboardingPage({ onBack, onComplete, manualVpsId = null }: Onboa
                 />
               </div>
 
-              {/* Region */}
-              <div className="space-y-1.5">
-                <label className="text-sm font-medium text-foreground">
-                  Region
-                </label>
-                <div className="grid grid-cols-2 gap-2">
-                  {REGIONS.map((r) => (
-                    <button
-                      key={r.value}
-                      onClick={() => setRegion(r.value)}
-                      className={`p-2 rounded-md border text-sm text-left transition-colors ${
-                        region === r.value
-                          ? "border-primary bg-primary/5 text-primary"
-                          : "border-border hover:border-primary/50 text-foreground"
-                      }`}
-                    >
-                      {r.label}
-                    </button>
-                  ))}
+              {doOptionsLoading && (
+                <div className="rounded-md border border-border bg-background px-3 py-2 text-sm text-muted-foreground">
+                  Loading current DigitalOcean regions, sizes, and Linux images...
                 </div>
-              </div>
+              )}
 
-              {/* Size */}
-              <div className="space-y-1.5">
-                <label className="text-sm font-medium text-foreground">
-                  Size
-                </label>
-                <div className="space-y-2">
-                  {SIZES.map((s) => (
-                    <button
-                      key={s.value}
-                      onClick={() => setSize(s.value)}
-                      className={`w-full p-3 rounded-md border text-left transition-colors ${
-                        size === s.value
-                          ? "border-primary bg-primary/5"
-                          : "border-border hover:border-primary/50"
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm font-medium text-foreground">
-                          {s.label}
-                        </span>
-                        <span className="text-xs text-muted-foreground">
-                          {s.cost}
-                        </span>
-                      </div>
-                      <span className="text-xs text-muted-foreground">
-                        {s.desc}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </div>
+              {doOptions && (
+                <>
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium text-foreground">
+                      Region
+                    </label>
+                    <div className="grid gap-3 md:grid-cols-3">
+                      {doOptions.regions.map((column) => (
+                        <div key={column.id} className="space-y-2">
+                          <div className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                            {column.label}
+                          </div>
+                          <div className="space-y-2">
+                            {column.options.map((option) => (
+                              <button
+                                key={option.slug}
+                                type="button"
+                                disabled={!option.available}
+                                onClick={() => setRegion(option.slug)}
+                                className={`w-full rounded-md border px-3 py-2 text-left text-sm transition-colors ${
+                                  region === option.slug
+                                    ? "border-primary bg-primary/5 text-primary"
+                                    : "border-border text-foreground hover:border-primary/50"
+                                } disabled:cursor-not-allowed disabled:opacity-50`}
+                              >
+                                {option.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium text-foreground">
+                      Droplet Type
+                    </label>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setPlanFamily("regular")}
+                        className={`rounded-md border px-3 py-2 text-sm transition-colors ${
+                          planFamily === "regular"
+                            ? "border-primary bg-primary/5 text-primary"
+                            : "border-border text-foreground hover:border-primary/50"
+                        }`}
+                      >
+                        Regular
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPlanFamily("premium_intel")}
+                        className={`rounded-md border px-3 py-2 text-sm transition-colors ${
+                          planFamily === "premium_intel"
+                            ? "border-primary bg-primary/5 text-primary"
+                            : "border-border text-foreground hover:border-primary/50"
+                        }`}
+                      >
+                        Premium (Intel)
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium text-foreground">
+                      Specs
+                    </label>
+                    <div className="grid gap-2 md:grid-cols-2">
+                      {visibleSizes.map((option) => (
+                        <button
+                          key={option.slug}
+                          type="button"
+                          onClick={() => setSize(option.slug)}
+                          className={`rounded-md border p-3 text-left transition-colors ${
+                            size === option.slug
+                              ? "border-primary bg-primary/5"
+                              : "border-border hover:border-primary/50"
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-4">
+                            <span className="text-sm font-medium text-foreground">
+                              {option.label}
+                            </span>
+                            <span className="text-xs text-muted-foreground">
+                              ${option.price_monthly}/mo
+                            </span>
+                          </div>
+                          <div className="mt-1 text-xs text-muted-foreground">
+                            {option.specs}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium text-foreground">
+                      Linux
+                    </label>
+                    <div className="grid gap-2 md:grid-cols-2">
+                      {doOptions.images.map((option) => (
+                        <button
+                          key={option.slug}
+                          type="button"
+                          onClick={() => setImage(option.slug)}
+                          className={`rounded-md border px-3 py-2 text-left text-sm transition-colors ${
+                            image === option.slug
+                              ? "border-primary bg-primary/5 text-primary"
+                              : "border-border text-foreground hover:border-primary/50"
+                          }`}
+                        >
+                          {option.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
 
             {error && (
@@ -284,7 +399,8 @@ export function OnboardingPage({ onBack, onComplete, manualVpsId = null }: Onboa
 
             <button
               onClick={handleCreateDO}
-              className="w-full inline-flex items-center justify-center gap-2 rounded-md bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
+              disabled={doOptionsLoading || visibleSizes.length === 0}
+              className="w-full inline-flex items-center justify-center gap-2 rounded-md bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-60"
             >
               <Check className="h-4 w-4" />
               Create Droplet
@@ -294,6 +410,11 @@ export function OnboardingPage({ onBack, onComplete, manualVpsId = null }: Onboa
               Requires a connected DigitalOcean account.
               Compute billing starts immediately.
             </p>
+            {doOptions && !doOptions.live && (
+              <p className="text-xs text-muted-foreground text-center">
+                Showing fallback DigitalOcean defaults. Live catalog data is loaded when your DO account is connected.
+              </p>
+            )}
           </div>
         )}
 

@@ -24,6 +24,34 @@ export interface DODroplet {
   size_slug: string;
 }
 
+export interface DORegion {
+  slug: string;
+  name: string;
+  available: boolean;
+}
+
+export interface DOSize {
+  slug: string;
+  memory: number;
+  vcpus: number;
+  disk: number;
+  transfer: number;
+  price_monthly: number;
+  available: boolean;
+  regions: string[];
+  description?: string;
+}
+
+export interface DOImage {
+  id: number;
+  slug: string | null;
+  name: string;
+  distribution: string;
+  type: string;
+  public: boolean;
+  created_at?: string;
+}
+
 export interface CreateDropletParams {
   name: string;
   region: string;
@@ -149,6 +177,36 @@ export async function createDroplet(
   }
   const data = (await resp.json()) as { droplet: DODroplet };
   return data.droplet;
+}
+
+export async function listRegions(token: string): Promise<DORegion[]> {
+  const resp = await doFetch("/regions?per_page=200", token);
+  if (!resp.ok) {
+    const text = await resp.text();
+    throw new Error(`DO list regions failed: ${resp.status} ${text}`);
+  }
+  const data = (await resp.json()) as { regions: DORegion[] };
+  return data.regions;
+}
+
+export async function listSizes(token: string): Promise<DOSize[]> {
+  const resp = await doFetch("/sizes?per_page=200", token);
+  if (!resp.ok) {
+    const text = await resp.text();
+    throw new Error(`DO list sizes failed: ${resp.status} ${text}`);
+  }
+  const data = (await resp.json()) as { sizes: DOSize[] };
+  return data.sizes;
+}
+
+export async function listDistributionImages(token: string): Promise<DOImage[]> {
+  const resp = await doFetch("/images?type=distribution&per_page=200", token);
+  if (!resp.ok) {
+    const text = await resp.text();
+    throw new Error(`DO list images failed: ${resp.status} ${text}`);
+  }
+  const data = (await resp.json()) as { images: DOImage[] };
+  return data.images;
 }
 
 export async function getDroplet(

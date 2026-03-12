@@ -7,6 +7,7 @@ import {
   handleVPSManualCommand,
   handleVPSUpdate,
   handleWorkspaceFolderList,
+  handleVPSOptions,
 } from "../src/routes/vps";
 
 const mocks = vi.hoisted(() => ({
@@ -26,6 +27,9 @@ const mocks = vi.hoisted(() => ({
   deleteDroplet: vi.fn(),
   powerOffDroplet: vi.fn(),
   powerOnDroplet: vi.fn(),
+  listRegions: vi.fn(async () => []),
+  listSizes: vi.fn(async () => []),
+  listDistributionImages: vi.fn(async () => []),
   hashGatewayToken: vi.fn(async () => "hash-token"),
   newVPSId: vi.fn(() => "vps-test-1"),
   newGatewayId: vi.fn(() => "gw-test-1"),
@@ -52,6 +56,9 @@ vi.mock("../src/lib/do-api.js", () => ({
   deleteDroplet: mocks.deleteDroplet,
   powerOffDroplet: mocks.powerOffDroplet,
   powerOnDroplet: mocks.powerOnDroplet,
+  listRegions: mocks.listRegions,
+  listSizes: mocks.listSizes,
+  listDistributionImages: mocks.listDistributionImages,
 }));
 
 vi.mock("../src/lib/auth.js", () => ({
@@ -129,6 +136,9 @@ describe("routes/vps", () => {
     });
     mocks.createVPS.mockResolvedValue(undefined);
     mocks.createGateway.mockResolvedValue(undefined);
+    mocks.listRegions.mockResolvedValue([]);
+    mocks.listSizes.mockResolvedValue([]);
+    mocks.listDistributionImages.mockResolvedValue([]);
   });
 
   it("returns 502 when droplet provisioning fails", async () => {
@@ -204,6 +214,74 @@ describe("routes/vps", () => {
 
     expect(res.status).toBe(500);
     expect(mocks.deleteDroplet).toHaveBeenCalledWith("do-access-token", 777);
+  });
+
+  it("returns live DigitalOcean options grouped for onboarding", async () => {
+    const { env } = makeEnv();
+    mocks.listRegions.mockResolvedValue([
+      { slug: "nyc3", name: "New York 3", available: true },
+      { slug: "sfo3", name: "San Francisco 3", available: true },
+      { slug: "tor1", name: "Toronto 1", available: true },
+      { slug: "ams3", name: "Amsterdam 3", available: true },
+      { slug: "fra1", name: "Frankfurt 1", available: true },
+      { slug: "lon1", name: "London 1", available: true },
+      { slug: "blr1", name: "Bangalore 1", available: true },
+      { slug: "sgp1", name: "Singapore 1", available: true },
+      { slug: "syd1", name: "Sydney 1", available: true },
+    ]);
+    mocks.listSizes.mockResolvedValue([
+      { slug: "s-1vcpu-1gb", memory: 1024, vcpus: 1, disk: 25, transfer: 1, price_monthly: 6, available: true, regions: ["ams3", "nyc3"] },
+      { slug: "s-1vcpu-2gb", memory: 2048, vcpus: 1, disk: 50, transfer: 2, price_monthly: 12, available: true, regions: ["ams3", "nyc3"] },
+      { slug: "s-2vcpu-2gb", memory: 2048, vcpus: 2, disk: 60, transfer: 3, price_monthly: 18, available: true, regions: ["ams3", "nyc3"] },
+      { slug: "s-2vcpu-4gb", memory: 4096, vcpus: 2, disk: 80, transfer: 4, price_monthly: 24, available: true, regions: ["ams3", "nyc3"] },
+      { slug: "s-4vcpu-8gb", memory: 8192, vcpus: 4, disk: 160, transfer: 5, price_monthly: 48, available: true, regions: ["ams3", "nyc3"] },
+      { slug: "s-8vcpu-16gb", memory: 16384, vcpus: 8, disk: 320, transfer: 6, price_monthly: 96, available: true, regions: ["ams3", "nyc3"] },
+      { slug: "s-1vcpu-1gb-intel", memory: 1024, vcpus: 1, disk: 35, transfer: 1, price_monthly: 8, available: true, regions: ["ams3", "nyc3"] },
+      { slug: "s-1vcpu-2gb-intel", memory: 2048, vcpus: 1, disk: 60, transfer: 2, price_monthly: 16, available: true, regions: ["ams3", "nyc3"] },
+      { slug: "s-2vcpu-2gb-intel", memory: 2048, vcpus: 2, disk: 70, transfer: 3, price_monthly: 24, available: true, regions: ["ams3", "nyc3"] },
+    ]);
+    mocks.listDistributionImages.mockResolvedValue([
+      { id: 1, slug: "ubuntu-24-04-x64", name: "24.04 (LTS) x64", distribution: "Ubuntu", type: "distribution", public: true, created_at: "2024-04-01T00:00:00Z" },
+      { id: 2, slug: "ubuntu-25-10-x64", name: "25.10 x64", distribution: "Ubuntu", type: "distribution", public: true, created_at: "2025-10-01T00:00:00Z" },
+      { id: 3, slug: "debian-13-x64", name: "13 x64", distribution: "Debian", type: "distribution", public: true, created_at: "2025-08-01T00:00:00Z" },
+    ]);
+
+    const res = await handleVPSOptions(
+      new Request("https://cp.example.test/vps/options"),
+      env,
+      { userId: "usr-1" },
+    );
+
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toMatchObject({
+      live: true,
+      regions: expect.arrayContaining([
+        expect.objectContaining({
+          label: "Americas",
+          options: expect.arrayContaining([
+            expect.objectContaining({ label: "New York", slug: "nyc3" }),
+          ]),
+        }),
+      ]),
+      plans: {
+        regular: expect.arrayContaining([
+          expect.objectContaining({ slug: "s-2vcpu-2gb", price_monthly: 18 }),
+        ]),
+        premium_intel: expect.arrayContaining([
+          expect.objectContaining({ slug: "s-1vcpu-2gb-intel", price_monthly: 16 }),
+        ]),
+      },
+      images: [
+        { slug: "ubuntu-24-04-x64", family: "ubuntu", label: "Ubuntu 24.04 LTS" },
+        { slug: "debian-13-x64", family: "debian", label: "Debian 13" },
+      ],
+      defaults: expect.objectContaining({
+        region: "ams3",
+        plan_family: "regular",
+        size: "s-2vcpu-2gb",
+        image: "ubuntu-24-04-x64",
+      }),
+    });
   });
 
   it("keeps D1 rows when cloud droplet delete fails", async () => {

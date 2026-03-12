@@ -27,6 +27,12 @@ import {
   deleteDroplet,
   powerOffDroplet,
   powerOnDroplet,
+  listRegions,
+  listSizes,
+  listDistributionImages,
+  type DORegion,
+  type DOSize,
+  type DOImage,
 } from "../lib/do-api.js";
 import { hashGatewayToken } from "../lib/auth.js";
 import { newVPSId, newGatewayId, randomHex } from "../lib/ids.js";
@@ -34,9 +40,78 @@ import { newVPSId, newGatewayId, randomHex } from "../lib/ids.js";
 const PROVISIONING_TIMEOUT_SEC = 600; // 10 minutes
 const DEFAULT_GATEWAY_VERSION = "v0.0.3";
 const DEFAULT_GATEWAY_RELEASE_BASE_URL = "https://releases.chatcode.dev/gateway";
-const DEFAULT_DROPLET_REGION = "nyc1";
-const DEFAULT_DROPLET_SIZE = "s-1vcpu-512mb-10gb";
+const DEFAULT_DROPLET_REGION = "ams3";
+const DEFAULT_DROPLET_SIZE = "s-2vcpu-2gb";
 const DEFAULT_DROPLET_IMAGE = "ubuntu-24-04-x64";
+
+type DORegionColumnId = "americas" | "europe" | "oceania";
+type DOPlanFamily = "regular" | "premium_intel";
+
+const REGION_COLUMNS: Array<{
+  id: DORegionColumnId;
+  label: string;
+  entries: Array<{ city: string; preferred: string[] }>;
+}> = [
+  {
+    id: "americas",
+    label: "Americas",
+    entries: [
+      { city: "New York", preferred: ["nyc3", "nyc2", "nyc1"] },
+      { city: "San Francisco", preferred: ["sfo3", "sfo2", "sfo1"] },
+      { city: "Toronto", preferred: ["tor1"] },
+    ],
+  },
+  {
+    id: "europe",
+    label: "Europe",
+    entries: [
+      { city: "Amsterdam", preferred: ["ams3", "ams2", "ams1"] },
+      { city: "Frankfurt", preferred: ["fra1"] },
+      { city: "London", preferred: ["lon1"] },
+    ],
+  },
+  {
+    id: "oceania",
+    label: "Oceania",
+    entries: [
+      { city: "Bangalore", preferred: ["blr1"] },
+      { city: "Singapore", preferred: ["sgp1"] },
+      { city: "Sydney", preferred: ["syd1"] },
+    ],
+  },
+];
+
+const FALLBACK_REGIONS: DORegion[] = [
+  { slug: "nyc3", name: "New York 3", available: true },
+  { slug: "sfo3", name: "San Francisco 3", available: true },
+  { slug: "tor1", name: "Toronto 1", available: true },
+  { slug: "ams3", name: "Amsterdam 3", available: true },
+  { slug: "fra1", name: "Frankfurt 1", available: true },
+  { slug: "lon1", name: "London 1", available: true },
+  { slug: "blr1", name: "Bangalore 1", available: true },
+  { slug: "sgp1", name: "Singapore 1", available: true },
+  { slug: "syd1", name: "Sydney 1", available: true },
+];
+
+const FALLBACK_SIZES: DOSize[] = [
+  { slug: "s-1vcpu-1gb", memory: 1024, vcpus: 1, disk: 25, transfer: 1, price_monthly: 6, available: true, regions: FALLBACK_REGIONS.map((r) => r.slug) },
+  { slug: "s-1vcpu-2gb", memory: 2048, vcpus: 1, disk: 50, transfer: 2, price_monthly: 12, available: true, regions: FALLBACK_REGIONS.map((r) => r.slug) },
+  { slug: "s-2vcpu-2gb", memory: 2048, vcpus: 2, disk: 60, transfer: 3, price_monthly: 18, available: true, regions: FALLBACK_REGIONS.map((r) => r.slug) },
+  { slug: "s-2vcpu-4gb", memory: 4096, vcpus: 2, disk: 80, transfer: 4, price_monthly: 24, available: true, regions: FALLBACK_REGIONS.map((r) => r.slug) },
+  { slug: "s-4vcpu-8gb", memory: 8192, vcpus: 4, disk: 160, transfer: 5, price_monthly: 48, available: true, regions: FALLBACK_REGIONS.map((r) => r.slug) },
+  { slug: "s-8vcpu-16gb", memory: 16384, vcpus: 8, disk: 320, transfer: 6, price_monthly: 96, available: true, regions: FALLBACK_REGIONS.map((r) => r.slug) },
+  { slug: "s-1vcpu-1gb-intel", memory: 1024, vcpus: 1, disk: 35, transfer: 1, price_monthly: 8, available: true, regions: FALLBACK_REGIONS.map((r) => r.slug) },
+  { slug: "s-1vcpu-2gb-intel", memory: 2048, vcpus: 1, disk: 60, transfer: 2, price_monthly: 16, available: true, regions: FALLBACK_REGIONS.map((r) => r.slug) },
+  { slug: "s-2vcpu-2gb-intel", memory: 2048, vcpus: 2, disk: 70, transfer: 3, price_monthly: 24, available: true, regions: FALLBACK_REGIONS.map((r) => r.slug) },
+  { slug: "s-2vcpu-4gb-intel", memory: 4096, vcpus: 2, disk: 90, transfer: 4, price_monthly: 32, available: true, regions: FALLBACK_REGIONS.map((r) => r.slug) },
+  { slug: "s-4vcpu-8gb-intel", memory: 8192, vcpus: 4, disk: 180, transfer: 5, price_monthly: 64, available: true, regions: FALLBACK_REGIONS.map((r) => r.slug) },
+  { slug: "s-8vcpu-16gb-intel", memory: 16384, vcpus: 8, disk: 360, transfer: 6, price_monthly: 128, available: true, regions: FALLBACK_REGIONS.map((r) => r.slug) },
+];
+
+const FALLBACK_IMAGES: DOImage[] = [
+  { id: 2404, slug: "ubuntu-24-04-x64", name: "24.04 (LTS) x64", distribution: "Ubuntu", type: "distribution", public: true },
+  { id: 13, slug: "debian-13-x64", name: "13 x64", distribution: "Debian", type: "distribution", public: true },
+];
 
 interface VPSResponse {
   id: string;
@@ -74,6 +149,86 @@ interface ManualVPSResponse {
 
 interface WorkspaceFoldersResponse {
   folders: string[];
+}
+
+interface DODropletRegionOption {
+  slug: string;
+  city: string;
+  label: string;
+  available: boolean;
+}
+
+interface DODropletRegionColumn {
+  id: DORegionColumnId;
+  label: string;
+  options: DODropletRegionOption[];
+}
+
+interface DODropletSizeOption {
+  slug: string;
+  label: string;
+  specs: string;
+  price_monthly: number;
+  regions: string[];
+}
+
+interface DODropletImageOption {
+  slug: string;
+  family: "ubuntu" | "debian";
+  label: string;
+}
+
+interface DODropletOptionsResponse {
+  live: boolean;
+  regions: DODropletRegionColumn[];
+  plans: Record<DOPlanFamily, DODropletSizeOption[]>;
+  images: DODropletImageOption[];
+  defaults: {
+    region: string;
+    plan_family: DOPlanFamily;
+    size: string;
+    image: string;
+  };
+}
+
+/**
+ * GET /vps/options – DigitalOcean provisioning options for the onboarding flow.
+ */
+export async function handleVPSOptions(
+  request: Request,
+  env: Env,
+  auth: AuthContext,
+): Promise<Response> {
+  const conn = await getDOConnection(env.DB, auth.userId);
+  let live = false;
+  let regions = FALLBACK_REGIONS;
+  let sizes = FALLBACK_SIZES;
+  let images = FALLBACK_IMAGES;
+
+  if (conn) {
+    try {
+      const accessToken = await getAccessToken(
+        env.DB,
+        auth.userId,
+        env.DO_TOKEN_KEK,
+        env.DO_CLIENT_ID,
+        env.DO_CLIENT_SECRET,
+      );
+      const [liveRegions, liveSizes, liveImages] = await Promise.all([
+        listRegions(accessToken),
+        listSizes(accessToken),
+        listDistributionImages(accessToken),
+      ]);
+      if (liveRegions.length > 0) regions = liveRegions;
+      if (liveSizes.length > 0) sizes = liveSizes;
+      if (liveImages.length > 0) images = liveImages;
+      live = true;
+    } catch (err) {
+      console.warn("vps options: failed to fetch live DigitalOcean options", err);
+    }
+  }
+
+  return jsonResponse(buildDODropletOptions(request, regions, sizes, images, live));
 }
 
 /**
@@ -616,6 +771,220 @@ export async function handleGatewayUnlink(
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+function buildDODropletOptions(
+  request: Request,
+  regions: DORegion[],
+  sizes: DOSize[],
+  images: DOImage[],
+  live: boolean,
+): DODropletOptionsResponse {
+  const regionColumns = REGION_COLUMNS.map((column) => ({
+    id: column.id,
+    label: column.label,
+    options: column.entries.map((entry) => {
+      const region = resolvePreferredRegion(regions, entry.preferred);
+      return {
+        slug: region?.slug ?? entry.preferred[0] ?? "ams3",
+        city: entry.city,
+        label: entry.city,
+        available: Boolean(region?.available ?? false),
+      };
+    }),
+  }));
+
+  const planOptions: Record<DOPlanFamily, DODropletSizeOption[]> = {
+    regular: buildPlanOptions(sizes, "regular"),
+    premium_intel: buildPlanOptions(sizes, "premium_intel"),
+  };
+
+  const imageOptions = buildImageOptions(images);
+  const defaultRegion = chooseDefaultRegion(request, regionColumns);
+  const defaultPlanFamily: DOPlanFamily = "regular";
+  const defaultSize = chooseDefaultSize(planOptions[defaultPlanFamily], defaultRegion);
+  const defaultImage =
+    imageOptions.find((image) => image.family === "ubuntu")?.slug ??
+    imageOptions[0]?.slug ??
+    DEFAULT_DROPLET_IMAGE;
+
+  return {
+    live,
+    regions: regionColumns,
+    plans: planOptions,
+    images: imageOptions,
+    defaults: {
+      region: defaultRegion,
+      plan_family: defaultPlanFamily,
+      size: defaultSize,
+      image: defaultImage,
+    },
+  };
+}
+
+function resolvePreferredRegion(
+  regions: DORegion[],
+  preferred: string[],
+): DORegion | null {
+  for (const slug of preferred) {
+    const match = regions.find((region) => region.slug === slug);
+    if (match) return match;
+  }
+  return null;
+}
+
+function buildPlanOptions(
+  sizes: DOSize[],
+  family: DOPlanFamily,
+): DODropletSizeOption[] {
+  const filtered = sizes
+    .filter((size) => size.available)
+    .filter((size) => isPlanFamily(size.slug, family))
+    .sort((a, b) => a.price_monthly - b.price_monthly || a.vcpus - b.vcpus || a.memory - b.memory)
+    .slice(0, 6);
+
+  return filtered.map((size) => ({
+    slug: size.slug,
+    label: `${size.vcpus} vCPU · ${formatMemory(size.memory)}`,
+    specs: `${formatMemory(size.memory)} RAM · ${size.disk} GB SSD`,
+    price_monthly: size.price_monthly,
+    regions: size.regions,
+  }));
+}
+
+function isPlanFamily(slug: string, family: DOPlanFamily): boolean {
+  if (!slug.startsWith("s-")) return false;
+  if (family === "premium_intel") return slug.endsWith("-intel");
+  return !slug.includes("-amd") && !slug.includes("-intel");
+}
+
+function formatMemory(memoryMb: number): string {
+  if (memoryMb < 1024) return `${memoryMb} MB`;
+  const gb = memoryMb / 1024;
+  return Number.isInteger(gb) ? `${gb} GB` : `${gb.toFixed(1)} GB`;
+}
+
+function buildImageOptions(images: DOImage[]): DODropletImageOption[] {
+  const ubuntu = pickLatestImage(images, "ubuntu");
+  const debian = pickLatestImage(images, "debian");
+
+  return [ubuntu, debian]
+    .filter((image): image is DOImage => Boolean(image?.slug))
+    .map((image) => ({
+      slug: image.slug as string,
+      family: image.distribution.toLowerCase().startsWith("ubuntu") ? "ubuntu" : "debian",
+      label: formatImageLabel(image),
+    }));
+}
+
+function pickLatestImage(images: DOImage[], family: "ubuntu" | "debian"): DOImage | null {
+  const matches = images
+    .filter((image) => image.public)
+    .filter((image) => image.type === "distribution")
+    .filter((image) => typeof image.slug === "string" && image.slug.endsWith("-x64"))
+    .filter((image) => image.distribution.toLowerCase() === family);
+
+  if (matches.length === 0) {
+    return family === "ubuntu"
+      ? FALLBACK_IMAGES.find((image) => image.distribution === "Ubuntu") ?? null
+      : FALLBACK_IMAGES.find((image) => image.distribution === "Debian") ?? null;
+  }
+
+  const scored = matches.map((image) => ({
+    image,
+    version: parseImageVersion(image.slug ?? image.name),
+    lts: family === "ubuntu" && /lts/i.test(image.name),
+  }));
+
+  scored.sort((a, b) => {
+    if (family === "ubuntu" && a.lts !== b.lts) return a.lts ? -1 : 1;
+    const versionCmp = compareVersions(b.version, a.version);
+    if (versionCmp !== 0) return versionCmp;
+    return (b.image.created_at ?? "").localeCompare(a.image.created_at ?? "");
+  });
+
+  return scored[0]?.image ?? null;
+}
+
+function parseImageVersion(value: string): number[] {
+  const match = value.match(/(\d{1,2})(?:-(\d{1,2}))?/);
+  if (!match) return [0, 0];
+  return [Number(match[1] ?? 0), Number(match[2] ?? 0)];
+}
+
+function compareVersions(a: number[], b: number[]): number {
+  for (let i = 0; i < Math.max(a.length, b.length); i += 1) {
+    const diff = (a[i] ?? 0) - (b[i] ?? 0);
+    if (diff !== 0) return diff;
+  }
+  return 0;
+}
+
+function formatImageLabel(image: DOImage): string {
+  if (image.distribution === "Ubuntu") {
+    const match = image.slug?.match(/ubuntu-(\d{2})-(\d{2})-x64/);
+    if (match) {
+      const major = match[1];
+      const minor = match[2];
+      const lts = /lts/i.test(image.name) ? " LTS" : "";
+      return `Ubuntu ${major}.${minor}${lts}`;
+    }
+  }
+  if (image.distribution === "Debian") {
+    const match = image.slug?.match(/debian-(\d+)-x64/);
+    if (match) return `Debian ${match[1]}`;
+  }
+  return `${image.distribution} ${image.name}`.trim();
+}
+
+function chooseDefaultRegion(
+  request: Request,
+  columns: DODropletRegionColumn[],
+): string {
+  const cf = request.cf as { country?: string; continent?: string } | undefined;
+  const country = (cf?.country ?? "").toUpperCase();
+  const continent = (cf?.continent ?? "").toUpperCase();
+
+  const bySlug = new Map(
+    columns.flatMap((column) => column.options.map((option) => [option.slug, option] as const)),
+  );
+  const candidates = [
+    country === "US" ? "nyc3" : null,
+    country === "CA" ? "tor1" : null,
+    country === "GB" ? "lon1" : null,
+    country === "NL" ? "ams3" : null,
+    country === "DE" ? "fra1" : null,
+    country === "IN" ? "blr1" : null,
+    country === "SG" ? "sgp1" : null,
+    country === "AU" || country === "NZ" ? "syd1" : null,
+    continent === "NA" ? "nyc3" : null,
+    continent === "EU" ? "ams3" : null,
+    continent === "AS" ? "sgp1" : null,
+    continent === "OC" ? "syd1" : null,
+    envDefaultRegionOrFallback(),
+  ].filter((value): value is string => Boolean(value));
+
+  for (const slug of candidates) {
+    if (bySlug.get(slug)?.available) return slug;
+  }
+  return columns.flatMap((column) => column.options).find((option) => option.available)?.slug ?? DEFAULT_DROPLET_REGION;
+}
+
+function envDefaultRegionOrFallback(): string {
+  return DEFAULT_DROPLET_REGION;
+}
+
+function chooseDefaultSize(
+  options: DODropletSizeOption[],
+  region: string,
+): string {
+  const regionOptions = options.filter((option) => option.regions.includes(region));
+  const choices = regionOptions.length > 0 ? regionOptions : options;
+  const targetPrice = 18;
+  return choices
+    .slice()
+    .sort((a, b) => Math.abs(a.price_monthly - targetPrice) - Math.abs(b.price_monthly - targetPrice))[0]?.slug
+    ?? DEFAULT_DROPLET_SIZE;
+}
 
 function jsonResponse(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {

@@ -121,9 +121,57 @@ export interface CreateVPSResponse {
   vps: VPS;
 }
 
+export interface DODropletRegionOption {
+  slug: string;
+  city: string;
+  label: string;
+  available: boolean;
+}
+
+export interface DODropletRegionColumn {
+  id: "americas" | "europe" | "oceania";
+  label: string;
+  options: DODropletRegionOption[];
+}
+
+export interface DODropletSizeOption {
+  slug: string;
+  label: string;
+  specs: string;
+  price_monthly: number;
+  regions: string[];
+}
+
+export interface DODropletImageOption {
+  slug: string;
+  family: "ubuntu" | "debian";
+  label: string;
+}
+
+export interface DODropletOptions {
+  live: boolean;
+  regions: DODropletRegionColumn[];
+  plans: {
+    regular: DODropletSizeOption[];
+    premium_intel: DODropletSizeOption[];
+  };
+  images: DODropletImageOption[];
+  defaults: {
+    region: string;
+    plan_family: "regular" | "premium_intel";
+    size: string;
+    image: string;
+  };
+}
+
+export function getDODropletOptions() {
+  return request<DODropletOptions>("/vps/options");
+}
+
 export function createVPS(opts: {
   region?: string;
   size?: string;
+  image?: string;
   label?: string;
 }) {
   return request<CreateVPSResponse>("/vps", {

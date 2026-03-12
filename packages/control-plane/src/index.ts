@@ -46,6 +46,7 @@ import {
   handleVPSManualCommand,
   handleVPSUpdate,
   handleWorkspaceFolderList,
+  handleVPSOptions,
 } from "./routes/vps.js";
 import {
   handleSessionList,
@@ -186,6 +187,9 @@ export default {
       // --- VPS routes ---
       if (path === "/vps" && method === "GET") {
         return withCORS(await handleVPSList(request, env, auth), request, env);
+      }
+      if (path === "/vps/options" && method === "GET") {
+        return withCORS(await handleVPSOptions(request, env, auth), request, env);
       }
       if (path === "/vps" && method === "POST") {
         return withCORS(await handleVPSCreate(request, env, auth), request, env);
