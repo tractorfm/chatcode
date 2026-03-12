@@ -649,7 +649,7 @@ export function Sidebar({
                         </div>
                       ) : null}
                       {sessions.length === 0 && group.key === "" ? (
-                        <div className="px-2">
+                        <div className="px-2 pt-1">
                           <NewSessionQuickStart
                             onCreate={handleCreateSession}
                             creating={creating}
