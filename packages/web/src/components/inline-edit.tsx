@@ -84,7 +84,7 @@ export function InlineEdit({
         maxLength={maxLength}
         placeholder={placeholder}
         className={cn(
-          "h-5 w-full min-w-0 rounded border border-border bg-transparent px-1 py-0 leading-5 text-inherit outline-none focus:border-primary",
+          "box-border h-6 w-full min-w-0 rounded border border-border bg-transparent px-1 py-0 text-inherit outline-none focus:border-primary",
           inputClassName,
         )}
       />
@@ -94,7 +94,7 @@ export function InlineEdit({
   return (
     <span
       className={cn(
-        "group/edit inline-flex min-h-5 items-center gap-1 rounded border border-transparent px-1 leading-5 min-w-0",
+        "group/edit box-border inline-flex h-6 min-w-0 items-center gap-1 rounded border border-transparent px-1",
         className,
       )}
       onClick={(e) => {
