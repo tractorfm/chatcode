@@ -30,6 +30,8 @@ export interface TerminalHandle {
   setInteractive: (interactive: boolean) => void;
 }
 
+const MAX_SNAPSHOT_RESTORE_LINES = 10000;
+
 export function createTerminalHandle(opts: UseTerminalOptions): TerminalHandle {
   const {
     vpsId,
@@ -360,13 +362,24 @@ export function createTerminalHandle(opts: UseTerminalOptions): TerminalHandle {
           const normalized = msg.content
             .replace(/\r\n/g, "\n")
             .replace(/\r/g, "\n");
-          const lines = normalized.split("\n");
-          if (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
+          const allLines = normalized.split("\n");
+          if (allLines.length > 0 && allLines[allLines.length - 1] === "") {
+            allLines.pop();
+          }
+          const truncatedLineCount = Math.max(
+            0,
+            allLines.length - MAX_SNAPSHOT_RESTORE_LINES,
+          );
+          const lines =
+            truncatedLineCount > 0
+              ? allLines.slice(-MAX_SNAPSHOT_RESTORE_LINES)
+              : allLines;
           const snapshotContent = lines.join("\r\n");
           debugLog("recv-snapshot", {
             cols: typeof msg.cols === "number" ? msg.cols : null,
             rows: rowsHint,
             lineCount: lines.length,
+            truncatedLineCount,
             cursorX: typeof msg.cursor_x === "number" ? msg.cursor_x : null,
             cursorY: typeof msg.cursor_y === "number" ? msg.cursor_y : null,
           });
