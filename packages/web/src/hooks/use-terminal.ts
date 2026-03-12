@@ -156,23 +156,77 @@ export function createTerminalHandle(opts: UseTerminalOptions): TerminalHandle {
     });
   }
 
-  function clampColsToViewport(reason: string) {
-    if (!mountEl) return;
-    const screen = mountEl.querySelector(".xterm-screen");
-    if (!(screen instanceof HTMLElement)) return;
+  function getViewportMetrics() {
+    const termElement = term.element;
+    const parentElement = termElement?.parentElement;
+    if (!termElement || !parentElement) return null;
 
-    const viewport = mountEl.querySelector(".xterm-viewport");
-    const host =
-      viewport instanceof HTMLElement ? viewport : mountEl;
-    const hostWidth = Math.floor(host.getBoundingClientRect().width);
-    if (hostWidth <= 0) return;
+    const elementStyle = window.getComputedStyle(termElement);
+    const paddingLeft = Number.parseFloat(elementStyle.getPropertyValue("padding-left")) || 0;
+    const paddingRight = Number.parseFloat(elementStyle.getPropertyValue("padding-right")) || 0;
+    const scrollbarWidth =
+      term.options.scrollback === 0
+        ? 0
+        : (term.options.overviewRuler?.width ?? 14);
+    const host = mountEl?.querySelector(".xterm-viewport");
+    const hostWidth =
+      host instanceof HTMLElement
+        ? host.clientWidth
+        : mountEl?.clientWidth ?? parentElement.clientWidth;
+    const availableWidth = Math.max(
+      0,
+      Math.min(parentElement.clientWidth - paddingLeft - paddingRight - scrollbarWidth, hostWidth),
+    );
+
+    const core = (term as Terminal & {
+      _core?: {
+        _renderService?: {
+          dimensions?: {
+            css?: {
+              canvas?: { width?: number };
+              cell?: { width?: number };
+            };
+          };
+        };
+      };
+    })._core;
+    const renderDimensions = core?._renderService?.dimensions?.css;
+    const canvasWidth = renderDimensions?.canvas?.width ?? 0;
+    const cellWidth = renderDimensions?.cell?.width ?? 0;
+
+    return {
+      availableWidth,
+      canvasWidth,
+      cellWidth,
+    };
+  }
+
+  function clampColsToViewport(reason: string) {
+    const metrics = getViewportMetrics();
+    if (!metrics || metrics.availableWidth <= 0 || metrics.cellWidth <= 0) return;
 
     let cols = term.cols || 80;
     const rows = term.rows || 24;
-    let screenWidth = Math.ceil(screen.getBoundingClientRect().width);
     let adjusted = false;
+    let canvasWidth = Math.ceil(metrics.canvasWidth);
+    const maxCols = Math.max(2, Math.floor(metrics.availableWidth / metrics.cellWidth));
 
-    while (cols > 2 && screenWidth > hostWidth + 1) {
+    if (maxCols < cols) {
+      adjusted = true;
+      cols = maxCols;
+      suppressResizeEvent = true;
+      try {
+        term.resize(cols, rows);
+      } finally {
+        suppressResizeEvent = false;
+      }
+    }
+
+    let latestMetrics = getViewportMetrics();
+    if (!latestMetrics) return;
+    canvasWidth = Math.ceil(latestMetrics.canvasWidth);
+
+    while (cols > 2 && canvasWidth > latestMetrics.availableWidth + 1) {
       adjusted = true;
       cols -= 1;
       suppressResizeEvent = true;
@@ -181,16 +235,19 @@ export function createTerminalHandle(opts: UseTerminalOptions): TerminalHandle {
       } finally {
         suppressResizeEvent = false;
       }
-      screenWidth = Math.ceil(screen.getBoundingClientRect().width);
+      latestMetrics = getViewportMetrics();
+      if (!latestMetrics) break;
+      canvasWidth = Math.ceil(latestMetrics.canvasWidth);
     }
 
-    if (adjusted) {
+    if (adjusted && latestMetrics) {
       debugLog("fit-clamp-cols", {
         reason,
         cols,
         rows,
-        hostWidth,
-        screenWidth,
+        availableWidth: Math.round(latestMetrics.availableWidth),
+        canvasWidth,
+        cellWidth: Number(latestMetrics.cellWidth.toFixed(2)),
       });
     }
   }
