@@ -620,8 +620,19 @@ export function Sidebar({
                     </div>
                   )}
                   {group.sessions.length === 0 ? (
-                    <div className="px-2 py-1 pl-8 text-xs text-muted-foreground/70">
-                      No sessions yet
+                    <div className="space-y-2">
+                      <div className="px-2 py-1 pl-8 text-xs text-muted-foreground/70">
+                        No sessions yet
+                      </div>
+                      {sessions.length === 0 && group.key === "" ? (
+                        <div className="px-2 pl-8">
+                          <NewSessionQuickStart
+                            onCreate={handleCreateSession}
+                            creating={creating}
+                            disabled={!canCreateSessions}
+                          />
+                        </div>
+                      ) : null}
                     </div>
                   ) : null}
                   {group.sessions.map((session) => (
@@ -680,15 +691,6 @@ export function Sidebar({
                   ))}
                 </div>
               ))}
-
-              {sessions.length === 0 && !loading && (
-                <NewSessionQuickStart
-                  onCreate={handleCreateSession}
-                  creating={creating}
-                  disabled={!canCreateSessions}
-                />
-              )}
-
             </div>
           )}
           {visibleError && (
@@ -824,6 +826,7 @@ function formatSessionSubtitle(session: Session): string {
 
 function groupSessionsByFolder(sessions: Session[], folders: string[]) {
   const groups = new Map<string, Session[]>();
+  groups.set("", []);
   for (const folder of folders) {
     const key = folder.trim();
     if (!key) continue;
