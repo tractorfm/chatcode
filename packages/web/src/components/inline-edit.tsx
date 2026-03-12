@@ -84,7 +84,7 @@ export function InlineEdit({
         maxLength={maxLength}
         placeholder={placeholder}
         className={cn(
-          "bg-transparent border border-border rounded px-1 py-0 text-inherit outline-none focus:border-primary w-full min-w-0",
+          "h-5 w-full min-w-0 rounded border border-border bg-transparent px-1 py-0 leading-5 text-inherit outline-none focus:border-primary",
           inputClassName,
         )}
       />
@@ -93,7 +93,10 @@ export function InlineEdit({
 
   return (
     <span
-      className={cn("group/edit inline-flex items-center gap-1 min-w-0", className)}
+      className={cn(
+        "group/edit inline-flex min-h-5 items-center gap-1 rounded border border-transparent px-1 leading-5 min-w-0",
+        className,
+      )}
       onClick={(e) => {
         if (!editable || editMode !== "single") return;
         e.stopPropagation();
