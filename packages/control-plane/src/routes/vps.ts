@@ -44,7 +44,7 @@ const DEFAULT_DROPLET_REGION = "ams3";
 const DEFAULT_DROPLET_SIZE = "s-2vcpu-2gb";
 const DEFAULT_DROPLET_IMAGE = "ubuntu-24-04-x64";
 
-type DORegionColumnId = "americas" | "europe" | "oceania";
+type DORegionColumnId = "americas" | "europe" | "asia_pacific";
 type DOPlanFamily = "regular" | "premium_intel";
 
 const REGION_COLUMNS: Array<{
@@ -71,8 +71,8 @@ const REGION_COLUMNS: Array<{
     ],
   },
   {
-    id: "oceania",
-    label: "Oceania",
+    id: "asia_pacific",
+    label: "Asia-Pacific",
     entries: [
       { city: "Bangalore", preferred: ["blr1"] },
       { city: "Singapore", preferred: ["sgp1"] },
@@ -960,17 +960,13 @@ function chooseDefaultRegion(
     continent === "EU" ? "ams3" : null,
     continent === "AS" ? "sgp1" : null,
     continent === "OC" ? "syd1" : null,
-    envDefaultRegionOrFallback(),
+    DEFAULT_DROPLET_REGION,
   ].filter((value): value is string => Boolean(value));
 
   for (const slug of candidates) {
     if (bySlug.get(slug)?.available) return slug;
   }
   return columns.flatMap((column) => column.options).find((option) => option.available)?.slug ?? DEFAULT_DROPLET_REGION;
-}
-
-function envDefaultRegionOrFallback(): string {
-  return DEFAULT_DROPLET_REGION;
 }
 
 function chooseDefaultSize(

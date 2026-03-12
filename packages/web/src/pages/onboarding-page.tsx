@@ -22,6 +22,7 @@ export function OnboardingPage({ onBack, onComplete, manualVpsId = null }: Onboa
   const [step, setStep] = useState<Step>("choose");
   const [doOptions, setDoOptions] = useState<DODropletOptions | null>(null);
   const [doOptionsLoading, setDoOptionsLoading] = useState(false);
+  const [doOptionsReloadToken, setDoOptionsReloadToken] = useState(0);
   const [planFamily, setPlanFamily] = useState<"regular" | "premium_intel">("regular");
   const [region, setRegion] = useState("ams3");
   const [size, setSize] = useState("s-2vcpu-2gb");
@@ -122,6 +123,12 @@ export function OnboardingPage({ onBack, onComplete, manualVpsId = null }: Onboa
     if (vpsId) onComplete(vpsId);
   }, [manualSetup, onComplete]);
 
+  const handleRetryDoOptions = useCallback(() => {
+    setError("");
+    setDoOptions(null);
+    setDoOptionsReloadToken((value) => value + 1);
+  }, []);
+
   useEffect(() => {
     if (!manualVpsId) return;
     void loadExistingManualSetup();
@@ -134,6 +141,7 @@ export function OnboardingPage({ onBack, onComplete, manualVpsId = null }: Onboa
     void getDODropletOptions()
       .then((options) => {
         if (cancelled) return;
+        setError("");
         setDoOptions(options);
         setPlanFamily(options.defaults.plan_family);
         setRegion(options.defaults.region);
@@ -151,7 +159,7 @@ export function OnboardingPage({ onBack, onComplete, manualVpsId = null }: Onboa
     return () => {
       cancelled = true;
     };
-  }, [step, doOptions]);
+  }, [step, doOptions, doOptionsReloadToken]);
 
   useEffect(() => {
     if (!doOptions) return;
@@ -397,7 +405,17 @@ export function OnboardingPage({ onBack, onComplete, manualVpsId = null }: Onboa
               <p className="text-sm text-destructive">{error}</p>
             )}
 
+            {!doOptionsLoading && !doOptions && (
               <button
+                type="button"
+                onClick={handleRetryDoOptions}
+                className="w-full inline-flex items-center justify-center rounded-md border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-accent transition-colors"
+              >
+                Retry loading catalog
+              </button>
+            )}
+
+            <button
               onClick={handleCreateDO}
               disabled={(!doOptions && doOptionsLoading) || (Boolean(doOptions) && visibleSizes.length === 0)}
               className="w-full inline-flex items-center justify-center gap-2 rounded-md bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-60"

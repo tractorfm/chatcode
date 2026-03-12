@@ -119,3 +119,10 @@ func TestStripOSC8HyperlinksBellTerminated(t *testing.T) {
 		t.Fatalf("stripOSC8Hyperlinks BEL = %q, want %q", got, "link")
 	}
 }
+
+func TestStripOSC8HyperlinksKeepsUnterminatedSequence(t *testing.T) {
+	content := "prefix \x1b]8;;https://example.testunterminated"
+	if got := stripOSC8Hyperlinks(content); got != content {
+		t.Fatalf("stripOSC8Hyperlinks unterminated = %q, want %q", got, content)
+	}
+}

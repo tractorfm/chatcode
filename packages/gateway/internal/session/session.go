@@ -303,25 +303,33 @@ func stripOSC8Hyperlinks(content string) string {
 			continue
 		}
 
+		start := i
 		i += len(osc8Prefix)
+		terminated := false
 		for i < len(content) {
 			switch content[i] {
 			case '\a':
 				i++
-				goto stripped
+				terminated = true
 			case '\x9c':
 				i++
-				goto stripped
+				terminated = true
 			case '\x1b':
 				if i+1 < len(content) && content[i+1] == '\\' {
 					i += 2
-					goto stripped
+					terminated = true
 				}
+			}
+			if terminated {
+				break
 			}
 			i++
 		}
 
-	stripped:
+		if !terminated {
+			out.WriteString(content[start:])
+			break
+		}
 	}
 
 	return out.String()

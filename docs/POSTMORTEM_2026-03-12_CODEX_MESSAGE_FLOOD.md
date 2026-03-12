@@ -14,6 +14,16 @@ The immediate user symptom was terminal corruption on the Codex onboarding scree
 
 At the same time, the staging Durable Object request count rose sharply from roughly 300-400k to about 1M.
 
+Detection:
+
+- first detected from a live user report on Thursday, March 12, 2026 while debugging a broken Codex onboarding screen on staging
+- during that same investigation, the user noticed the staging Durable Object request counter had jumped unexpectedly, which exposed the cost side of the incident
+
+Estimated duration:
+
+- we do not have an exact start timestamp because there was no per-session alerting or rate-based telemetry for GatewayHub traffic
+- from the observed request increase (roughly +600k) and the modeled hot-loop rate (roughly 600 WebSocket messages/second), the flood likely ran for about 15-20 minutes before the gateway fix was deployed
+
 ## What Happened
 
 Codex renders the browser-login URL as an OSC-8 hyperlink.

@@ -129,7 +129,7 @@ export interface DODropletRegionOption {
 }
 
 export interface DODropletRegionColumn {
-  id: "americas" | "europe" | "oceania";
+  id: "americas" | "europe" | "asia_pacific";
   label: string;
   options: DODropletRegionOption[];
 }
