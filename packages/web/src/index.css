@@ -59,12 +59,15 @@
   box-sizing: border-box;
 }
 
-/* Terminal container: fill available space, clip horizontal overflow */
-.terminal-container {
-  overflow: hidden;
-}
+/* Terminal container: fill available space.
+   Right padding on .xterm gives FitAddon an extra 8 px buffer (on top of its
+   14 px scrollbar reserve) so sub-pixel character-width accumulation doesn't
+   overflow .xterm-viewport's implicit overflow-x:auto clip boundary.
+   The viewport (position:absolute inset:0) extends into the padding box, so
+   the visual right margin stays the same. */
 .terminal-container .xterm {
   height: 100%;
+  padding-right: 8px;
 }
 .terminal-container .xterm-viewport {
   background-color: transparent !important;
