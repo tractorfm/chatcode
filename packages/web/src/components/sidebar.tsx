@@ -649,7 +649,7 @@ export function Sidebar({
                         </div>
                       ) : null}
                       {sessions.length === 0 && group.key === "" ? (
-                        <div className="px-2 pl-8">
+                        <div className="px-2">
                           <NewSessionQuickStart
                             onCreate={handleCreateSession}
                             creating={creating}
@@ -996,7 +996,7 @@ function NewSessionQuickStart({
           key={value}
           onClick={() => onCreate(value)}
           disabled={creating || disabled}
-          className="w-full rounded-md border border-primary/25 bg-primary/5 px-2 py-1.5 text-left text-xs text-primary/90 transition-colors hover:bg-primary/10 disabled:opacity-50"
+          className="w-full rounded-md border border-primary/30 bg-primary/10 px-2 py-1.5 text-left text-xs text-primary transition-colors hover:bg-primary/15 disabled:opacity-70"
         >
           + {label}
         </button>
