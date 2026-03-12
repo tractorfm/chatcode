@@ -45,6 +45,7 @@ import {
   handleVPSManualCreate,
   handleVPSManualCommand,
   handleVPSUpdate,
+  handleWorkspaceFolderList,
 } from "./routes/vps.js";
 import {
   handleSessionList,
@@ -217,6 +218,15 @@ export default {
       const vpsPowerOn = path.match(/^\/vps\/([a-zA-Z0-9_-]+)\/power-on$/);
       if (vpsPowerOn && method === "POST") {
         return withCORS(await handleVPSPowerOn(request, env, auth, vpsPowerOn[1]), request, env);
+      }
+
+      const workspaceFoldersMatch = path.match(/^\/vps\/([a-zA-Z0-9_-]+)\/workspace-folders$/);
+      if (workspaceFoldersMatch && method === "GET") {
+        return withCORS(
+          await handleWorkspaceFolderList(request, env, auth, workspaceFoldersMatch[1]),
+          request,
+          env,
+        );
       }
 
       // --- Session routes ---

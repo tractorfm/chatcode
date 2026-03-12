@@ -39,6 +39,7 @@ const (
 	CmdFileCancel      CommandType = "file.cancel"
 	CmdAgentsInstall   CommandType = "agents.install"
 	CmdAgentsList      CommandType = "agents.list"
+	CmdWorkspaceList   CommandType = "workspace.list"
 	CmdGatewayUpdate   CommandType = "gateway.update"
 
 	// Events (gateway → CP)
@@ -55,6 +56,7 @@ const (
 	EvtFileContentEnd   EventType = "file.content.end"
 	EvtAgentInstalled   EventType = "agent.installed"
 	EvtAgentsStatus     EventType = "agents.status"
+	EvtWorkspaceFolders EventType = "workspace.folders"
 	EvtGatewayUpdated   EventType = "gateway.updated"
 )
 
@@ -241,6 +243,13 @@ type AgentsList struct {
 	RequestID     string      `json:"request_id"`
 }
 
+// WorkspaceList requests visible top-level folders under ~/workspace.
+type WorkspaceList struct {
+	Type          CommandType `json:"type"`
+	SchemaVersion string      `json:"schema_version,omitempty"`
+	RequestID     string      `json:"request_id"`
+}
+
 // GatewayUpdateCmd triggers a self-update.
 type GatewayUpdateCmd struct {
 	Type          CommandType `json:"type"`
@@ -403,6 +412,14 @@ type AgentsStatus struct {
 	SchemaVersion string        `json:"schema_version,omitempty"`
 	RequestID     string        `json:"request_id"`
 	Agents        []AgentStatus `json:"agents"`
+}
+
+// WorkspaceFolders reports visible top-level folders under ~/workspace.
+type WorkspaceFolders struct {
+	Type          EventType `json:"type"`
+	SchemaVersion string    `json:"schema_version,omitempty"`
+	RequestID     string    `json:"request_id"`
+	Folders       []string  `json:"folders"`
 }
 
 // GatewayUpdated confirms a self-update completed.

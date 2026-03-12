@@ -135,6 +135,10 @@ export interface AgentsList extends BaseCommand {
   type: "agents.list";
 }
 
+export interface WorkspaceList extends BaseCommand {
+  type: "workspace.list";
+}
+
 export interface GatewayUpdate extends BaseCommand {
   type: "gateway.update";
   url: string;
@@ -159,6 +163,7 @@ export type Command =
   | FileCancel
   | AgentsInstall
   | AgentsList
+  | WorkspaceList
   | GatewayUpdate;
 
 // ---------------------------------------------------------------------------
@@ -259,6 +264,12 @@ export interface AgentsStatus extends BaseEvent {
   agents: AgentStatus[];
 }
 
+export interface WorkspaceFolders extends BaseEvent {
+  type: "workspace.folders";
+  request_id: string;
+  folders: string[];
+}
+
 export interface FileContentBegin extends BaseEvent {
   type: "file.content.begin";
   transfer_id: string;
@@ -303,6 +314,7 @@ export type Event =
   | SessionSnapshotEvent
   | SSHKeyList
   | AgentsStatus
+  | WorkspaceFolders
   | FileContentBegin
   | FileContentChunk
   | FileContentEnd

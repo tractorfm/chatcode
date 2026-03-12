@@ -6,6 +6,7 @@ import {
   handleVPSManualCreate,
   handleVPSManualCommand,
   handleVPSUpdate,
+  handleWorkspaceFolderList,
 } from "../src/routes/vps";
 
 const mocks = vi.hoisted(() => ({
@@ -491,5 +492,39 @@ describe("routes/vps", () => {
     expect(doShutdownFetch).toHaveBeenCalledOnce();
     expect(mocks.deleteDroplet).not.toHaveBeenCalled();
     expect(mocks.deleteVPSCascade).toHaveBeenCalledWith(env.DB, "vps-1");
+  });
+
+  it("lists workspace folders via the gateway", async () => {
+    const { env, doShutdownFetch } = makeEnv();
+    mocks.getGatewayByVPS.mockResolvedValue({
+      id: "gw-1",
+      vps_id: "vps-1",
+      auth_token_hash: "hash",
+      version: "v0.0.16",
+      host_os: "linux",
+      last_seen_at: 1,
+      connected: 1,
+      created_at: 1,
+    });
+    doShutdownFetch.mockResolvedValue(
+      new Response(JSON.stringify({
+        type: "workspace.folders",
+        request_id: "workspace-1",
+        folders: ["chatcode", "notes"],
+      }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    const res = await handleWorkspaceFolderList(
+      new Request("https://cp.example.test/vps/vps-1/workspace-folders"),
+      env,
+      { userId: "usr-1" },
+      "vps-1",
+    );
+
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toEqual({ folders: ["chatcode", "notes"] });
   });
 });

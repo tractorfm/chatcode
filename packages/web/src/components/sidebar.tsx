@@ -26,6 +26,7 @@ import {
 import {
   listVPS,
   listSessions,
+  listWorkspaceFolders,
   createSession,
   deleteSession,
   deleteVPS,
@@ -82,6 +83,7 @@ export function Sidebar({
 }: SidebarProps) {
   const [vpsList, setVpsList] = useState<VPS[]>([]);
   const [sessions, setSessions] = useState<Session[]>([]);
+  const [workspaceFolders, setWorkspaceFolders] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [creating, setCreating] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
@@ -171,6 +173,21 @@ export function Sidebar({
     }
   }, [activeVpsId, onSelectSession, onSessionTitleSync, onSessionsLoaded, setOperationError]);
 
+  const refreshWorkspaceFolders = useCallback(async () => {
+    if (!activeVpsId || !canCreateSessions) {
+      setWorkspaceFolders([]);
+      return;
+    }
+    try {
+      const { folders } = await listWorkspaceFolders(activeVpsId);
+      setWorkspaceFolders(
+        folders.filter((value) => value && !value.includes("/") && !value.startsWith(".")),
+      );
+    } catch {
+      setWorkspaceFolders([]);
+    }
+  }, [activeVpsId, canCreateSessions]);
+
   useEffect(() => {
     void refreshVPS();
   }, [refreshVPS]);
@@ -178,6 +195,10 @@ export function Sidebar({
   useEffect(() => {
     void refreshSessions();
   }, [activeVpsId, refreshSessions, refreshSignal]);
+
+  useEffect(() => {
+    void refreshWorkspaceFolders();
+  }, [activeVpsId, refreshSignal, refreshWorkspaceFolders]);
 
   useEffect(() => {
     if (refreshSignal === 0) return;
@@ -225,6 +246,7 @@ export function Sidebar({
           workdir,
         });
         await refreshSessions();
+        await refreshWorkspaceFolders();
         onNewSession(activeVpsId, res.session_id, buildSessionTabTitle(title, workdir));
         setErrorMessage("");
         setShowAgentPicker(false);
@@ -245,6 +267,7 @@ export function Sidebar({
       try {
         await deleteSession(activeVpsId, sessionId);
         await refreshSessions();
+        await refreshWorkspaceFolders();
         setErrorMessage("");
       } catch (err) {
         setOperationError("Failed to end session", err);
@@ -545,7 +568,7 @@ export function Sidebar({
                 <p className="text-xs text-muted-foreground">Loading...</p>
               )}
 
-              {groupSessionsByFolder(sessions).map((group) => (
+              {groupSessionsByFolder(sessions, workspaceFolders).map((group) => (
                 <div key={group.key} className="space-y-1">
                   <div className="flex items-center justify-between px-2 pt-1">
                     <div className="text-sm font-normal text-muted-foreground">
@@ -773,8 +796,13 @@ function formatSessionSubtitle(session: Session): string {
   return subpath ? `${label} · ${subpath}` : label;
 }
 
-function groupSessionsByFolder(sessions: Session[]) {
+function groupSessionsByFolder(sessions: Session[], folders: string[]) {
   const groups = new Map<string, Session[]>();
+  for (const folder of folders) {
+    const key = folder.trim();
+    if (!key) continue;
+    groups.set(key, []);
+  }
   for (const session of sessions) {
     const key = sessionFolderKey(session.workdir);
     const bucket = groups.get(key);

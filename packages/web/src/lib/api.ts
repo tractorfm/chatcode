@@ -105,6 +105,10 @@ export function getVPS(id: string) {
   return request<VPS>(`/vps/${encodeURIComponent(id)}`);
 }
 
+export function listWorkspaceFolders(vpsId: string) {
+  return request<{ folders: string[] }>(`/vps/${encodeURIComponent(vpsId)}/workspace-folders`);
+}
+
 export function updateVPS(id: string, opts: { label: string }) {
   return request<VPS>(`/vps/${encodeURIComponent(id)}`, {
     method: "PATCH",

@@ -25,6 +25,7 @@ import (
 	"github.com/tractorfm/chatcode/packages/gateway/internal/session"
 	sshkeys "github.com/tractorfm/chatcode/packages/gateway/internal/ssh"
 	"github.com/tractorfm/chatcode/packages/gateway/internal/update"
+	"github.com/tractorfm/chatcode/packages/gateway/internal/workspace"
 	"github.com/tractorfm/chatcode/packages/gateway/internal/ws"
 )
 
@@ -94,6 +95,8 @@ func main() {
 	if err != nil || workspaceRoot == "" {
 		workspaceRoot = "/home/vibe"
 	}
+	workspaceRoot = workspaceRoot + "/workspace"
+	g.workspaceRoot = workspaceRoot
 	g.files = files.NewHandler(cfg.TempDir, workspaceRoot, func(ctx context.Context, v any) error {
 		return g.wsClient.SendJSON(ctx, v)
 	})
@@ -144,6 +147,7 @@ type gateway struct {
 	updater  *update.Updater
 	files    *files.Handler
 	outputCh chan session.OutputChunk
+	workspaceRoot string
 }
 
 func (g *gateway) onSessionExit(sessionID string) {
@@ -311,6 +315,8 @@ func (g *gateway) onTextFrame(ctx context.Context, raw json.RawMessage) {
 		err = g.handleAgentsInstall(ctx, raw)
 	case "agents.list":
 		err = g.handleAgentsList(ctx, raw)
+	case "workspace.list":
+		err = g.handleWorkspaceList(ctx, raw)
 	case "gateway.update":
 		err = g.handleGatewayUpdate(ctx, raw)
 	default:
@@ -739,6 +745,27 @@ func (g *gateway) handleAgentsList(ctx context.Context, raw json.RawMessage) err
 		"type":       "agents.status",
 		"request_id": cmd.RequestID,
 		"agents":     items,
+	})
+	return nil
+}
+
+func (g *gateway) handleWorkspaceList(ctx context.Context, raw json.RawMessage) error {
+	var cmd struct {
+		RequestID string `json:"request_id"`
+	}
+	if err := json.Unmarshal(raw, &cmd); err != nil {
+		return err
+	}
+
+	folders, err := workspace.ListTopLevelFolders(g.workspaceRoot)
+	if err != nil {
+		return err
+	}
+
+	g.sendEvent(ctx, map[string]any{
+		"type":       "workspace.folders",
+		"request_id": cmd.RequestID,
+		"folders":    folders,
 	})
 	return nil
 }

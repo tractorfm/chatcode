@@ -72,6 +72,10 @@ interface ManualVPSResponse {
   vps: VPSResponse;
 }
 
+interface WorkspaceFoldersResponse {
+  folders: string[];
+}
+
 /**
  * POST /vps – Create droplet + generate gateway credentials.
  */
@@ -530,6 +534,58 @@ export async function handleVPSManualCommand(
     } satisfies ManualVPSResponse,
     200,
   );
+}
+
+/**
+ * GET /vps/:id/workspace-folders – List visible top-level folders under ~/workspace.
+ */
+export async function handleWorkspaceFolderList(
+  _request: Request,
+  env: Env,
+  auth: AuthContext,
+  vpsId: string,
+): Promise<Response> {
+  const vps = await getVPS(env.DB, vpsId);
+  if (!vps || vps.user_id !== auth.userId) {
+    return jsonResponse({ error: "not found" }, 404);
+  }
+
+  const gateway = await getGatewayByVPS(env.DB, vpsId);
+  if (!gateway) {
+    return jsonResponse({ error: "gateway not found" }, 404);
+  }
+  if (!gateway.connected) {
+    return jsonResponse({ error: "gateway not connected" }, 503);
+  }
+
+  const doId = env.GATEWAY_HUB.idFromName(gateway.id);
+  const stub = env.GATEWAY_HUB.get(doId);
+  const cmd = {
+    type: "workspace.list",
+    schema_version: "1",
+    request_id: `workspace-${Date.now()}`,
+  };
+
+  const cmdResp = await stub.fetch(
+    new Request("http://do/cmd", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(cmd),
+    }),
+  );
+
+  if (!cmdResp.ok) {
+    const body = await cmdResp.json().catch(() => null) as { error?: string } | null;
+    return jsonResponse({ error: body?.error ?? "workspace.list failed" }, cmdResp.status);
+  }
+
+  const payload = await cmdResp.json() as { type?: string; folders?: unknown };
+  if (payload.type !== "workspace.folders" || !Array.isArray(payload.folders)) {
+    return jsonResponse({ error: "workspace.list failed" }, 502);
+  }
+
+  const folders = payload.folders.filter((entry): entry is string => typeof entry === "string");
+  return jsonResponse({ folders } satisfies WorkspaceFoldersResponse);
 }
 
 /**

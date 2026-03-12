@@ -207,6 +207,14 @@
       "required": ["type", "request_id"]
     },
 
+    "WorkspaceList": {
+      "allOf": [{ "$ref": "#/definitions/BaseCommand" }],
+      "properties": {
+        "type": { "const": "workspace.list" }
+      },
+      "required": ["type", "request_id"]
+    },
+
     "GatewayUpdate": {
       "allOf": [{ "$ref": "#/definitions/BaseCommand" }],
       "properties": {
@@ -236,6 +244,7 @@
     { "$ref": "#/definitions/FileCancel" },
     { "$ref": "#/definitions/AgentsInstall" },
     { "$ref": "#/definitions/AgentsList" },
+    { "$ref": "#/definitions/WorkspaceList" },
     { "$ref": "#/definitions/GatewayUpdate" }
   ]
 }

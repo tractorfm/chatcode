@@ -235,6 +235,19 @@
       "required": ["type", "request_id", "agents"]
     },
 
+    "WorkspaceFolders": {
+      "allOf": [{ "$ref": "#/definitions/BaseEvent" }],
+      "properties": {
+        "type": { "const": "workspace.folders" },
+        "request_id": { "type": "string" },
+        "folders": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "required": ["type", "request_id", "folders"]
+    },
+
     "GatewayUpdated": {
       "allOf": [{ "$ref": "#/definitions/BaseEvent" }],
       "properties": {
@@ -260,6 +273,7 @@
     { "$ref": "#/definitions/FileContentEnd" },
     { "$ref": "#/definitions/AgentInstalled" },
     { "$ref": "#/definitions/AgentsStatus" },
+    { "$ref": "#/definitions/WorkspaceFolders" },
     { "$ref": "#/definitions/GatewayUpdated" }
   ]
 }

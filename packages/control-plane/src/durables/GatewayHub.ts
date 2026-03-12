@@ -18,6 +18,7 @@ import type {
   SessionSnapshotEvent,
   SSHKeyList,
   AgentsStatus,
+  WorkspaceFolders,
   FileContentBegin,
   FileContentChunk,
   FileContentEnd,
@@ -76,6 +77,7 @@ type GatewayEvent =
   | SessionSnapshotEvent
   | SSHKeyList
   | AgentsStatus
+  | WorkspaceFolders
   | FileContentBegin
   | FileContentChunk
   | FileContentEnd
@@ -87,9 +89,10 @@ type GatewayCommandResult =
   | SessionSnapshotEvent
   | SSHKeyList
   | AgentsStatus
+  | WorkspaceFolders
   | AgentInstalled
   | GatewayUpdated;
-type GatewayCommandEvent = SSHKeyList | AgentsStatus | AgentInstalled | GatewayUpdated;
+type GatewayCommandEvent = SSHKeyList | AgentsStatus | WorkspaceFolders | AgentInstalled | GatewayUpdated;
 
 export class GatewayHub {
   private state: DurableObjectState;
@@ -315,6 +318,7 @@ export class GatewayHub {
 
       case "ssh.keys":
       case "agents.status":
+      case "workspace.folders":
       case "agent.installed":
       case "gateway.updated":
         // Forward to pending entry's sourceSocket
