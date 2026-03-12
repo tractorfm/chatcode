@@ -426,7 +426,7 @@ export function Sidebar({
         )}
         <button
           onClick={onToggle}
-          className="p-1 rounded hover:bg-accent text-muted-foreground"
+          className="flex h-5 w-5 items-center justify-center rounded hover:bg-accent text-muted-foreground"
         >
           {collapsed ? (
             <ChevronRight className="h-4 w-4" />
@@ -446,7 +446,7 @@ export function Sidebar({
               </span>
               <button
                 onClick={() => onNavigate("onboarding")}
-                className="p-0.5 rounded hover:bg-accent text-muted-foreground"
+                className="flex h-5 w-5 items-center justify-center rounded hover:bg-accent text-muted-foreground"
                 title="Add server"
               >
                 <Plus className="h-3.5 w-3.5" />
@@ -492,18 +492,20 @@ export function Sidebar({
                   editMode="single"
                   className="flex-1 min-w-0"
                 />
-                <Circle
-                  className={cn(
-                    "h-2 w-2 ml-auto shrink-0 fill-current",
-                    vps.status === "provisioning"
-                        ? "text-yellow-500"
-                      : vps.status === "active" && vps.gateway_connected
-                        ? "text-green-500"
-                        : vps.status === "active"
+                <span className="ml-auto flex h-5 w-5 shrink-0 items-center justify-center">
+                  <Circle
+                    className={cn(
+                      "h-2 w-2 fill-current",
+                      vps.status === "provisioning"
                           ? "text-yellow-500"
-                        : "text-muted-foreground",
-                  )}
-                />
+                        : vps.status === "active" && vps.gateway_connected
+                          ? "text-green-500"
+                          : vps.status === "active"
+                            ? "text-yellow-500"
+                          : "text-muted-foreground",
+                    )}
+                  />
+                </span>
               </div>
             ))}
           </div>
@@ -515,7 +517,7 @@ export function Sidebar({
                 {activeVps.provider === "manual" && !activeVps.gateway_connected ? (
                   <button
                     onClick={() => onNavigate("onboarding", { manualVpsId: activeVps.id })}
-                    className="p-1.5 rounded hover:bg-accent text-muted-foreground"
+                    className="flex h-5 w-5 items-center justify-center rounded hover:bg-accent text-muted-foreground"
                     title="Show install command"
                   >
                     <Terminal className="h-3.5 w-3.5" />
@@ -527,7 +529,7 @@ export function Sidebar({
                     handlePowerAction(activeVps.status === "active" ? "off" : "on");
                   }}
                   disabled={!isManagedVps}
-                  className="p-1.5 rounded hover:bg-accent text-muted-foreground disabled:cursor-not-allowed disabled:opacity-40"
+                  className="flex h-5 w-5 items-center justify-center rounded hover:bg-accent text-muted-foreground disabled:cursor-not-allowed disabled:opacity-40"
                   title={
                     isManagedVps
                       ? activeVps.status === "active"
@@ -540,7 +542,7 @@ export function Sidebar({
                 </button>
                 <button
                   onClick={handleDeleteVPS}
-                  className="p-1.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive"
+                  className="flex h-5 w-5 items-center justify-center rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive"
                   title={isManagedVps ? "Destroy server" : "Remove server"}
                 >
                   <Trash2 className="h-3.5 w-3.5" />
@@ -550,7 +552,7 @@ export function Sidebar({
                 type="button"
                 onClick={() => void handleRefreshActiveVps()}
                 disabled={!activeVpsId || loading}
-                className="rounded p-1.5 text-muted-foreground hover:bg-accent disabled:opacity-50"
+                className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-accent disabled:opacity-50"
                 title="Refresh sessions and folders"
               >
                 <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
@@ -575,7 +577,7 @@ export function Sidebar({
                       setShowAgentPicker((p) => !p);
                     }}
                     disabled={creating || !canCreateSessions}
-                    className="p-0.5 rounded hover:bg-accent text-muted-foreground disabled:opacity-50"
+                    className="flex h-5 w-5 items-center justify-center rounded hover:bg-accent text-muted-foreground disabled:opacity-50"
                     title={canCreateSessions ? "New session" : "Server must be connected to create sessions"}
                     >
                       {creating ? (
@@ -604,7 +606,7 @@ export function Sidebar({
               )}
 
               {groupSessionsByFolder(sessions, workspaceFolders).map((group) => (
-                <div key={group.key} className="space-y-1">
+                <div key={group.key} className="group/folder space-y-1">
                   <div className="flex items-center justify-between px-2 pt-1">
                     <div className="text-sm font-normal text-muted-foreground">
                       {group.label}
@@ -617,7 +619,12 @@ export function Sidebar({
                         setSessionWorkdir(group.inputValue);
                       }}
                       disabled={creating || !canCreateSessions}
-                      className="rounded p-0.5 text-muted-foreground hover:bg-accent disabled:opacity-40 disabled:cursor-not-allowed"
+                      className={cn(
+                        "flex h-4 w-4 items-center justify-center rounded text-muted-foreground hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40",
+                        groupPickerKey === group.key
+                          ? "opacity-100"
+                          : "opacity-0 transition-opacity group-hover/folder:opacity-100",
+                      )}
                       title={canCreateSessions ? `New session in ${group.label}` : "Server must be connected to create sessions"}
                     >
                       <Plus className="h-3 w-3" />
@@ -636,9 +643,11 @@ export function Sidebar({
                   )}
                   {group.sessions.length === 0 ? (
                     <div className="space-y-2">
-                      <div className="px-2 py-1 pl-8 text-xs text-muted-foreground/70">
-                        No sessions yet
-                      </div>
+                      {!(sessions.length === 0 && group.key === "") ? (
+                        <div className="px-2 py-1 pl-8 text-xs text-muted-foreground/70">
+                          No sessions yet
+                        </div>
+                      ) : null}
                       {sessions.length === 0 && group.key === "" ? (
                         <div className="px-2 pl-8">
                           <NewSessionQuickStart
@@ -751,7 +760,7 @@ export function Sidebar({
             </span>
             <button
               onClick={onLogout}
-              className="p-1 rounded hover:bg-accent text-muted-foreground"
+              className="flex h-5 w-5 items-center justify-center rounded hover:bg-accent text-muted-foreground"
               title="Sign out"
             >
               <LogOut className="h-3.5 w-3.5" />
@@ -987,7 +996,7 @@ function NewSessionQuickStart({
           key={value}
           onClick={() => onCreate(value)}
           disabled={creating || disabled}
-          className="w-full text-left p-2 rounded-md border border-dashed border-border text-xs text-muted-foreground hover:border-primary hover:text-primary transition-colors disabled:opacity-50"
+          className="w-full rounded-md border border-primary/25 bg-primary/5 px-2 py-1.5 text-left text-xs text-primary/90 transition-colors hover:bg-primary/10 disabled:opacity-50"
         >
           + {label}
         </button>
