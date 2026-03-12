@@ -21,7 +21,7 @@ import {
   DEFAULT_SESSION_WORKDIR,
   normalizeSessionWorkdir,
   sessionFolderKey,
-  sessionSubpathWithinGroup,
+  sessionTabPathSuffix,
 } from "@chatcode/protocol";
 import {
   listVPS,
@@ -604,8 +604,13 @@ export function Sidebar({
                             editMode="single"
                             className="min-w-0"
                           />
-                          <div className="truncate text-xs font-normal text-muted-foreground">
-                            {formatSessionSubtitle(session, group.key)}
+                          <div
+                            className={cn(
+                              "truncate text-xs text-muted-foreground",
+                              session.id === activeSessionId ? "font-medium" : "font-normal",
+                            )}
+                          >
+                            {formatSessionSubtitle(session)}
                           </div>
                         </div>
                       </div>
@@ -759,9 +764,9 @@ function ProviderServerIcon({
   return <Server className="h-3.5 w-3.5 shrink-0" />;
 }
 
-function formatSessionSubtitle(session: Session, groupKey: string): string {
+function formatSessionSubtitle(session: Session): string {
   const label = sessionCommandLabel(session.agent_type);
-  const subpath = sessionSubpathWithinGroup(session.workdir, groupKey);
+  const subpath = sessionTabPathSuffix(session.workdir);
   return subpath ? `${label} · ${subpath}` : label;
 }
 
