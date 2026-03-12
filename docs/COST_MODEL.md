@@ -302,6 +302,99 @@ Before large-scale rollout, add per-user/per-VPS cost telemetry:
 
 This should be enough to turn the rough `$1 / active user-month` heuristic into a real pricing model.
 
+## Cost Reduction Opportunities
+
+The main optimization target is not Worker request count. It is **Durable Object active duration**.
+
+Priority order:
+
+### 1. More aggressive DO idle hibernation
+
+Best payoff, lowest product risk.
+
+Goal:
+
+- keep DO hot only while relay work is actually happening
+- let it sleep when browser and gateway are both idle
+
+Why it matters:
+
+- DO GB-s is the current dominant cost driver
+
+### 2. Adaptive gateway heartbeat cadence
+
+Good payoff, low risk.
+
+Instead of a constant fixed-rate health loop:
+
+- faster immediately after connect or after instability
+- slower once the gateway is stable and unchanged
+
+This reduces steady background traffic and can reduce hot-path wakeups.
+
+### 3. Keep terminal synchronization strictly event-driven
+
+Medium-to-high payoff, low-to-medium risk.
+
+Good:
+
+- initial snapshot
+- resize correction snapshot
+- explicit reconnect recovery
+
+Avoid:
+
+- extra corrective snapshots in steady state
+- polling for data that can be emitted as events
+
+### 4. Replace remaining UI polling with push/status channels
+
+Medium payoff, medium complexity.
+
+Current low-frequency reconciliation is acceptable for MVP, but long term:
+
+- server connection state
+- session end/state transitions
+
+should arrive as push updates where possible.
+
+That lowers both Worker and DO background work.
+
+### 5. Downgrade older hidden tabs from fully live to resumable
+
+Potentially high payoff, but higher UX/design complexity.
+
+Today, always-mounted hidden tabs improve UX.
+
+Later, a better tradeoff may be:
+
+- active tab fully live
+- recently backgrounded tabs warm
+- older hidden tabs resumable on focus
+
+This can reduce concurrent live relay load without hurting the main active-session UX much.
+
+### 6. Keep file transfer out of the terminal relay path
+
+Important architectural guardrail.
+
+If file transfer is added:
+
+- do not route file contents through DO terminal relay
+- use direct upload/download patterns with R2 or equivalent
+
+This avoids turning relay infrastructure into a bulk-transfer channel.
+
+## What Not To Optimize First
+
+Avoid spending time first on:
+
+- shaving small Worker request counts
+- weakening tmux/session durability
+- removing replay/snapshot safety that protects UX correctness
+
+Those are lower-value or riskier than reducing DO active duration.
+
 ## Decision Summary
 
 - Current architecture likely exceeds free-tier practicality around **5-6 active users** at staging-like intensity.
