@@ -128,7 +128,7 @@ export function OnboardingPage({ onBack, onComplete, manualVpsId = null }: Onboa
   }, [loadExistingManualSetup, manualVpsId]);
 
   useEffect(() => {
-    if (step !== "do-setup" || doOptionsLoading || doOptions) return;
+    if (step !== "do-setup" || doOptions) return;
     let cancelled = false;
     setDoOptionsLoading(true);
     void getDODropletOptions()
@@ -151,7 +151,7 @@ export function OnboardingPage({ onBack, onComplete, manualVpsId = null }: Onboa
     return () => {
       cancelled = true;
     };
-  }, [step, doOptions, doOptionsLoading]);
+  }, [step, doOptions]);
 
   useEffect(() => {
     if (!doOptions) return;
