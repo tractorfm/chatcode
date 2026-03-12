@@ -38,7 +38,7 @@ import { hashGatewayToken } from "../lib/auth.js";
 import { newVPSId, newGatewayId, randomHex } from "../lib/ids.js";
 
 const PROVISIONING_TIMEOUT_SEC = 600; // 10 minutes
-const DEFAULT_GATEWAY_VERSION = "v0.0.19";
+const DEFAULT_GATEWAY_VERSION = "v0.1.0";
 const DEFAULT_GATEWAY_RELEASE_BASE_URL = "https://releases.chatcode.dev/gateway";
 const DEFAULT_DROPLET_REGION = "ams3";
 const DEFAULT_DROPLET_SIZE = "s-2vcpu-2gb";

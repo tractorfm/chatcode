@@ -195,7 +195,7 @@ describe("routes/vps", () => {
     expect(createPayload?.user_data).toContain("BOOTSTRAP_URL=\"$GATEWAY_RELEASE_BASE_URL/$GATEWAY_VERSION/cloud-init.sh\"");
     expect(createPayload?.user_data).toContain("export GATEWAY_ID='gw-test-1'");
     expect(createPayload?.user_data).toContain("export GATEWAY_CP_URL='wss://cp.example.test/gw/connect'");
-    expect(createPayload?.user_data).toContain("export GATEWAY_VERSION='v0.0.19'");
+    expect(createPayload?.user_data).toContain("export GATEWAY_VERSION='v0.1.0'");
   });
 
   it("rolls back droplet when DB write fails", async () => {
