@@ -28,6 +28,13 @@ interface TabState {
   activeIndex: number;
 }
 
+interface PersistedAppState {
+  activeVpsId: string | null;
+  tabState: TabState;
+}
+
+const APP_PAGE_STATE_KEY = "chatcode.app-page.state.v1";
+
 type TabAction =
   | { type: "open"; tab: OpenTab }
   | { type: "close"; index: number }
@@ -151,13 +158,14 @@ export function AppPage({
   selectedVpsIdHint = null,
 }: AppPageProps) {
   const [collapsed, setCollapsed] = useState(false);
-  const [activeVpsId, setActiveVpsId] = useState<string | null>(null);
+  const [activeVpsId, setActiveVpsId] = useState<string | null>(() => loadPersistedAppState().activeVpsId);
   const [sidebarErrorMessage, setSidebarErrorMessage] = useState("");
   const [sessionRefreshSignal, setSessionRefreshSignal] = useState(0);
-  const [tabState, dispatchTab] = useReducer(tabReducer, {
-    tabs: [],
-    activeIndex: 0,
-  });
+  const [tabState, dispatchTab] = useReducer(
+    tabReducer,
+    undefined,
+    () => loadPersistedAppState().tabState,
+  );
   const [emptyActionBusy, setEmptyActionBusy] = useState(false);
   const [draggingVisibleIndex, setDraggingVisibleIndex] = useState<number | null>(null);
   const [showEmptyCreateMenu, setShowEmptyCreateMenu] = useState(false);
@@ -286,6 +294,13 @@ export function AppPage({
     setSidebarErrorMessage("");
   }, [selectedVpsIdHint]);
 
+  useEffect(() => {
+    persistAppState({
+      activeVpsId,
+      tabState,
+    });
+  }, [activeVpsId, tabState]);
+
   const handleReorderVisibleTabs = useCallback((fromIndex: number, toIndex: number) => {
     dispatchTab({
       type: "reorderVisible",
@@ -403,6 +418,65 @@ export function AppPage({
         </div>
       </main>
     </div>
+  );
+}
+
+function loadPersistedAppState(): PersistedAppState {
+  if (typeof window === "undefined") {
+    return {
+      activeVpsId: null,
+      tabState: { tabs: [], activeIndex: 0 },
+    };
+  }
+  try {
+    const raw = window.sessionStorage.getItem(APP_PAGE_STATE_KEY);
+    if (!raw) {
+      return {
+        activeVpsId: null,
+        tabState: { tabs: [], activeIndex: 0 },
+      };
+    }
+    const parsed = JSON.parse(raw) as Partial<PersistedAppState>;
+    const tabs = Array.isArray(parsed.tabState?.tabs)
+      ? parsed.tabState.tabs.filter(isOpenTab)
+      : [];
+    const activeIndex =
+      typeof parsed.tabState?.activeIndex === "number" &&
+      parsed.tabState.activeIndex >= 0 &&
+      parsed.tabState.activeIndex < tabs.length
+        ? parsed.tabState.activeIndex
+        : 0;
+    return {
+      activeVpsId: typeof parsed.activeVpsId === "string" ? parsed.activeVpsId : null,
+      tabState: {
+        tabs,
+        activeIndex,
+      },
+    };
+  } catch {
+    return {
+      activeVpsId: null,
+      tabState: { tabs: [], activeIndex: 0 },
+    };
+  }
+}
+
+function persistAppState(state: PersistedAppState) {
+  if (typeof window === "undefined") return;
+  try {
+    window.sessionStorage.setItem(APP_PAGE_STATE_KEY, JSON.stringify(state));
+  } catch {
+    // Ignore storage failures; restore is best-effort.
+  }
+}
+
+function isOpenTab(value: unknown): value is OpenTab {
+  if (!value || typeof value !== "object") return false;
+  const tab = value as Record<string, unknown>;
+  return (
+    typeof tab.vpsId === "string" &&
+    typeof tab.sessionId === "string" &&
+    typeof tab.title === "string"
   );
 }
 
