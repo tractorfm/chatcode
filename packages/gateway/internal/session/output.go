@@ -10,11 +10,15 @@ import (
 )
 
 const (
-	batchInterval      = 50 * time.Millisecond
-	cursorPollInterval = 150 * time.Millisecond
-	bufferCapacity     = 64
-	maxPayload         = 16 * 1024 // 16KB per frame
-	fullRedrawPrefix   = "\x1b[0m\x1b[H\x1b[2J"
+	batchInterval                = 50 * time.Millisecond
+	cursorPollInterval           = 150 * time.Millisecond
+	bufferCapacity               = 64
+	maxPayload                   = 16 * 1024 // 16KB per frame
+	fullRedrawPrefix             = "\x1b[0m\x1b[H\x1b[2J"
+	pathologicalRedrawBytes      = 4 * maxPayload
+	pathologicalRedrawBurstLimit = 3
+	pathologicalRedrawWindow     = 1 * time.Second
+	pathologicalRedrawCooldown   = 500 * time.Millisecond
 )
 
 // outputCapturer reads tmux pipe-pane output and batches it into OutputChunks.
@@ -29,12 +33,15 @@ type outputCapturer struct {
 	buf    []byte
 	ticker *time.Ticker
 
-	lastRawContent string
-	lastContent    string
-	lastCursorX    int
-	lastCursorY    int
-	lastCursorV    int
-	lastCursorAt   time.Time
+	lastRawContent        string
+	lastContent           string
+	lastCursorX           int
+	lastCursorY           int
+	lastCursorV           int
+	lastCursorAt          time.Time
+	redrawBurstCount      int
+	redrawWindowStart     time.Time
+	redrawSuppressedUntil time.Time
 }
 
 func newOutputCapturer(
@@ -167,10 +174,41 @@ func (c *outputCapturer) pollLoop(ctx context.Context) {
 				c.lastCursorY = cursorY
 				delta += cursorMove(cursorX, cursorY)
 			}
+			if redraw && c.shouldSuppressPathologicalRedraw(len(delta), time.Now()) {
+				continue
+			}
 
 			c.emitDelta(delta)
 		}
 	}
+}
+
+func (c *outputCapturer) shouldSuppressPathologicalRedraw(deltaBytes int, now time.Time) bool {
+	if deltaBytes < pathologicalRedrawBytes {
+		if !c.redrawWindowStart.IsZero() && now.Sub(c.redrawWindowStart) > pathologicalRedrawWindow {
+			c.redrawWindowStart = time.Time{}
+			c.redrawBurstCount = 0
+		}
+		return false
+	}
+
+	if c.redrawWindowStart.IsZero() || now.Sub(c.redrawWindowStart) > pathologicalRedrawWindow {
+		c.redrawWindowStart = now
+		c.redrawBurstCount = 1
+		return false
+	}
+
+	if now.Before(c.redrawSuppressedUntil) {
+		return true
+	}
+
+	c.redrawBurstCount++
+	if c.redrawBurstCount >= pathologicalRedrawBurstLimit {
+		c.redrawWindowStart = now
+		c.redrawBurstCount = pathologicalRedrawBurstLimit - 1
+		c.redrawSuppressedUntil = now.Add(pathologicalRedrawCooldown)
+	}
+	return false
 }
 
 func (c *outputCapturer) emitDelta(delta string) {

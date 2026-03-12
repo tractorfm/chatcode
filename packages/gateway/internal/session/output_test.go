@@ -1,6 +1,9 @@
 package session
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestEnqueueLatestWhenQueueNotFull(t *testing.T) {
 	ch := make(chan OutputChunk, 2)
@@ -124,5 +127,56 @@ func TestStripOSC8HyperlinksKeepsUnterminatedSequence(t *testing.T) {
 	content := "prefix \x1b]8;;https://example.testunterminated"
 	if got := stripOSC8Hyperlinks(content); got != content {
 		t.Fatalf("stripOSC8Hyperlinks unterminated = %q, want %q", got, content)
+	}
+}
+
+func TestPathologicalRedrawBreakerIgnoresSmallRedraws(t *testing.T) {
+	c := &outputCapturer{}
+	now := time.Unix(1, 0)
+	for i := 0; i < 10; i++ {
+		if c.shouldSuppressPathologicalRedraw(maxPayload, now.Add(time.Duration(i)*50*time.Millisecond)) {
+			t.Fatalf("small redraw %d unexpectedly suppressed", i)
+		}
+	}
+}
+
+func TestPathologicalRedrawBreakerSuppressesBurstDuringCooldown(t *testing.T) {
+	c := &outputCapturer{}
+	start := time.Unix(1, 0)
+	large := pathologicalRedrawBytes + 1
+
+	if c.shouldSuppressPathologicalRedraw(large, start) {
+		t.Fatalf("first large redraw unexpectedly suppressed")
+	}
+	if c.shouldSuppressPathologicalRedraw(large, start.Add(50*time.Millisecond)) {
+		t.Fatalf("second large redraw unexpectedly suppressed")
+	}
+	if c.shouldSuppressPathologicalRedraw(large, start.Add(100*time.Millisecond)) {
+		t.Fatalf("third large redraw should arm cooldown but still pass")
+	}
+	if !c.shouldSuppressPathologicalRedraw(large, start.Add(150*time.Millisecond)) {
+		t.Fatalf("large redraw during cooldown should be suppressed")
+	}
+	if !c.shouldSuppressPathologicalRedraw(large, start.Add(300*time.Millisecond)) {
+		t.Fatalf("cooldown should still suppress repeated redraws")
+	}
+	if c.shouldSuppressPathologicalRedraw(large, start.Add(100*time.Millisecond+pathologicalRedrawCooldown)) {
+		t.Fatalf("first large redraw after cooldown should pass")
+	}
+}
+
+func TestPathologicalRedrawBreakerResetsAfterQuietWindow(t *testing.T) {
+	c := &outputCapturer{}
+	start := time.Unix(1, 0)
+	large := pathologicalRedrawBytes + 1
+
+	if c.shouldSuppressPathologicalRedraw(large, start) {
+		t.Fatalf("first large redraw unexpectedly suppressed")
+	}
+	if c.shouldSuppressPathologicalRedraw(large, start.Add(50*time.Millisecond)) {
+		t.Fatalf("second large redraw unexpectedly suppressed")
+	}
+	if c.shouldSuppressPathologicalRedraw(large, start.Add(pathologicalRedrawWindow+50*time.Millisecond)) {
+		t.Fatalf("large redraw after quiet window should reset burst state")
 	}
 }
