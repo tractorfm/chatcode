@@ -252,6 +252,67 @@ Cleanup script should eventually remove:
 
 or provide a flag to keep/remove rebuild artifacts.
 
+## Retention and Compression
+
+History should never be unbounded.
+
+Recommended policy:
+
+### Per-session cap
+
+Apply a hard cap per ended session, for example:
+
+- transcript: `1-5 MB`
+- command history: `100-500 KB`
+
+This prevents pathological sessions from dominating disk usage.
+
+### Age-based compression
+
+For ended sessions older than a short hot window, for example `7 days`:
+
+- compress `transcript.log` to `transcript.log.gz`
+
+Reason:
+
+- terminal transcripts are text and compress very well
+- this reduces storage cost without changing privacy boundaries
+
+Do not compress active-session artifacts.
+
+### Age-based deletion
+
+Delete old local history automatically after a default retention period, for example:
+
+- `30 days`
+
+This should be configurable later, but a bounded default is important.
+
+### Global history budget
+
+In addition to age-based retention, enforce a total local history budget under:
+
+- `~/.chatcode/history/`
+
+Example default:
+
+- `100 MB`
+
+If exceeded:
+
+- delete oldest ended-session artifacts first
+
+This protects small VPS instances from slow disk growth over time.
+
+### Implementation order
+
+Recommended order:
+
+1. per-session caps
+2. age-based gzip compression for cold transcripts
+3. age-based deletion
+4. global disk budget enforcement
+
 ## MVP Implementation Order
 
 1. Persist final transcript on session end using tmux capture
