@@ -26,21 +26,10 @@ describe("routes/staging", () => {
 
     expect(html).toContain('socket.addEventListener("close"');
     expect(html).toContain('setTerminalStatus("disconnected")');
-    expect(html).toContain("gateway-update-target");
     expect(html).toContain("update-gateway");
     expect(html).toContain("rename-session");
     expect(html).toContain("v0.0.11");
-  });
-
-  it("parses a checksum entry by filename", () => {
-    const checksums = [
-      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  chatcode-gateway-linux-amd64",
-      "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  checksums.txt",
-    ].join("\n");
-
-    expect(parseChecksumEntry(checksums, "chatcode-gateway-linux-amd64")).toBe(
-      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-    );
-    expect(parseChecksumEntry(checksums, "missing")).toBeNull();
+    expect(html).toContain("gateway-update-version");
+    expect(html).toContain("release_base_url");
   });
 });

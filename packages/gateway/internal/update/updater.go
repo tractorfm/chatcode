@@ -11,6 +11,7 @@
 package update
 
 import (
+	"bufio"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -21,6 +22,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 )
 
@@ -29,6 +31,7 @@ const (
 	sudoBinary      = "/usr/bin/sudo"
 	systemctlBinary = "/usr/bin/systemctl"
 	installBinary   = "/usr/bin/install"
+	defaultReleaseBaseURL = "https://releases.chatcode.dev/gateway"
 )
 
 // Updater performs gateway self-updates.
@@ -95,6 +98,30 @@ func (u *Updater) Update(url, expectedSHA256 string) error {
 		return u.updateWithSudo(url, expectedSHA256)
 	}
 	return u.updateDirect(url, expectedSHA256)
+}
+
+// UpdateRelease resolves the correct release artifact for the current
+// OS/architecture pair, verifies its checksum from checksums.txt, and then
+// performs a normal binary swap + restart.
+func (u *Updater) UpdateRelease(baseURL, version string) error {
+	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	if baseURL == "" {
+		baseURL = defaultReleaseBaseURL
+	}
+	version = strings.TrimSpace(version)
+	if version == "" {
+		return fmt.Errorf("version is required")
+	}
+
+	objectName, err := releaseObjectName(runtime.GOOS, runtime.GOARCH)
+	if err != nil {
+		return err
+	}
+	sha256, err := u.fetchChecksum(baseURL, version, objectName)
+	if err != nil {
+		return err
+	}
+	return u.Update(fmt.Sprintf("%s/%s/%s", baseURL, version, objectName), sha256)
 }
 
 func (u *Updater) updateWithSudo(url, expectedSHA256 string) error {
@@ -194,6 +221,53 @@ func (u *Updater) download(url, dest string) error {
 
 	_, err = io.Copy(f, resp.Body)
 	return err
+}
+
+func (u *Updater) fetchChecksum(baseURL, version, filename string) (string, error) {
+	resp, err := u.httpClient.Get(fmt.Sprintf("%s/%s/checksums.txt", baseURL, version))
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("fetch checksums: HTTP %d", resp.StatusCode)
+	}
+
+	scanner := bufio.NewScanner(resp.Body)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			continue
+		}
+		name := strings.TrimPrefix(fields[1], "*")
+		if name == filename {
+			return strings.ToLower(fields[0]), nil
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return "", err
+	}
+	return "", fmt.Errorf("checksum not found for %s", filename)
+}
+
+func releaseObjectName(goos, goarch string) (string, error) {
+	switch goos {
+	case "linux":
+		switch goarch {
+		case "amd64", "arm64":
+			return fmt.Sprintf("chatcode-gateway-linux-%s", goarch), nil
+		}
+	case "darwin":
+		if goarch == "arm64" {
+			return "chatcode-gateway-darwin-arm64", nil
+		}
+	}
+	return "", fmt.Errorf("unsupported gateway release target: %s/%s", goos, goarch)
 }
 
 func (u *Updater) rollback(prevPath string) {

@@ -18,6 +18,7 @@ type Manager struct {
 
 	checkInterval             time.Duration
 	isAlive                   func(*Session) bool
+	livenessStatus            func(*Session) sessionLiveness
 	endSession                func(*Session) error
 	onSessionExit             func(string)
 	listRecoverableSessionIDs func() ([]string, error)
@@ -32,6 +33,9 @@ func NewManager(maxSessions int) *Manager {
 		checkInterval: 1 * time.Second,
 		isAlive: func(s *Session) bool {
 			return s.isAlive()
+		},
+		livenessStatus: func(s *Session) sessionLiveness {
+			return s.livenessStatus()
 		},
 		endSession: func(s *Session) error {
 			return s.kill()
@@ -147,6 +151,7 @@ func (m *Manager) remove(sessionID string) {
 func (m *Manager) watchSession(sessionID string, s *Session) {
 	ticker := time.NewTicker(m.checkInterval)
 	defer ticker.Stop()
+	goneChecks := 0
 
 	for range ticker.C {
 		m.mu.RLock()
@@ -155,7 +160,24 @@ func (m *Manager) watchSession(sessionID string, s *Session) {
 		if !ok || current != s {
 			return
 		}
-		if m.isAlive != nil && !m.isAlive(s) {
+		state := sessionLivenessAlive
+		switch {
+		case m.livenessStatus != nil:
+			state = m.livenessStatus(s)
+		case m.isAlive != nil && !m.isAlive(s):
+			state = sessionLivenessGone
+		}
+		switch state {
+		case sessionLivenessAlive:
+			goneChecks = 0
+			continue
+		case sessionLivenessUnknown:
+			goneChecks = 0
+			continue
+		case sessionLivenessGone:
+			goneChecks++
+		}
+		if goneChecks >= 2 {
 			m.mu.Lock()
 			current, ok := m.sessions[sessionID]
 			onExit := m.onSessionExit

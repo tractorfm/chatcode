@@ -42,7 +42,7 @@ func TestManagerDuplicateID(t *testing.T) {
 func TestManagerWatchSessionRemovesExitedSession(t *testing.T) {
 	m := NewManager(5)
 	m.checkInterval = 10 * time.Millisecond
-	m.isAlive = func(_ *Session) bool { return false }
+	m.livenessStatus = func(_ *Session) sessionLiveness { return sessionLivenessGone }
 
 	s := &Session{}
 	m.sessions["gone"] = s
@@ -61,7 +61,7 @@ func TestManagerWatchSessionRemovesExitedSession(t *testing.T) {
 func TestManagerWatchSessionCallsExitHookOnce(t *testing.T) {
 	m := NewManager(5)
 	m.checkInterval = 10 * time.Millisecond
-	m.isAlive = func(_ *Session) bool { return false }
+	m.livenessStatus = func(_ *Session) sessionLiveness { return sessionLivenessGone }
 
 	calls := make(chan string, 1)
 	m.SetOnSessionExit(func(sessionID string) {
@@ -80,6 +80,59 @@ func TestManagerWatchSessionCallsExitHookOnce(t *testing.T) {
 	case <-time.After(500 * time.Millisecond):
 		t.Fatal("expected exit hook to fire")
 	}
+}
+
+func TestManagerWatchSessionIgnoresUnknownLiveness(t *testing.T) {
+	m := NewManager(5)
+	m.checkInterval = 10 * time.Millisecond
+	m.livenessStatus = func(_ *Session) sessionLiveness { return sessionLivenessUnknown }
+
+	s := &Session{}
+	m.sessions["flaky"] = s
+	go m.watchSession("flaky", s)
+
+	time.Sleep(50 * time.Millisecond)
+	if m.Get("flaky") == nil {
+		t.Fatal("session should remain tracked on unknown liveness")
+	}
+}
+
+func TestManagerWatchSessionRequiresConsecutiveGoneChecks(t *testing.T) {
+	m := NewManager(5)
+	m.checkInterval = 10 * time.Millisecond
+	states := []sessionLiveness{
+		sessionLivenessGone,
+		sessionLivenessAlive,
+		sessionLivenessGone,
+		sessionLivenessGone,
+	}
+	var idx int
+	m.livenessStatus = func(_ *Session) sessionLiveness {
+		if idx >= len(states) {
+			return sessionLivenessGone
+		}
+		state := states[idx]
+		idx++
+		return state
+	}
+
+	s := &Session{}
+	m.sessions["flaky"] = s
+	go m.watchSession("flaky", s)
+
+	time.Sleep(25 * time.Millisecond)
+	if m.Get("flaky") == nil {
+		t.Fatal("session should survive a single gone check")
+	}
+
+	deadline := time.Now().Add(500 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		if m.Get("flaky") == nil {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("expected watcher to remove session after consecutive gone checks")
 }
 
 func TestManagerEndKeepsSessionOnKillFailure(t *testing.T) {
@@ -236,6 +289,27 @@ func TestSetDefaultTerminalArgs(t *testing.T) {
 		if args[i] != want[i] {
 			t.Fatalf("args[%d] = %q, want %q", i, args[i], want[i])
 		}
+	}
+}
+
+func TestSessionLivenessFromHasSessionOutput(t *testing.T) {
+	tests := []struct {
+		name string
+		out  string
+		want sessionLiveness
+	}{
+		{name: "gone", out: "can't find session: vibe-ses-test", want: sessionLivenessGone},
+		{name: "no server", out: "no server running on /tmp/chatcode/tmux-1001/default", want: sessionLivenessGone},
+		{name: "failed connect", out: "failed to connect to server", want: sessionLivenessUnknown},
+		{name: "missing socket", out: "no such file or directory", want: sessionLivenessUnknown},
+		{name: "other", out: "unexpected tmux failure", want: sessionLivenessUnknown},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := sessionLivenessFromHasSessionOutput([]byte(tt.out)); got != tt.want {
+				t.Fatalf("sessionLivenessFromHasSessionOutput(%q) = %v, want %v", tt.out, got, tt.want)
+			}
+		})
 	}
 }
 

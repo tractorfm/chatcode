@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"strings"
 	"syscall"
 	"time"
 	"unicode/utf8"
@@ -784,13 +785,17 @@ func (g *gateway) handleWorkspaceList(ctx context.Context, raw json.RawMessage) 
 
 func (g *gateway) handleGatewayUpdate(ctx context.Context, raw json.RawMessage) error {
 	var cmd struct {
-		RequestID string `json:"request_id"`
-		URL       string `json:"url"`
-		SHA256    string `json:"sha256"`
-		Version   string `json:"version"`
+		RequestID      string `json:"request_id"`
+		URL            string `json:"url"`
+		SHA256         string `json:"sha256"`
+		Version        string `json:"version"`
+		ReleaseBaseURL string `json:"release_base_url"`
 	}
 	if err := json.Unmarshal(raw, &cmd); err != nil {
 		return err
+	}
+	if strings.TrimSpace(cmd.URL) == "" && strings.TrimSpace(cmd.Version) == "" {
+		return fmt.Errorf("gateway.update requires either url+sha256 or version")
 	}
 
 	// Ack immediately once the updater job is accepted. The process is expected
@@ -799,7 +804,13 @@ func (g *gateway) handleGatewayUpdate(ctx context.Context, raw json.RawMessage) 
 	// command failures.
 	g.sendAck(ctx, cmd.RequestID, true, "")
 	go func() {
-		if err := g.updater.Update(cmd.URL, cmd.SHA256); err != nil {
+		var err error
+		if strings.TrimSpace(cmd.URL) != "" {
+			err = g.updater.Update(cmd.URL, cmd.SHA256)
+		} else {
+			err = g.updater.UpdateRelease(cmd.ReleaseBaseURL, cmd.Version)
+		}
+		if err != nil {
 			g.sendEvent(ctx, map[string]any{
 				"type":       "gateway.update_failed",
 				"request_id": cmd.RequestID,
@@ -811,7 +822,7 @@ func (g *gateway) handleGatewayUpdate(ctx context.Context, raw json.RawMessage) 
 		g.sendEvent(ctx, map[string]any{
 			"type":       "gateway.updated",
 			"request_id": cmd.RequestID,
-			"version":    cmd.Version,
+			"version":    strings.TrimSpace(cmd.Version),
 		})
 	}()
 	return nil

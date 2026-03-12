@@ -91,13 +91,6 @@ export async function handleStagingCommand(
   }
 }
 
-
-const GATEWAY_UPDATE_TARGETS = new Set([
-  "linux-amd64",
-  "linux-arm64",
-  "darwin-arm64",
-]);
-
 function trimTrailingSlashes(value: string): string {
   let end = value.length;
   while (end > 0 && value.charCodeAt(end - 1) === 47) {
@@ -117,15 +110,11 @@ export async function handleStagingGatewayUpdatePayload(
 
   const url = new URL(request.url);
   const vpsId = (url.searchParams.get("vps_id") || "").trim();
-  const target = (url.searchParams.get("target") || "linux-amd64").trim();
   const version = (url.searchParams.get("version") || env.GATEWAY_VERSION || "").trim();
   const baseUrl = trimTrailingSlashes((env.GATEWAY_RELEASE_BASE_URL || "").trim());
 
   if (!vpsId) {
     return jsonResponse({ error: "vps_id is required" }, 400);
-  }
-  if (!GATEWAY_UPDATE_TARGETS.has(target)) {
-    return jsonResponse({ error: "invalid target" }, 400);
   }
   if (!version || !/^v[0-9A-Za-z._-]+$/.test(version)) {
     return jsonResponse({ error: "invalid version" }, 400);
@@ -144,40 +133,16 @@ export async function handleStagingGatewayUpdatePayload(
     return jsonResponse({ error: "gateway not found" }, 404);
   }
 
-  const filename = `chatcode-gateway-${target}`;
-  const checksumsUrl = `${baseUrl}/${version}/checksums.txt`;
-
-  let checksumsText = "";
-  try {
-    const resp = await fetch(checksumsUrl);
-    if (!resp.ok) {
-      return jsonResponse({ error: `failed to fetch checksums (${resp.status})` }, 502);
-    }
-    checksumsText = await resp.text();
-  } catch (err) {
-    return jsonResponse(
-      { error: `failed to fetch checksums: ${err instanceof Error ? err.message : "unknown"}` },
-      502,
-    );
-  }
-
-  const sha256 = parseChecksumEntry(checksumsText, filename);
-  if (!sha256) {
-    return jsonResponse({ error: `checksum not found for ${filename}` }, 404);
-  }
-
   const cmd = {
     type: "gateway.update",
     schema_version: "1",
     request_id: `gw-update-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    url: `${baseUrl}/${version}/${filename}`,
-    sha256,
     version,
+    release_base_url: baseUrl,
   };
 
   return jsonResponse({
     gateway_id: gateway.id,
-    target,
     version,
     cmd,
   });
@@ -281,12 +246,6 @@ ${STAGING_TERMINAL_STYLE}
       <button id="vps-list">List VPS</button>
     </div>
     <div class="row">
-      <label for="gateway-update-target">Gateway update target:</label>
-      <select id="gateway-update-target">
-        <option value="linux-amd64">linux-amd64</option>
-        <option value="linux-arm64">linux-arm64</option>
-        <option value="darwin-arm64">darwin-arm64</option>
-      </select>
       <input id="gateway-update-version" value="${gatewayVersion}" placeholder="gateway version (default staging version)" />
     </div>
     <div id="vps-list-panel"></div>
@@ -389,7 +348,6 @@ ${STAGING_TERMINAL_SECTION}
     const schemaSSHFingerprint = document.getElementById("schema-ssh-fingerprint");
     const schemaSSHPublicKey = document.getElementById("schema-ssh-public-key");
     const schemaJson = document.getElementById("schema-json");
-    const gatewayUpdateTarget = document.getElementById("gateway-update-target");
     const gatewayUpdateVersion = document.getElementById("gateway-update-version");
 
     let vpsRows = [];
@@ -508,9 +466,8 @@ ${STAGING_TERMINAL_SECTION}
       }
 
       if (type === "gateway.update") {
-        cmd.url = "https://releases.chatcode.dev/gateway/<version>/chatcode-gateway-linux-amd64";
-        cmd.sha256 = "<sha256>";
         cmd.version = (gatewayUpdateVersion && gatewayUpdateVersion.value.trim()) || "${gatewayVersion}";
+        cmd.release_base_url = "${htmlEscape(env.GATEWAY_RELEASE_BASE_URL || "")}";
       }
 
       return cmd;
@@ -771,9 +728,17 @@ ${STAGING_TERMINAL_SECTION}
       if (!vpsId || !sessionId) return "";
       const vps = findVPS(vpsId);
       const ip = vps && typeof vps.ipv4 === "string" ? vps.ipv4.trim() : "";
-      if (!ip) return "";
+      const label = vps && typeof vps.label === "string" ? vps.label.trim() : "";
+      const host = ip || normalizeManualSSHHost(vps, label);
+      if (!host) return "";
       const tmuxName = "vibe-" + sessionId;
-      return "ssh vibe@" + ip + " -t 'env TMUX_TMPDIR=/tmp/chatcode tmux attach -t " + tmuxName + "'";
+      return "ssh vibe@" + host + " -t 'env TMUX_TMPDIR=/tmp/chatcode tmux attach -t " + tmuxName + "'";
+    }
+
+    function normalizeManualSSHHost(vps, label) {
+      if (!vps || vps.provider !== "manual" || !label) return "";
+      if (!/^[A-Za-z0-9._-]+$/.test(label)) return "";
+      return label;
     }
 
     async function copyToClipboard(text) {
@@ -836,9 +801,8 @@ ${STAGING_TERMINAL_SECTION}
     }
 
     async function updateGateway(vpsId) {
-      const target = (gatewayUpdateTarget && gatewayUpdateTarget.value) || "linux-amd64";
       const version = (gatewayUpdateVersion && gatewayUpdateVersion.value.trim()) || "";
-      const query = new URLSearchParams({ vps_id: vpsId, target: target });
+      const query = new URLSearchParams({ vps_id: vpsId });
       if (version) query.set("version", version);
       const payload = await call("/staging/gateway-update-payload?" + query.toString(), { method: "GET" });
       if (!payload.res.ok || !payload.body || !payload.body.cmd) {

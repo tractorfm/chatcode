@@ -33,6 +33,14 @@ var (
 
 const osc8Prefix = "\x1b]8;;"
 
+type sessionLiveness int
+
+const (
+	sessionLivenessAlive sessionLiveness = iota
+	sessionLivenessGone
+	sessionLivenessUnknown
+)
+
 // Options configures a new session.
 type Options struct {
 	// SessionID is the stable CP-assigned ID.
@@ -374,10 +382,10 @@ func (s *Session) requestGracefulExit() error {
 	if isShell, err := s.isForegroundShell(); err == nil && isShell {
 		// Only send literal "exit" when the foreground program is a shell, so
 		// we do not inject text into editors or other interactive programs.
-		if err := s.sendLiteral("exit"); err != nil && s.isAlive() {
+		if err := s.sendLiteral("exit"); err != nil && s.livenessStatus() == sessionLivenessAlive {
 			return err
 		}
-		if err := s.sendKeys("Enter"); err != nil && s.isAlive() {
+		if err := s.sendKeys("Enter"); err != nil && s.livenessStatus() == sessionLivenessAlive {
 			return err
 		}
 		if s.waitForExit(gracefulExitWait, 100*time.Millisecond) {
@@ -388,7 +396,7 @@ func (s *Session) requestGracefulExit() error {
 	// Interrupt first so interactive foreground programs can flush/stop before
 	// we fall back to EOF semantics.
 	if s.isAlive() {
-		if err := s.sendKeys("C-c"); err != nil && s.isAlive() {
+		if err := s.sendKeys("C-c"); err != nil && s.livenessStatus() == sessionLivenessAlive {
 			return err
 		}
 		time.Sleep(150 * time.Millisecond)
@@ -397,7 +405,7 @@ func (s *Session) requestGracefulExit() error {
 	// One EOF fallback helps when the foreground shell/program is waiting for
 	// end-of-input, without aggressively tearing through nested shells.
 	if s.isAlive() {
-		if err := s.sendKeys("C-d"); err != nil && s.isAlive() {
+		if err := s.sendKeys("C-d"); err != nil && s.livenessStatus() == sessionLivenessAlive {
 			return err
 		}
 		if s.waitForExit(gracefulExitWait, 100*time.Millisecond) {
@@ -428,7 +436,7 @@ func isShellCommand(cmd string) bool {
 func (s *Session) killTmuxSession() error {
 	cmd := exec.Command("tmux", "kill-session", "-t", s.tmuxName)
 	if out, err := cmd.CombinedOutput(); err != nil {
-		if !s.isAlive() {
+		if s.livenessStatus() != sessionLivenessAlive {
 			return nil
 		}
 		return fmt.Errorf("tmux kill-session: %w: %s", err, out)
@@ -485,7 +493,31 @@ func (s *Session) stopCapture() {
 }
 
 func (s *Session) isAlive() bool {
-	return exec.Command("tmux", "has-session", "-t", s.tmuxName).Run() == nil
+	return s.livenessStatus() != sessionLivenessGone
+}
+
+func (s *Session) livenessStatus() sessionLiveness {
+	out, err := exec.Command("tmux", "has-session", "-t", s.tmuxName).CombinedOutput()
+	if err == nil {
+		return sessionLivenessAlive
+	}
+	return sessionLivenessFromHasSessionOutput(out)
+}
+
+func sessionLivenessFromHasSessionOutput(out []byte) sessionLiveness {
+	lowOut := strings.ToLower(string(out))
+	switch {
+	case strings.Contains(lowOut, "can't find session"):
+		return sessionLivenessGone
+	case strings.Contains(lowOut, "no server running"):
+		return sessionLivenessGone
+	case strings.Contains(lowOut, "failed to connect to server"),
+		strings.Contains(lowOut, "connection refused"),
+		strings.Contains(lowOut, "no such file or directory"):
+		return sessionLivenessUnknown
+	default:
+		return sessionLivenessUnknown
+	}
 }
 
 // Summary returns lightweight session metadata.

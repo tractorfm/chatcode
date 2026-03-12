@@ -119,6 +119,51 @@ func TestUpdateChecksumMismatch(t *testing.T) {
 	}
 }
 
+func TestUpdateReleaseResolvesRuntimeArtifact(t *testing.T) {
+	dir := t.TempDir()
+	binaryPath := filepath.Join(dir, "gateway")
+	oldContent := []byte("old-binary")
+	newContent := []byte("new-binary")
+	mustWriteFile(t, binaryPath, oldContent)
+
+	objectName, err := releaseObjectName(runtime.GOOS, runtime.GOARCH)
+	if err != nil {
+		t.Skipf("unsupported test target: %v", err)
+	}
+	checksums := sha256Hex(newContent) + "  " + objectName + "\n"
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/gateway/v9.9.9/checksums.txt":
+			_, _ = w.Write([]byte(checksums))
+		case "/gateway/v9.9.9/" + objectName:
+			_, _ = w.Write(newContent)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	u := NewUpdater(binaryPath, discardLogger())
+	stubLinuxUpdate(t, u)
+	u.restartFn = func() error { return nil }
+
+	if err := u.UpdateRelease(srv.URL+"/gateway", "v9.9.9"); err != nil {
+		t.Fatalf("UpdateRelease: %v", err)
+	}
+
+	got := mustReadFile(t, binaryPath)
+	if string(got) != string(newContent) {
+		t.Fatalf("binary content = %q, want %q", string(got), string(newContent))
+	}
+}
+
+func TestReleaseObjectNameRejectsUnsupportedTarget(t *testing.T) {
+	if _, err := releaseObjectName("linux", "386"); err == nil {
+		t.Fatal("expected unsupported target error")
+	}
+}
+
 func discardLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
