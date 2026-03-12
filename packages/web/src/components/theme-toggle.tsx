@@ -1,26 +1,8 @@
 import { useEffect, useState } from "react";
 import { Moon, Sun, Monitor } from "lucide-react";
+import { applyColorScheme, getStoredColorScheme, type ColorScheme } from "@/lib/preferences";
 
-type Theme = "light" | "dark" | "system";
-
-function getTheme(): Theme {
-  return (localStorage.getItem("chatcode.theme") as Theme) ?? "system";
-}
-
-function applyTheme(theme: Theme) {
-  const isDark =
-    theme === "dark" ||
-    (theme === "system" &&
-      matchMedia("(prefers-color-scheme: dark)").matches);
-  document.documentElement.classList.toggle("dark", isDark);
-  if (theme === "system") {
-    localStorage.removeItem("chatcode.theme");
-  } else {
-    localStorage.setItem("chatcode.theme", theme);
-  }
-}
-
-function labelForTheme(theme: Theme) {
+function labelForTheme(theme: ColorScheme) {
   switch (theme) {
     case "system":
       return "System";
@@ -31,24 +13,34 @@ function labelForTheme(theme: Theme) {
   }
 }
 
-export function ThemeToggle() {
-  const [theme, setTheme] = useState<Theme>(getTheme);
+export function ThemeToggle({
+  value,
+  onChange,
+}: {
+  value?: ColorScheme;
+  onChange?: (theme: ColorScheme) => void;
+}) {
+  const [theme, setTheme] = useState<ColorScheme>(value ?? getStoredColorScheme());
 
   useEffect(() => {
-    applyTheme(theme);
+    if (value) setTheme(value);
+  }, [value]);
+
+  useEffect(() => {
+    applyColorScheme(theme);
   }, [theme]);
 
   // Listen for system preference changes
   useEffect(() => {
     const mq = matchMedia("(prefers-color-scheme: dark)");
     const handler = () => {
-      if (getTheme() === "system") applyTheme("system");
+      if (getStoredColorScheme() === "system") applyColorScheme("system");
     };
     mq.addEventListener("change", handler);
     return () => mq.removeEventListener("change", handler);
   }, []);
 
-  const themeOptions: Array<{ value: Theme; label: string; icon: typeof Monitor }> = [
+  const themeOptions: Array<{ value: ColorScheme; label: string; icon: typeof Monitor }> = [
     { value: "system", label: "System", icon: Monitor },
     { value: "dark", label: "Dark", icon: Moon },
     { value: "light", label: "Light", icon: Sun },
@@ -65,7 +57,10 @@ export function ThemeToggle() {
         return (
           <button
             key={option.value}
-            onClick={() => setTheme(option.value)}
+            onClick={() => {
+              setTheme(option.value);
+              onChange?.(option.value);
+            }}
             className={
               active
                 ? "inline-flex items-center gap-1.5 rounded px-2.5 py-1 text-sm font-medium bg-accent text-accent-foreground"

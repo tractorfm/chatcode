@@ -12,6 +12,12 @@ export interface UserRow {
   created_at: number;
 }
 
+export interface UserSettingsRow {
+  user_id: string;
+  preferences_json: string;
+  updated_at: number;
+}
+
 export interface EmailIdentityRow {
   user_id: string;
   email: string;
@@ -100,6 +106,33 @@ export async function createUser(db: D1Database, id: string): Promise<void> {
 
 export async function getUser(db: D1Database, id: string): Promise<UserRow | null> {
   return db.prepare("SELECT * FROM users WHERE id = ?").bind(id).first<UserRow>();
+}
+
+export async function getUserSettings(
+  db: D1Database,
+  userId: string,
+): Promise<UserSettingsRow | null> {
+  return db
+    .prepare("SELECT * FROM user_settings WHERE user_id = ?")
+    .bind(userId)
+    .first<UserSettingsRow>();
+}
+
+export async function upsertUserSettings(
+  db: D1Database,
+  userId: string,
+  preferencesJson: string,
+): Promise<void> {
+  await db
+    .prepare(
+      `INSERT INTO user_settings (user_id, preferences_json, updated_at)
+       VALUES (?, ?, ?)
+       ON CONFLICT(user_id) DO UPDATE SET
+         preferences_json = excluded.preferences_json,
+         updated_at = excluded.updated_at`,
+    )
+    .bind(userId, preferencesJson, nowSec())
+    .run();
 }
 
 export async function getEmailIdentityByEmail(

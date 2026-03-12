@@ -1,5 +1,7 @@
 import { Suspense, lazy, useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
+import { getUserSettings, type UserPreferences } from "@/lib/api";
+import { cachePreferences, DEFAULT_PREFERENCES } from "@/lib/preferences";
 
 const AuthPage = lazy(() => import("@/pages/auth-page").then((m) => ({ default: m.AuthPage })));
 const AppPage = lazy(() => import("@/pages/app-page").then((m) => ({ default: m.AppPage })));
@@ -20,6 +22,7 @@ export function App() {
   const [selectedVpsIdHint, setSelectedVpsIdHint] = useState<string | null>(null);
   const [onboardingManualVpsId, setOnboardingManualVpsId] = useState<string | null>(null);
   const [linkedProviders, setLinkedProviders] = useState<string[]>([]);
+  const [preferences, setPreferences] = useState<UserPreferences>(DEFAULT_PREFERENCES);
   const overlayRef = useRef<HTMLDivElement>(null);
 
   const handleNavigate = useCallback((target: "settings" | "status" | "onboarding", opts?: { manualVpsId?: string | null }) => {
@@ -51,6 +54,24 @@ export function App() {
   useEffect(() => {
     if (auth.status !== "authenticated") return;
     setLinkedProviders(auth.user.providers ?? []);
+  }, [auth.status]);
+
+  useEffect(() => {
+    if (auth.status !== "authenticated") return;
+    let cancelled = false;
+    void getUserSettings()
+      .then(({ preferences }) => {
+        if (cancelled) return;
+        setPreferences(preferences);
+        cachePreferences(preferences);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setPreferences(DEFAULT_PREFERENCES);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [auth.status]);
 
   if (auth.status === "loading") {
@@ -102,6 +123,11 @@ export function App() {
                 userEmail={userEmail}
                 linkedProviders={linkedProviders}
                 onProvidersChanged={setLinkedProviders}
+                preferences={preferences}
+                onPreferencesChanged={(next) => {
+                  setPreferences(next);
+                  cachePreferences(next);
+                }}
                 onBack={handleCloseOverlay}
                 onLogout={auth.logout}
               />

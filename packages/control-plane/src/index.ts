@@ -28,6 +28,8 @@ import {
   handleDOCallback,
   handleDODisconnect,
   handleAuthMe,
+  handleUserSettingsGet,
+  handleUserSettingsUpdate,
   handleAuthUnlinkProvider,
   handleLogout,
   handleDevSessionLogin,
@@ -140,6 +142,12 @@ export default {
       // --- Auth (authenticated) ---
       if (path === "/auth/me" && method === "GET") {
         return withCORS(await handleAuthMe(request, env, auth), request, env);
+      }
+      if (path === "/me/settings" && method === "GET") {
+        return withCORS(await handleUserSettingsGet(request, env, auth), request, env);
+      }
+      if (path === "/me/settings" && method === "PATCH") {
+        return withCORS(await handleUserSettingsUpdate(request, env, auth), request, env);
       }
       const authUnlinkMatch = path.match(/^\/auth\/(google|github)\/disconnect$/);
       if (authUnlinkMatch && method === "POST") {

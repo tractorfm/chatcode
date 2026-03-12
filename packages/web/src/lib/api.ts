@@ -36,6 +36,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return body as T;
 }
 
+export interface UserPreferences {
+  color_scheme: "system" | "dark" | "light";
+  terminal_theme: string;
+}
+
 // -- Auth --
 
 export interface User {
@@ -62,6 +67,17 @@ export function logout() {
 export function unlinkProvider(provider: "google" | "github") {
   return request<{ ok: boolean; providers: string[] }>(`/auth/${provider}/disconnect`, {
     method: "POST",
+  });
+}
+
+export function getUserSettings() {
+  return request<{ preferences: UserPreferences }>("/me/settings");
+}
+
+export function updateUserSettings(opts: Partial<UserPreferences>) {
+  return request<{ preferences: UserPreferences }>("/me/settings", {
+    method: "PATCH",
+    body: JSON.stringify(opts),
   });
 }
 

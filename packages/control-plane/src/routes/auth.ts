@@ -10,8 +10,10 @@
 import type { Env, AuthContext } from "../types.js";
 import {
   deleteDOConnection,
+  getUserSettings,
   listAuthIdentitiesByUser,
   upsertDOConnection,
+  upsertUserSettings,
   getPrimaryEmailForUser,
   deleteAuthIdentityByUserProvider,
 } from "../db/schema.js";
@@ -68,6 +70,16 @@ interface DOOAuthState {
   user_id: string;
   redirect_url?: string;
 }
+
+interface UserPreferences {
+  color_scheme: "system" | "dark" | "light";
+  terminal_theme: string;
+}
+
+const DEFAULT_USER_PREFERENCES: UserPreferences = {
+  color_scheme: "system",
+  terminal_theme: "default",
+};
 
 /**
  * POST /auth/email/start
@@ -573,6 +585,50 @@ export async function handleAuthMe(
   });
 }
 
+export async function handleUserSettingsGet(
+  _request: Request,
+  env: Env,
+  auth: AuthContext,
+): Promise<Response> {
+  const stored = await getUserSettings(env.DB, auth.userId);
+  return jsonResponse({
+    preferences: parseUserPreferences(stored?.preferences_json),
+  });
+}
+
+export async function handleUserSettingsUpdate(
+  request: Request,
+  env: Env,
+  auth: AuthContext,
+): Promise<Response> {
+  let body: { color_scheme?: unknown; terminal_theme?: unknown };
+  try {
+    body = (await request.json()) as { color_scheme?: unknown; terminal_theme?: unknown };
+  } catch {
+    return jsonResponse({ error: "invalid JSON body" }, 400);
+  }
+
+  const current = parseUserPreferences((await getUserSettings(env.DB, auth.userId))?.preferences_json);
+  const next = { ...current };
+
+  if (body.color_scheme !== undefined) {
+    if (body.color_scheme !== "system" && body.color_scheme !== "dark" && body.color_scheme !== "light") {
+      return jsonResponse({ error: "invalid color_scheme" }, 400);
+    }
+    next.color_scheme = body.color_scheme;
+  }
+
+  if (body.terminal_theme !== undefined) {
+    if (typeof body.terminal_theme !== "string" || !body.terminal_theme.trim()) {
+      return jsonResponse({ error: "invalid terminal_theme" }, 400);
+    }
+    next.terminal_theme = body.terminal_theme.trim();
+  }
+
+  await upsertUserSettings(env.DB, auth.userId, JSON.stringify(next));
+  return jsonResponse({ preferences: next });
+}
+
 export async function handleAuthUnlinkProvider(
   _request: Request,
   env: Env,
@@ -739,6 +795,25 @@ function resolveSafeStoredRedirect(
   storedRedirect: string | undefined,
 ): string {
   return resolveRequestedPostAuthRedirect(storedRedirect ?? null, request, env) ?? postAuthRedirect(request, env);
+}
+
+function parseUserPreferences(raw?: string | null): UserPreferences {
+  if (!raw) return { ...DEFAULT_USER_PREFERENCES };
+  try {
+    const parsed = JSON.parse(raw) as Partial<UserPreferences>;
+    return {
+      color_scheme:
+        parsed.color_scheme === "system" || parsed.color_scheme === "dark" || parsed.color_scheme === "light"
+          ? parsed.color_scheme
+          : DEFAULT_USER_PREFERENCES.color_scheme,
+      terminal_theme:
+        typeof parsed.terminal_theme === "string" && parsed.terminal_theme.trim()
+          ? parsed.terminal_theme.trim()
+          : DEFAULT_USER_PREFERENCES.terminal_theme,
+    };
+  } catch {
+    return { ...DEFAULT_USER_PREFERENCES };
+  }
 }
 
 function authCookieSameSite(env: Env): "Strict" | "None" {

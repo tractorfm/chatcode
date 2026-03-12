@@ -4,6 +4,12 @@ CREATE TABLE users (
   created_at INTEGER NOT NULL
 );
 
+CREATE TABLE user_settings (
+  user_id           TEXT    PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  preferences_json  TEXT    NOT NULL,
+  updated_at        INTEGER NOT NULL
+);
+
 CREATE TABLE email_identities (
   user_id     TEXT    NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   email       TEXT    NOT NULL UNIQUE CHECK (email = lower(email)),

@@ -1,17 +1,27 @@
 import { useCallback, useEffect, useState } from "react";
 import { ArrowLeft, ExternalLink } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { getOAuthURL, listVPS, unlinkProvider, type VPS } from "@/lib/api";
+import {
+  getOAuthURL,
+  listVPS,
+  unlinkProvider,
+  updateUserSettings,
+  type UserPreferences,
+  type VPS,
+} from "@/lib/api";
 import {
   getStoredTerminalTheme,
   storeTerminalTheme,
   terminalThemes,
 } from "@/lib/themes";
+import type { ColorScheme } from "@/lib/preferences";
 
 interface SettingsPageProps {
   userEmail?: string;
   linkedProviders?: string[];
   onProvidersChanged?: (providers: string[]) => void;
+  preferences: UserPreferences;
+  onPreferencesChanged?: (preferences: UserPreferences) => void;
   onBack: () => void;
   onLogout: () => void;
 }
@@ -20,12 +30,20 @@ export function SettingsPage({
   userEmail,
   linkedProviders = [],
   onProvidersChanged,
+  preferences,
+  onPreferencesChanged,
   onBack,
   onLogout,
 }: SettingsPageProps) {
-  const [termTheme, setTermTheme] = useState(getStoredTerminalTheme);
+  const [colorScheme, setColorScheme] = useState<ColorScheme>(preferences.color_scheme);
+  const [termTheme, setTermTheme] = useState(preferences.terminal_theme || getStoredTerminalTheme());
   const [vpsList, setVpsList] = useState<VPS[]>([]);
   const [unlinkingProvider, setUnlinkingProvider] = useState<string | null>(null);
+
+  useEffect(() => {
+    setColorScheme(preferences.color_scheme);
+    setTermTheme(preferences.terminal_theme || getStoredTerminalTheme());
+  }, [preferences]);
 
   useEffect(() => {
     listVPS()
@@ -33,13 +51,30 @@ export function SettingsPage({
       .catch(() => {});
   }, []);
 
+  const persistPreferences = useCallback(
+    async (next: UserPreferences) => {
+      onPreferencesChanged?.(next);
+      try {
+        const res = await updateUserSettings(next);
+        onPreferencesChanged?.(res.preferences);
+      } catch {
+        // Keep UI state and local cache even if server write fails.
+      }
+    },
+    [onPreferencesChanged],
+  );
+
   const handleTermThemeChange = useCallback(
-    (e: React.ChangeEvent<HTMLSelectElement>) => {
+    async (e: React.ChangeEvent<HTMLSelectElement>) => {
       const name = e.target.value;
       setTermTheme(name);
       storeTerminalTheme(name);
+      await persistPreferences({
+        color_scheme: colorScheme,
+        terminal_theme: name,
+      });
     },
-    [],
+    [colorScheme, persistPreferences],
   );
 
   const linkedProviderSet = new Set(linkedProviders);
@@ -109,7 +144,16 @@ export function SettingsPage({
           <h2 className="text-sm font-medium text-foreground">Appearance</h2>
           <div className="flex items-center justify-between">
             <span className="text-sm text-muted-foreground">Color Scheme</span>
-            <ThemeToggle />
+            <ThemeToggle
+              value={colorScheme}
+              onChange={(theme) => {
+                setColorScheme(theme);
+                void persistPreferences({
+                  color_scheme: theme,
+                  terminal_theme: termTheme,
+                });
+              }}
+            />
           </div>
           <div className="flex items-center justify-between">
             <span className="text-sm text-muted-foreground">

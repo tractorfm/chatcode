@@ -7,15 +7,19 @@ import {
   handleEmailStart,
   handleEmailVerify,
   handleAuthMe,
+  handleUserSettingsGet,
+  handleUserSettingsUpdate,
   handleAuthUnlinkProvider,
   handleDevSessionLogin,
 } from "../src/routes/auth";
 
 const mocks = vi.hoisted(() => ({
   deleteDOConnection: vi.fn(async () => {}),
+  getUserSettings: vi.fn(async () => null),
   listAuthIdentitiesByUser: vi.fn(async () => []),
   deleteAuthIdentityByUserProvider: vi.fn(async () => {}),
   upsertDOConnection: vi.fn(async () => {}),
+  upsertUserSettings: vi.fn(async () => {}),
   getPrimaryEmailForUser: vi.fn(async () => "user@example.test"),
   importKEK: vi.fn(async () => ({} as CryptoKey)),
   encryptToken: vi.fn(async (token: string) => `enc:${token}`),
@@ -27,9 +31,11 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("../src/db/schema.js", () => ({
   deleteDOConnection: mocks.deleteDOConnection,
+  getUserSettings: mocks.getUserSettings,
   listAuthIdentitiesByUser: mocks.listAuthIdentitiesByUser,
   deleteAuthIdentityByUserProvider: mocks.deleteAuthIdentityByUserProvider,
   upsertDOConnection: mocks.upsertDOConnection,
+  upsertUserSettings: mocks.upsertUserSettings,
   getPrimaryEmailForUser: mocks.getPrimaryEmailForUser,
 }));
 
@@ -370,6 +376,79 @@ describe("routes/auth", () => {
       email: "user@example.test",
       providers: ["email", "github"],
     });
+  });
+
+  it("returns default user settings when none stored", async () => {
+    const { env } = makeEnv();
+
+    const res = await handleUserSettingsGet(
+      new Request("https://cp.example.test/me/settings"),
+      env,
+      { userId: "usr-test-1" },
+    );
+
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toEqual({
+      preferences: {
+        color_scheme: "system",
+        terminal_theme: "default",
+      },
+    });
+  });
+
+  it("updates stored user settings", async () => {
+    const { env } = makeEnv();
+    mocks.getUserSettings.mockResolvedValueOnce({
+      user_id: "usr-test-1",
+      preferences_json: JSON.stringify({
+        color_scheme: "light",
+        terminal_theme: "iterm2",
+      }),
+      updated_at: 1,
+    });
+
+    const res = await handleUserSettingsUpdate(
+      new Request("https://cp.example.test/me/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ terminal_theme: "solarized-dark" }),
+      }),
+      env,
+      { userId: "usr-test-1" },
+    );
+
+    expect(res.status).toBe(200);
+    expect(mocks.upsertUserSettings).toHaveBeenCalledWith(
+      env.DB,
+      "usr-test-1",
+      JSON.stringify({
+        color_scheme: "light",
+        terminal_theme: "solarized-dark",
+      }),
+    );
+    await expect(res.json()).resolves.toEqual({
+      preferences: {
+        color_scheme: "light",
+        terminal_theme: "solarized-dark",
+      },
+    });
+  });
+
+  it("rejects invalid user settings", async () => {
+    const { env } = makeEnv();
+
+    const res = await handleUserSettingsUpdate(
+      new Request("https://cp.example.test/me/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ color_scheme: "sepia" }),
+      }),
+      env,
+      { userId: "usr-test-1" },
+    );
+
+    expect(res.status).toBe(400);
+    await expect(res.json()).resolves.toEqual({ error: "invalid color_scheme" });
   });
 
   it("unlinks a linked google account", async () => {
