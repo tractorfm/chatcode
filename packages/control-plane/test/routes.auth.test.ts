@@ -451,6 +451,23 @@ describe("routes/auth", () => {
     await expect(res.json()).resolves.toEqual({ error: "invalid color_scheme" });
   });
 
+  it("rejects invalid terminal theme in user settings", async () => {
+    const { env } = makeEnv();
+
+    const res = await handleUserSettingsUpdate(
+      new Request("https://cp.example.test/me/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ terminal_theme: "dracula" }),
+      }),
+      env,
+      { userId: "usr-test-1" },
+    );
+
+    expect(res.status).toBe(400);
+    await expect(res.json()).resolves.toEqual({ error: "invalid terminal_theme" });
+  });
+
   it("unlinks a linked google account", async () => {
     const { env } = makeEnv();
     mocks.listAuthIdentitiesByUser

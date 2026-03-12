@@ -51,6 +51,7 @@ interface SidebarProps {
   onNewSession: (vpsId: string, sessionId: string, title: string) => void;
   onSessionRenamed: (sessionId: string, title: string) => void;
   onSessionTitleSync: (session: Session) => void;
+  onSessionsLoaded?: (vpsId: string, sessions: Session[]) => void;
   onVpsDeleted: (deletedVpsId: string, nextVpsId: string | null) => void;
   onNavigate: (page: "settings" | "status" | "onboarding", opts?: { manualVpsId?: string | null }) => void;
   onLogout: () => void;
@@ -70,6 +71,7 @@ export function Sidebar({
   onNewSession,
   onSessionRenamed,
   onSessionTitleSync,
+  onSessionsLoaded,
   onVpsDeleted,
   onNavigate,
   onLogout,
@@ -153,6 +155,7 @@ export function Sidebar({
       const openSessions = s.filter((s) => !isClosedStatus(s.status));
       setSessions(openSessions);
       setErrorMessage("");
+      onSessionsLoaded?.(activeVpsId, openSessions);
       openSessions.forEach((session) => onSessionTitleSync(session));
       if (
         openSessions.length > 0 &&
@@ -166,7 +169,7 @@ export function Sidebar({
     } finally {
       setLoading(false);
     }
-  }, [activeVpsId, onSelectSession, onSessionTitleSync, setOperationError]);
+  }, [activeVpsId, onSelectSession, onSessionTitleSync, onSessionsLoaded, setOperationError]);
 
   useEffect(() => {
     void refreshVPS();

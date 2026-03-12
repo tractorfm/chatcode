@@ -1,4 +1,5 @@
 import { apiUrl } from "./constants";
+import type { UserPreferences } from "./preferences";
 
 async function parseResponseBody(res: Response): Promise<unknown> {
   if (res.status === 204 || res.status === 205) {
@@ -34,11 +35,6 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     });
   }
   return body as T;
-}
-
-export interface UserPreferences {
-  color_scheme: "system" | "dark" | "light";
-  terminal_theme: string;
 }
 
 // -- Auth --

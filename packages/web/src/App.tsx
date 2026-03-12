@@ -1,7 +1,7 @@
 import { Suspense, lazy, useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
-import { getUserSettings, type UserPreferences } from "@/lib/api";
-import { cachePreferences, DEFAULT_PREFERENCES } from "@/lib/preferences";
+import { getUserSettings } from "@/lib/api";
+import { cachePreferences, DEFAULT_PREFERENCES, type UserPreferences } from "@/lib/preferences";
 
 const AuthPage = lazy(() => import("@/pages/auth-page").then((m) => ({ default: m.AuthPage })));
 const AppPage = lazy(() => import("@/pages/app-page").then((m) => ({ default: m.AppPage })));

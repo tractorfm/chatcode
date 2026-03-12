@@ -81,6 +81,15 @@ const DEFAULT_USER_PREFERENCES: UserPreferences = {
   terminal_theme: "default",
 };
 
+const ALLOWED_TERMINAL_THEMES = new Set([
+  "default",
+  "iterm2",
+  "solarized-dark",
+  "tango-dark",
+  "solarized-light",
+  "paper-light",
+]);
+
 /**
  * POST /auth/email/start
  */
@@ -619,7 +628,11 @@ export async function handleUserSettingsUpdate(
   }
 
   if (body.terminal_theme !== undefined) {
-    if (typeof body.terminal_theme !== "string" || !body.terminal_theme.trim()) {
+    if (
+      typeof body.terminal_theme !== "string" ||
+      !body.terminal_theme.trim() ||
+      !ALLOWED_TERMINAL_THEMES.has(body.terminal_theme.trim())
+    ) {
       return jsonResponse({ error: "invalid terminal_theme" }, 400);
     }
     next.terminal_theme = body.terminal_theme.trim();
@@ -807,7 +820,9 @@ function parseUserPreferences(raw?: string | null): UserPreferences {
           ? parsed.color_scheme
           : DEFAULT_USER_PREFERENCES.color_scheme,
       terminal_theme:
-        typeof parsed.terminal_theme === "string" && parsed.terminal_theme.trim()
+        typeof parsed.terminal_theme === "string" &&
+        parsed.terminal_theme.trim() &&
+        ALLOWED_TERMINAL_THEMES.has(parsed.terminal_theme.trim())
           ? parsed.terminal_theme.trim()
           : DEFAULT_USER_PREFERENCES.terminal_theme,
     };

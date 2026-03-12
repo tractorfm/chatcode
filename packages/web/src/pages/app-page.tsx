@@ -34,6 +34,7 @@ interface PersistedAppState {
 }
 
 const APP_PAGE_STATE_KEY = "chatcode.app-page.state.v1";
+const APP_PAGE_STATE_PERSIST_DEBOUNCE_MS = 150;
 
 type TabAction =
   | { type: "open"; tab: OpenTab }
@@ -295,11 +296,27 @@ export function AppPage({
   }, [selectedVpsIdHint]);
 
   useEffect(() => {
-    persistAppState({
-      activeVpsId,
-      tabState,
-    });
+    const timer = window.setTimeout(() => {
+      persistAppState({
+        activeVpsId,
+        tabState,
+      });
+    }, APP_PAGE_STATE_PERSIST_DEBOUNCE_MS);
+    return () => window.clearTimeout(timer);
   }, [activeVpsId, tabState]);
+
+  const handleSessionsLoaded = useCallback((vpsId: string, sessions: Session[]) => {
+    const openIds = new Set(sessions.map((session) => session.id));
+    const staleIndices = tabState.tabs
+      .map((tab, index) => ({ tab, index }))
+      .filter(({ tab }) => tab.vpsId === vpsId && !openIds.has(tab.sessionId))
+      .map(({ index }) => index)
+      .sort((a, b) => b - a);
+    if (staleIndices.length === 0) return;
+    for (const index of staleIndices) {
+      dispatchTab({ type: "close", index });
+    }
+  }, [tabState.tabs]);
 
   const handleReorderVisibleTabs = useCallback((fromIndex: number, toIndex: number) => {
     dispatchTab({
@@ -323,6 +340,7 @@ export function AppPage({
         onNewSession={handleNewSession}
         onSessionRenamed={handleSessionRenamed}
         onSessionTitleSync={handleSessionTitleSync}
+        onSessionsLoaded={handleSessionsLoaded}
         onVpsDeleted={handleVpsDeleted}
         onNavigate={onNavigate}
         onLogout={onLogout}

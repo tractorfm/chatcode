@@ -6,15 +6,13 @@ import {
   listVPS,
   unlinkProvider,
   updateUserSettings,
-  type UserPreferences,
   type VPS,
 } from "@/lib/api";
 import {
   getStoredTerminalTheme,
-  storeTerminalTheme,
   terminalThemes,
 } from "@/lib/themes";
-import type { ColorScheme } from "@/lib/preferences";
+import type { ColorScheme, UserPreferences } from "@/lib/preferences";
 
 interface SettingsPageProps {
   userEmail?: string;
@@ -68,7 +66,6 @@ export function SettingsPage({
     async (e: React.ChangeEvent<HTMLSelectElement>) => {
       const name = e.target.value;
       setTermTheme(name);
-      storeTerminalTheme(name);
       await persistPreferences({
         color_scheme: colorScheme,
         terminal_theme: name,
