@@ -59,7 +59,10 @@
   box-sizing: border-box;
 }
 
-/* Terminal container: fill available space, no overflow */
+/* Terminal container: fill available space, clip horizontal overflow */
+.terminal-container {
+  overflow: hidden;
+}
 .terminal-container .xterm {
   height: 100%;
 }

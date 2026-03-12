@@ -184,99 +184,46 @@ export function createTerminalHandle(opts: UseTerminalOptions): TerminalHandle {
     ackFlushTimer = setTimeout(() => flushPendingAck("batched"), 75);
   }
 
-  function getViewportMetrics() {
-    const termElement = term.element;
-    const parentElement = termElement?.parentElement;
-    if (!termElement || !parentElement) return null;
-
-    const elementStyle = window.getComputedStyle(termElement);
-    const paddingLeft = Number.parseFloat(elementStyle.getPropertyValue("padding-left")) || 0;
-    const paddingRight = Number.parseFloat(elementStyle.getPropertyValue("padding-right")) || 0;
-    const scrollbarWidth =
-      term.options.scrollback === 0
-        ? 0
-        : (term.options.overviewRuler?.width ?? 14);
-    const host = mountEl?.querySelector(".xterm-viewport");
-    const hostWidth =
-      host instanceof HTMLElement
-        ? host.clientWidth
-        : mountEl?.clientWidth ?? parentElement.clientWidth;
-    const availableWidth = Math.max(
-      0,
-      Math.min(parentElement.clientWidth - paddingLeft - paddingRight - scrollbarWidth, hostWidth),
-    );
-
-    const core = (term as Terminal & {
-      _core?: {
-        _renderService?: {
-          dimensions?: {
-            css?: {
-              canvas?: { width?: number };
-              cell?: { width?: number };
-            };
-          };
-        };
-      };
-    })._core;
-    const renderDimensions = core?._renderService?.dimensions?.css;
-    const canvasWidth = renderDimensions?.canvas?.width ?? 0;
-    const cellWidth = renderDimensions?.cell?.width ?? 0;
-
-    return {
-      availableWidth,
-      canvasWidth,
-      cellWidth,
-    };
-  }
-
   function clampColsToViewport(reason: string) {
-    const metrics = getViewportMetrics();
-    if (!metrics || metrics.availableWidth <= 0 || metrics.cellWidth <= 0) return;
+    if (!mountEl) return;
+    const screen = mountEl.querySelector(".xterm-screen");
+    if (!(screen instanceof HTMLElement)) return;
 
-    let cols = term.cols || 80;
+    // Use the viewport's clientWidth as the hard constraint — it already
+    // excludes the native scrollbar on systems where scrollbars take space.
+    const viewport = mountEl.querySelector(".xterm-viewport");
+    const hostEl = viewport instanceof HTMLElement ? viewport : mountEl;
+    const availableWidth = hostEl.clientWidth;
+    if (availableWidth <= 0) return;
+
+    // Actual rendered width of the terminal grid (set by xterm on
+    // .xterm-screen via inline style).
+    const screenWidth = screen.getBoundingClientRect().width;
+    if (screenWidth <= availableWidth + 0.5) return; // fits — nothing to do
+
+    // Derive actual cell width from what the browser laid out, then compute
+    // the maximum cols that fit.
+    const currentCols = term.cols;
     const rows = term.rows || 24;
-    let adjusted = false;
-    let canvasWidth = Math.ceil(metrics.canvasWidth);
-    const maxCols = Math.max(2, Math.floor(metrics.availableWidth / metrics.cellWidth));
+    if (currentCols <= 2 || screenWidth <= 0) return;
+    const renderedCellWidth = screenWidth / currentCols;
+    const maxCols = Math.max(2, Math.floor(availableWidth / renderedCellWidth));
+    if (maxCols >= currentCols) return;
 
-    if (maxCols < cols) {
-      adjusted = true;
-      cols = maxCols;
-      suppressResizeEvent = true;
-      try {
-        term.resize(cols, rows);
-      } finally {
-        suppressResizeEvent = false;
-      }
-    }
+    debugLog("fit-clamp-cols", {
+      reason,
+      fromCols: currentCols,
+      toCols: maxCols,
+      availableWidth: Math.round(availableWidth),
+      screenWidth: Math.round(screenWidth),
+      renderedCellWidth: Number(renderedCellWidth.toFixed(2)),
+    });
 
-    let latestMetrics = getViewportMetrics();
-    if (!latestMetrics) return;
-    canvasWidth = Math.ceil(latestMetrics.canvasWidth);
-
-    while (cols > 2 && canvasWidth > latestMetrics.availableWidth + 1) {
-      adjusted = true;
-      cols -= 1;
-      suppressResizeEvent = true;
-      try {
-        term.resize(cols, rows);
-      } finally {
-        suppressResizeEvent = false;
-      }
-      latestMetrics = getViewportMetrics();
-      if (!latestMetrics) break;
-      canvasWidth = Math.ceil(latestMetrics.canvasWidth);
-    }
-
-    if (adjusted && latestMetrics) {
-      debugLog("fit-clamp-cols", {
-        reason,
-        cols,
-        rows,
-        availableWidth: Math.round(latestMetrics.availableWidth),
-        canvasWidth,
-        cellWidth: Number(latestMetrics.cellWidth.toFixed(2)),
-      });
+    suppressResizeEvent = true;
+    try {
+      term.resize(maxCols, rows);
+    } finally {
+      suppressResizeEvent = false;
     }
   }
 
