@@ -23,8 +23,19 @@ export function normalizeSessionWorkdir(input?: string): string {
   }
 
   relative = relative.replace(/^\.\//, "").replace(/^\/+/, "");
-  if (!relative) return DEFAULT_SESSION_WORKDIR;
-  return `${DEFAULT_SESSION_WORKDIR}/${relative}`;
+  const sanitized = relative
+    .split("/")
+    .map((segment) => segment.trim())
+    .filter(
+      (segment) =>
+        segment !== "" &&
+        segment !== "." &&
+        segment !== ".." &&
+        !/[\u0000-\u001f\u007f]/.test(segment),
+    )
+    .join("/");
+  if (!sanitized) return DEFAULT_SESSION_WORKDIR;
+  return `${DEFAULT_SESSION_WORKDIR}/${sanitized}`;
 }
 
 export function sessionFolderKey(path: string): string {
