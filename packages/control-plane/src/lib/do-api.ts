@@ -8,6 +8,7 @@ import { importKEK, encryptToken, decryptToken } from "./do-tokens.js";
 
 const DO_API = "https://api.digitalocean.com/v2";
 const DO_TOKEN_URL = "https://cloud.digitalocean.com/v1/oauth/token";
+const DO_CREATE_DROPLET_RETRIES = 2;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -163,20 +164,45 @@ async function doFetch(
   });
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isRetryableDOStatus(status: number): boolean {
+  return status === 408 || status === 409 || status === 425 || status === 429 || status >= 500;
+}
+
 export async function createDroplet(
   token: string,
   params: CreateDropletParams,
 ): Promise<DODroplet> {
-  const resp = await doFetch("/droplets", token, {
-    method: "POST",
-    body: JSON.stringify(params),
-  });
-  if (!resp.ok) {
-    const text = await resp.text();
-    throw new Error(`DO create droplet failed: ${resp.status} ${text}`);
+  let lastError: Error | null = null;
+  for (let attempt = 0; attempt <= DO_CREATE_DROPLET_RETRIES; attempt += 1) {
+    try {
+      const resp = await doFetch("/droplets", token, {
+        method: "POST",
+        body: JSON.stringify(params),
+      });
+      if (!resp.ok) {
+        const text = await resp.text();
+        if (attempt < DO_CREATE_DROPLET_RETRIES && isRetryableDOStatus(resp.status)) {
+          await sleep(250 * (attempt + 1));
+          continue;
+        }
+        throw new Error(`DO create droplet failed: ${resp.status} ${text}`);
+      }
+      const data = (await resp.json()) as { droplet: DODroplet };
+      return data.droplet;
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+      if (attempt < DO_CREATE_DROPLET_RETRIES && !String(lastError.message).startsWith("DO create droplet failed:")) {
+        await sleep(250 * (attempt + 1));
+        continue;
+      }
+      throw lastError;
+    }
   }
-  const data = (await resp.json()) as { droplet: DODroplet };
-  return data.droplet;
+  throw lastError ?? new Error("DO create droplet failed");
 }
 
 export async function listRegions(token: string): Promise<DORegion[]> {
