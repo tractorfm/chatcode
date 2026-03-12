@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # cloud-init.sh – Bootstrap a DigitalOcean droplet for Chatcode.dev by
 # delegating to gateway-install.sh from the selected release.
+#
+# Copyright (c) 2026 Chatcode contributors.
+# Project: https://github.com/tractorfm/chatcode
 set -euo pipefail
 
 GATEWAY_RELEASE_BASE_URL="${GATEWAY_RELEASE_BASE_URL:-https://releases.chatcode.dev/gateway}"

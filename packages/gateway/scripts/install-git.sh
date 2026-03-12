@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # Ensure git is installed on the gateway host.
+# Copyright (c) 2026 Chatcode contributors.
+# Project: https://github.com/tractorfm/chatcode
 set -euo pipefail
 
 log() {
-  echo "[vibecode] $*"
+  echo "[chatcode] $*"
 }
 
 if command -v git >/dev/null 2>&1; then
@@ -22,7 +24,7 @@ if [[ "${os}" == "Linux" ]]; then
     apt-get install -y -q git
   else
     if ! command -v sudo >/dev/null 2>&1; then
-      echo "[vibecode] ERROR: sudo is required to install git on Linux" >&2
+      echo "[chatcode] ERROR: sudo is required to install git on Linux" >&2
       exit 1
     fi
     sudo -n env DEBIAN_FRONTEND=noninteractive apt-get update -q
@@ -32,16 +34,16 @@ elif [[ "${os}" == "Darwin" ]]; then
   if command -v brew >/dev/null 2>&1; then
     brew install git
   else
-    echo "[vibecode] ERROR: Homebrew is required on macOS to install git" >&2
+    echo "[chatcode] ERROR: Homebrew is required on macOS to install git" >&2
     exit 1
   fi
 else
-  echo "[vibecode] ERROR: unsupported OS ${os} for automatic git install" >&2
+  echo "[chatcode] ERROR: unsupported OS ${os} for automatic git install" >&2
   exit 1
 fi
 
 if ! command -v git >/dev/null 2>&1; then
-  echo "[vibecode] ERROR: git not found in PATH after install" >&2
+  echo "[chatcode] ERROR: git not found in PATH after install" >&2
   exit 1
 fi
 

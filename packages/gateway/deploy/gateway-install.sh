@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 # gateway-install.sh - Install chatcode-gateway on Linux (systemd) or macOS (launchd).
 #
+# Copyright (c) 2026 Chatcode contributors.
+# Project: https://github.com/tractorfm/chatcode
+# Docs: https://chatcode.dev/docs/gateway
+#
 # Supports two binary sources:
 #  1) Local binary (--binary-source)
 #  2) Release download (--version + --release-base-url)
@@ -103,6 +107,11 @@ log() {
 die() {
   echo "[gateway-install] ERROR: $*" >&2
   exit 1
+}
+
+log_banner() {
+  log "Chatcode Gateway installer"
+  log "project: https://github.com/tractorfm/chatcode"
 }
 
 ensure_linux_base_packages() {
@@ -702,6 +711,7 @@ update_gateway() {
 }
 
 main() {
+  log_banner
   install -d -m 755 "$(dirname "$LOCK_FILE")"
   exec 9>"$LOCK_FILE"
   if ! flock -n 9; then

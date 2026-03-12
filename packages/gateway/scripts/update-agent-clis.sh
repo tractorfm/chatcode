@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # Install or update agent CLIs via per-agent installer scripts.
+# Copyright (c) 2026 Chatcode contributors.
+# Project: https://github.com/tractorfm/chatcode
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -24,11 +26,11 @@ USAGE
 }
 
 log() {
-  echo "[vibecode] $*"
+  echo "[chatcode] $*"
 }
 
 die() {
-  echo "[vibecode] ERROR: $*" >&2
+  echo "[chatcode] ERROR: $*" >&2
   exit 1
 }
 

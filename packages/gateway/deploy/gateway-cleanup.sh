@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 # gateway-cleanup.sh - Remove chatcode-gateway service/runtime from a host.
 #
+# Copyright (c) 2026 Chatcode contributors.
+# Project: https://github.com/tractorfm/chatcode
+# Docs: https://chatcode.dev/docs/gateway
+#
 # Linux (root, dedicated vibe user):
 # - chatcode-gateway systemd unit + process
 # - chatcode-maintenance service/timer + helper scripts
