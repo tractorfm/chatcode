@@ -105,3 +105,17 @@ func TestNormalizeCapturedContentTrimsAllWhenCursorHidden(t *testing.T) {
 		t.Fatalf("normalizeCapturedContent hidden = %q, want %q", got, want)
 	}
 }
+
+func TestStripOSC8HyperlinksEscBackslashTerminated(t *testing.T) {
+	content := "\x1b]8;;https://example.test\x1b\\link\x1b]8;;\x1b\\"
+	if got := stripOSC8Hyperlinks(content); got != "link" {
+		t.Fatalf("stripOSC8Hyperlinks ESC\\\\ = %q, want %q", got, "link")
+	}
+}
+
+func TestStripOSC8HyperlinksBellTerminated(t *testing.T) {
+	content := "\x1b]8;;https://example.test\alink\x1b]8;;\a"
+	if got := stripOSC8Hyperlinks(content); got != "link" {
+		t.Fatalf("stripOSC8Hyperlinks BEL = %q, want %q", got, "link")
+	}
+}

@@ -31,6 +31,8 @@ var (
 	detectTmuxTermOnce   sync.Once
 )
 
+const osc8Prefix = "\x1b]8;;"
+
 // Options configures a new session.
 type Options struct {
 	// SessionID is the stable CP-assigned ID.
@@ -219,7 +221,7 @@ func (s *Session) Snapshot() (content string, cols, rows, cursorX, cursorY, curs
 		fmt.Sscanf(string(stateOut), "%d %d %d %d %d", &cols, &rows, &cursorX, &cursorY, &cursorVisible)
 	}
 
-	return string(out), cols, rows, cursorX, cursorY, cursorVisible, nil
+	return stripOSC8Hyperlinks(string(out)), cols, rows, cursorX, cursorY, cursorVisible, nil
 }
 
 func (s *Session) ensureHistoryLimit() error {
@@ -284,6 +286,45 @@ func snapshotCaptureArgs(tmuxName string) []string {
 		"-t", tmuxName,
 		"-p",
 	}
+}
+
+func stripOSC8Hyperlinks(content string) string {
+	if !strings.Contains(content, osc8Prefix) {
+		return content
+	}
+
+	var out strings.Builder
+	out.Grow(len(content))
+
+	for i := 0; i < len(content); {
+		if !strings.HasPrefix(content[i:], osc8Prefix) {
+			out.WriteByte(content[i])
+			i++
+			continue
+		}
+
+		i += len(osc8Prefix)
+		for i < len(content) {
+			switch content[i] {
+			case '\a':
+				i++
+				goto stripped
+			case '\x9c':
+				i++
+				goto stripped
+			case '\x1b':
+				if i+1 < len(content) && content[i+1] == '\\' {
+					i += 2
+					goto stripped
+				}
+			}
+			i++
+		}
+
+	stripped:
+	}
+
+	return out.String()
 }
 
 // kill terminates the tmux session.
