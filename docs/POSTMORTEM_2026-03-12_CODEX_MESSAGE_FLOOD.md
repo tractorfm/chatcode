@@ -151,5 +151,12 @@ Release:
 
 - gateway hyperlink normalization fix: done
 - release tag for gateway fix: done (`v0.0.19`)
-- browser terminal fit guard: prepared separately
-- ack batching / rate limiting / alerting: not yet implemented
+- browser ack batching: done
+- GatewayHub `session.ack` wait/echo path removal: done
+- gateway redraw burst breaker: done
+- gateway adaptive polling during redraw suppression: done
+- browser terminal fit bug: still open separately
+- per-session/per-gateway message-rate metrics: left for later
+- rate-based alerts / Cloudflare usage thresholds: left for later
+- server-side relay budgeting / mute behavior in GatewayHub: left for later
+- snapshot-only degraded mode for extreme redraw sessions: left for later

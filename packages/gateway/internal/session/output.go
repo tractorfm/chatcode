@@ -105,92 +105,94 @@ func (c *outputCapturer) pollLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-c.timer.C:
-			rawContent, err := c.capturePane()
-			nextInterval := c.captureInterval(time.Now())
-			if err != nil {
-				c.resetTimer(nextInterval)
-				continue
-			}
-			if rawContent == c.lastRawContent {
-				// Some full-screen apps move cursor without changing text content.
-				// Emit cursor-only control sequence so remote terminal stays aligned.
-				if !c.lastCursorAt.IsZero() && time.Since(c.lastCursorAt) < cursorPollInterval {
-					c.resetTimer(nextInterval)
-					continue
-				}
-				cursorX, cursorY, cursorV, cursorErr := c.captureCursor()
-				if cursorErr != nil {
-					c.resetTimer(nextInterval)
-					continue
-				}
-				c.lastCursorAt = time.Now()
-				moved := cursorX != c.lastCursorX || cursorY != c.lastCursorY
-				visCtrl := c.cursorVisibilityControl(cursorV)
-				if !moved && visCtrl == "" {
-					c.resetTimer(nextInterval)
-					continue
-				}
-				c.lastCursorX = cursorX
-				c.lastCursorY = cursorY
-				c.lastCursorV = cursorV
-				delta := visCtrl
-				if moved {
-					delta += cursorMove(cursorX, cursorY)
-				}
-				c.emitDelta(delta)
-				c.resetTimer(nextInterval)
-				continue
-			}
-
-			cursorX, cursorY, cursorV, cursorErr := c.captureCursor()
-			if cursorErr == nil {
-				c.lastCursorAt = time.Now()
-			}
-			content := rawContent
-			if cursorErr == nil {
-				content = normalizeCapturedContent(content, cursorY, cursorV)
-			} else {
-				content = normalizeCapturedContent(content, -1, -1)
-			}
-			delta, redraw := diff(c.lastContent, content)
-			c.lastRawContent = rawContent
-			c.lastContent = content
-
-			if len(delta) == 0 {
-				if cursorErr == nil {
-					if visCtrl := c.cursorVisibilityControl(cursorV); visCtrl != "" {
-						c.lastCursorV = cursorV
-						c.emitDelta(visCtrl)
-					}
-				}
-				c.resetTimer(nextInterval)
-				continue
-			}
-
-			if cursorErr == nil {
-				if visCtrl := c.cursorVisibilityControl(cursorV); visCtrl != "" {
-					if redraw {
-						delta = visCtrl + delta
-					} else {
-						delta += visCtrl
-					}
-					c.lastCursorV = cursorV
-				}
-			}
-			if redraw && cursorErr == nil {
-				c.lastCursorX = cursorX
-				c.lastCursorY = cursorY
-				delta += cursorMove(cursorX, cursorY)
-			}
-			if redraw && c.shouldSuppressPathologicalRedraw(len(delta), time.Now()) {
-				c.resetTimer(c.captureInterval(time.Now()))
-				continue
-			}
-
-			c.emitDelta(delta)
-			c.resetTimer(c.captureInterval(time.Now()))
+			c.resetTimer(c.processTick())
 		}
 	}
+}
+
+func (c *outputCapturer) processTick() time.Duration {
+	tickAt := time.Now()
+	rawContent, err := c.capturePane()
+	if err != nil {
+		return c.captureInterval(tickAt)
+	}
+	if rawContent == c.lastRawContent {
+		return c.processCursorOnlyTick(tickAt)
+	}
+
+	cursorX, cursorY, cursorV, cursorErr := c.captureCursor()
+	if cursorErr == nil {
+		c.lastCursorAt = tickAt
+	}
+
+	content := rawContent
+	if cursorErr == nil {
+		content = normalizeCapturedContent(content, cursorY, cursorV)
+	} else {
+		content = normalizeCapturedContent(content, -1, -1)
+	}
+	delta, redraw := diff(c.lastContent, content)
+	c.lastRawContent = rawContent
+	c.lastContent = content
+
+	if len(delta) == 0 {
+		if cursorErr == nil {
+			if visCtrl := c.cursorVisibilityControl(cursorV); visCtrl != "" {
+				c.lastCursorV = cursorV
+				c.emitDelta(visCtrl)
+			}
+		}
+		return c.captureInterval(tickAt)
+	}
+
+	if cursorErr == nil {
+		if visCtrl := c.cursorVisibilityControl(cursorV); visCtrl != "" {
+			if redraw {
+				delta = visCtrl + delta
+			} else {
+				delta += visCtrl
+			}
+			c.lastCursorV = cursorV
+		}
+	}
+	if redraw && cursorErr == nil {
+		c.lastCursorX = cursorX
+		c.lastCursorY = cursorY
+		delta += cursorMove(cursorX, cursorY)
+	}
+	if redraw && c.shouldSuppressPathologicalRedraw(len(delta), tickAt) {
+		return c.captureInterval(tickAt)
+	}
+
+	c.emitDelta(delta)
+	return c.captureInterval(tickAt)
+}
+
+func (c *outputCapturer) processCursorOnlyTick(tickAt time.Time) time.Duration {
+	// Some full-screen apps move cursor without changing text content.
+	// Emit cursor-only control sequence so remote terminal stays aligned.
+	if !c.lastCursorAt.IsZero() && tickAt.Sub(c.lastCursorAt) < cursorPollInterval {
+		return c.captureInterval(tickAt)
+	}
+	cursorX, cursorY, cursorV, cursorErr := c.captureCursor()
+	if cursorErr != nil {
+		return c.captureInterval(tickAt)
+	}
+	c.lastCursorAt = tickAt
+	moved := cursorX != c.lastCursorX || cursorY != c.lastCursorY
+	visCtrl := c.cursorVisibilityControl(cursorV)
+	if !moved && visCtrl == "" {
+		return c.captureInterval(tickAt)
+	}
+	c.lastCursorX = cursorX
+	c.lastCursorY = cursorY
+	c.lastCursorV = cursorV
+	delta := visCtrl
+	if moved {
+		delta += cursorMove(cursorX, cursorY)
+	}
+	c.emitDelta(delta)
+	return c.captureInterval(tickAt)
 }
 
 func (c *outputCapturer) shouldSuppressPathologicalRedraw(deltaBytes int, now time.Time) bool {
