@@ -545,7 +545,7 @@ export function Sidebar({
               {groupSessionsByFolder(sessions).map((group) => (
                 <div key={group.key} className="space-y-1">
                   <div className="flex items-center justify-between px-2 pt-1">
-                    <div className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                    <div className="text-sm font-normal text-muted-foreground">
                       {group.label}
                     </div>
                     <button
@@ -604,7 +604,7 @@ export function Sidebar({
                             editMode="single"
                             className="min-w-0"
                           />
-                          <div className="truncate text-[11px] font-normal text-muted-foreground">
+                          <div className="truncate text-xs font-normal text-muted-foreground">
                             {formatSessionSubtitle(session, group.key)}
                           </div>
                         </div>
