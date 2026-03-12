@@ -17,7 +17,6 @@ const (
 	terminationTimeout      = 3 * time.Second
 	forceKillWait           = 500 * time.Millisecond
 	gracefulExitWait        = 750 * time.Millisecond
-	gracefulExitAttempts    = 3
 	tmuxHistoryLimitLines   = 200000
 	snapshotHistoryLines    = 50000
 	preferredTmuxTerminal   = "tmux-256color"
@@ -322,26 +321,26 @@ func (s *Session) requestGracefulExit() error {
 		return nil
 	}
 
-	// Repeated EOF mirrors an interactive user exiting nested shells/programs
-	// with Ctrl-D while keeping tmux alive long enough to capture the final
-	// output they emit on shutdown.
-	for i := 0; i < gracefulExitAttempts && s.isAlive(); i++ {
+	// Prefer an explicit shell exit first so normal shell/profile exit hooks
+	// run before we fall back to EOF semantics.
+	if err := s.sendLiteral("exit"); err != nil && s.isAlive() {
+		return err
+	}
+	if err := s.sendKeys("Enter"); err != nil && s.isAlive() {
+		return err
+	}
+	if s.waitForExit(gracefulExitWait, 100*time.Millisecond) {
+		return nil
+	}
+
+	// One EOF fallback helps when the foreground shell/program is waiting for
+	// end-of-input, without aggressively tearing through nested shells.
+	if s.isAlive() {
 		if err := s.sendKeys("C-d"); err != nil && s.isAlive() {
 			return err
 		}
 		if s.waitForExit(gracefulExitWait, 100*time.Millisecond) {
 			return nil
-		}
-	}
-
-	// Plain shells often respond better to an explicit exit command than more
-	// EOF presses once the user is already at a prompt.
-	if s.isAlive() {
-		if err := s.sendLiteral("exit"); err != nil && s.isAlive() {
-			return err
-		}
-		if err := s.sendKeys("Enter"); err != nil && s.isAlive() {
-			return err
 		}
 	}
 
