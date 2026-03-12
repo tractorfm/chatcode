@@ -614,7 +614,7 @@ export function Sidebar({
                           e.stopPropagation();
                           handleEndSession(session.id);
                         }}
-                        className="hidden group-hover:block p-0.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive"
+                        className="flex h-4 w-4 shrink-0 items-center justify-center rounded p-0.5 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:bg-destructive/10 hover:text-destructive focus:opacity-100"
                         title="End session"
                       >
                         <Trash2 className="h-3 w-3" />
