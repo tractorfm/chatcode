@@ -292,6 +292,19 @@ func TestSetDefaultTerminalArgs(t *testing.T) {
 	}
 }
 
+func TestLiteralSendKeysArgs(t *testing.T) {
+	args := literalSendKeysArgs("vibe-ses-test", "--dangerously-skip-permissions")
+	want := []string{"send-keys", "-t", "vibe-ses-test", "-l", "--", "--dangerously-skip-permissions"}
+	if len(args) != len(want) {
+		t.Fatalf("args len = %d, want %d", len(args), len(want))
+	}
+	for i := range want {
+		if args[i] != want[i] {
+			t.Fatalf("args[%d] = %q, want %q", i, args[i], want[i])
+		}
+	}
+}
+
 func TestSessionLivenessFromHasSessionOutput(t *testing.T) {
 	tests := []struct {
 		name string
@@ -435,6 +448,43 @@ func TestSessionTmux(t *testing.T) {
 
 	if !contains(got, "hello_vibecode") {
 		t.Fatalf("expected 'hello_vibecode' in output, got:\n%s", got)
+	}
+}
+
+func TestSessionInputAcceptsLeadingDoubleDashPaste(t *testing.T) {
+	if !hasTmux() {
+		t.Skip("tmux not available")
+	}
+
+	outCh := make(chan OutputChunk, 64)
+	m := NewManager(5)
+
+	s, err := m.Create(Options{
+		SessionID: "dash-" + time.Now().Format("150405"),
+		Name:      "dash",
+		Workdir:   t.TempDir(),
+		Agent:     "none",
+		OutputCh:  outCh,
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	defer m.End(s.opts.SessionID)
+
+	time.Sleep(300 * time.Millisecond)
+
+	if err := s.Input([]byte("--dangerously-skip-permissions")); err != nil {
+		t.Fatalf("Input leading double dash: %v", err)
+	}
+
+	time.Sleep(200 * time.Millisecond)
+
+	content, _, _, _, _, _, err := s.Snapshot()
+	if err != nil {
+		t.Fatalf("Snapshot: %v", err)
+	}
+	if !contains(content, "--dangerously-skip-permissions") {
+		t.Fatalf("expected pasted text in snapshot, got:\n%s", content)
 	}
 }
 

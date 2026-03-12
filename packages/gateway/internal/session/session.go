@@ -172,8 +172,7 @@ func (s *Session) buildEnv() []string {
 // Input injects keystrokes into the tmux pane.
 func (s *Session) Input(data []byte) error {
 	atomic.StoreInt64(&s.lastActivityAt, time.Now().UnixNano())
-	// tmux send-keys with -l sends literal bytes (no special key interpretation)
-	cmd := exec.Command("tmux", "send-keys", "-t", s.tmuxName, "-l", string(data))
+	cmd := exec.Command("tmux", literalSendKeysArgs(s.tmuxName, string(data))...)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("tmux send-keys: %w: %s", err, out)
 	}
@@ -190,7 +189,7 @@ func (s *Session) sendKeys(keys ...string) error {
 }
 
 func (s *Session) sendLiteral(text string) error {
-	cmd := exec.Command("tmux", "send-keys", "-t", s.tmuxName, "-l", text)
+	cmd := exec.Command("tmux", literalSendKeysArgs(s.tmuxName, text)...)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("tmux send-keys: %w: %s", err, out)
 	}
@@ -254,6 +253,12 @@ func setHistoryLimitArgs(tmuxName string) []string {
 
 func setDefaultTerminalArgs(term string) []string {
 	return []string{"set-option", "-g", "default-terminal", term}
+}
+
+func literalSendKeysArgs(tmuxName, text string) []string {
+	// `--` ensures leading pasted text like `--dangerously-skip-permissions`
+	// is treated as literal input rather than tmux flags.
+	return []string{"send-keys", "-t", tmuxName, "-l", "--", text}
 }
 
 func detectTmuxDefaultTerminal() string {
