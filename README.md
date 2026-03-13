@@ -97,8 +97,9 @@ Details: [`packages/gateway/deploy/README.md`](packages/gateway/deploy/README.md
 Linux gateway installs currently:
 
 - create/use `vibe` user and `~/workspace`
-- preinstall `claude-code` and `codex`
+- preinstall `claude-code` and `codex` into `~vibe/.local`
 - install reusable agent installers (`claude-code`, `codex`, `gemini`, `opencode`) plus `install-git.sh`
+- wire `~vibe/.local/bin` into gateway runtime and interactive shell PATH
 - enable daily maintenance timer to update gateway + installed agent CLIs
 - enable sudo command logging for `vibe` (root-owned log)
 

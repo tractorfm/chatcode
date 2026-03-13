@@ -243,11 +243,25 @@ test_linux_installer_bootstraps_base_packages() {
   assert_contains "${INSTALL_SCRIPT}" "apt-get install -y -q"
 }
 
+test_installer_uses_user_local_agent_cli_updates() {
+  assert_contains "${INSTALL_SCRIPT}" 'sudo -u "${TARGET_USER}" -H env HOME="${TARGET_HOME}" PATH="${path_value}" "${AGENT_UPDATE_HELPER_PATH}" "$@"'
+  assert_contains "${INSTALL_SCRIPT}" 'TARGET_PATH="${TARGET_HOME}/.local/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"'
+  assert_contains "${INSTALL_SCRIPT}" 'sudo -u "$TARGET_USER" -H env HOME="$TARGET_HOME" PATH="$TARGET_PATH" \'
+}
+
+test_installer_sets_local_bin_path() {
+  assert_contains "${INSTALL_SCRIPT}" 'PATH=$(runtime_path_value)'
+  assert_contains "${INSTALL_SCRIPT}" 'export PATH="$HOME/.local/bin:$PATH"'
+  assert_contains "${INSTALL_SCRIPT}" '$(xml_escape "$(runtime_path_value)")'
+}
+
 main() {
   test_darwin_binary_source_no_start
   test_darwin_release_download_latest
   test_linux_requires_root
   test_linux_installer_bootstraps_base_packages
+  test_installer_uses_user_local_agent_cli_updates
+  test_installer_sets_local_bin_path
   test_service_template_preserves_tmux_children
   test_linux_installer_service_unit_preserves_tmux_children
   echo "[gateway-install.test] PASS"

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os/exec"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -483,7 +484,8 @@ func TestSessionInputAcceptsLeadingDoubleDashPaste(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Snapshot: %v", err)
 	}
-	if !contains(content, "--dangerously-skip-permissions") {
+	normalized := strings.ReplaceAll(strings.ReplaceAll(content, "\r", ""), "\n", "")
+	if !contains(normalized, "--dangerously-skip-permissions") {
 		t.Fatalf("expected pasted text in snapshot, got:\n%s", content)
 	}
 }

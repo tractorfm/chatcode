@@ -43,15 +43,16 @@ Linux mode:
 - prepares `~vibe/.ssh/authorized_keys` and `~/workspace`
 - installs binary to `/usr/local/bin/chatcode-gateway`
 - writes `/etc/chatcode/gateway.env`
-- preinstalls default agent CLIs: `claude-code` and `codex`
+- preinstalls default agent CLIs: `claude-code` and `codex` under `~vibe/.local`
 - installs reusable helper scripts in `/usr/local/sbin`:
   - `chatcode-update-agent-clis`
   - `install-git.sh`, `install-claude-code.sh`, `install-codex.sh`, `install-gemini.sh`, `install-opencode.sh`
+- ensures `~vibe/.local/bin` is on PATH for shells and gateway runtime
 - configures sudo logging for `vibe` at `/var/log/chatcode/sudo-vibe.log`
 - installs log rotation policy at `/etc/logrotate.d/chatcode-sudo-vibe`
 - installs `chatcode-gateway.service` and starts it
 - installs and enables `chatcode-maintenance.timer` (daily):
-  - updates all installed agent CLIs (`--installed-only`)
+  - updates all installed agent CLIs as `vibe` (`--installed-only`)
   - updates gateway binary to latest release and restarts service
 
 Sudo logging details (Linux):
@@ -131,6 +132,7 @@ Default behavior:
 - new installs preinstall `claude-code` + `codex`
 - periodic automated updates target all installed agent CLIs + gateway binary
 - automation uses the same installer scripts for both preinstall and updates
+- agent CLIs install into the target user's `~/.local` prefix rather than global npm paths
 - `update-agent-clis.sh` ensures `git` is installed first (`install-git.sh`)
 
 Update all installed CLIs to latest:

@@ -115,6 +115,32 @@ log_banner() {
   log "project: https://github.com/tractorfm/chatcode"
 }
 
+runtime_path_value() {
+  printf '%s/.local/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin' "${TARGET_HOME}"
+}
+
+ensure_target_shell_path() {
+  local profile snippet path_line
+  path_line='$HOME/.local/bin'
+  snippet='case ":$PATH:" in
+  *":$HOME/.local/bin:"*) ;;
+  *) export PATH="$HOME/.local/bin:$PATH" ;;
+esac'
+
+  for profile in "${TARGET_HOME}/.profile" "${TARGET_HOME}/.bashrc"; do
+    touch "${profile}"
+    if ! grep -Fq "${path_line}" "${profile}"; then
+      if [[ -s "${profile}" ]]; then
+        printf '\n%s\n' "${snippet}" >> "${profile}"
+      else
+        printf '%s\n' "${snippet}" > "${profile}"
+      fi
+    fi
+    chown "${TARGET_USER}:${TARGET_GROUP}" "${profile}" >/dev/null 2>&1 || true
+    chmod 644 "${profile}" >/dev/null 2>&1 || true
+  done
+}
+
 ensure_linux_base_packages() {
   command -v apt-get >/dev/null 2>&1 || return 0
 
@@ -322,6 +348,8 @@ write_env_file() {
   local tmp_env
   tmp_env="$(mktemp)"
   cat > "${tmp_env}" <<ENV
+HOME=${TARGET_HOME}
+PATH=$(runtime_path_value)
 GATEWAY_ID=${GATEWAY_ID}
 GATEWAY_AUTH_TOKEN=${GATEWAY_AUTH_TOKEN}
 GATEWAY_CP_URL=${GATEWAY_CP_URL}
@@ -439,7 +467,7 @@ PLIST
     <key>GATEWAY_MAX_SESSIONS</key>
     <string>$(xml_escape "${GATEWAY_MAX_SESSIONS}")</string>
     <key>PATH</key>
-    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <string>$(xml_escape "$(runtime_path_value)")</string>
   </dict>
 </dict>
 </plist>
@@ -481,7 +509,7 @@ write_darwin_maintenance_plist() {
   <key>EnvironmentVariables</key>
   <dict>
     <key>PATH</key>
-    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <string>$(xml_escape "$(runtime_path_value)")</string>
   </dict>
 </dict>
 </plist>
@@ -619,6 +647,16 @@ install_agent_update_helper() {
   fi
 }
 
+run_agent_update_helper() {
+  local path_value
+  path_value="$(runtime_path_value)"
+  if [[ "${OS_NAME}" == "Linux" ]]; then
+    sudo -u "${TARGET_USER}" -H env HOME="${TARGET_HOME}" PATH="${path_value}" "${AGENT_UPDATE_HELPER_PATH}" "$@"
+    return
+  fi
+  env HOME="${TARGET_HOME}" PATH="${path_value}" "${AGENT_UPDATE_HELPER_PATH}" "$@"
+}
+
 preinstall_default_agents() {
   if [[ "${SKIP_AGENT_PREINSTALL}" -eq 1 ]]; then
     log "skipping default agent preinstall"
@@ -630,7 +668,7 @@ preinstall_default_agents() {
   fi
 
   log "preinstalling default agents (claude-code, codex)"
-  if ! "${AGENT_UPDATE_HELPER_PATH}" --best-effort claude-code codex; then
+  if ! run_agent_update_helper --best-effort claude-code codex; then
     log "warning: default agent preinstall encountered errors"
   fi
 }
@@ -645,6 +683,9 @@ ENV_FILE="/etc/chatcode/gateway.env"
 AGENT_HELPER="/usr/local/sbin/chatcode-update-agent-clis"
 SERVICE_NAME="chatcode-gateway"
 LOCK_FILE="/var/lock/chatcode-maintenance.lock"
+TARGET_USER="__CHATCODE_TARGET_USER__"
+TARGET_HOME="__CHATCODE_TARGET_HOME__"
+TARGET_PATH="${TARGET_HOME}/.local/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 
 log() {
   echo "${LOG_PREFIX} $*"
@@ -721,13 +762,18 @@ main() {
   fi
 
   if [ -x "$AGENT_HELPER" ]; then
-    "$AGENT_HELPER" --installed-only --best-effort || log "WARNING: agent CLI update returned non-zero"
+    sudo -u "$TARGET_USER" -H env HOME="$TARGET_HOME" PATH="$TARGET_PATH" \
+      "$AGENT_HELPER" --installed-only --best-effort || log "WARNING: agent CLI update returned non-zero"
   fi
   update_gateway
 }
 
 main "$@"
 SCRIPT
+  sed -i \
+    -e "s|__CHATCODE_TARGET_USER__|${TARGET_USER}|g" \
+    -e "s|__CHATCODE_TARGET_HOME__|${TARGET_HOME}|g" \
+    "${LINUX_MAINTENANCE_SCRIPT}"
   chmod 0755 "${LINUX_MAINTENANCE_SCRIPT}"
 }
 
@@ -1031,6 +1077,7 @@ fi
 
 if [[ "${OS_NAME}" == "Linux" ]]; then
   prepare_linux_user
+  ensure_target_shell_path
   write_linux_logrotate
   AGENT_UPDATE_HELPER_PATH="${LINUX_AGENT_UPDATE_HELPER}"
   if [[ -n "${AGENT_UPDATE_SOURCE}" ]]; then
@@ -1041,6 +1088,7 @@ if [[ "${OS_NAME}" == "Linux" ]]; then
   write_linux_maintenance_units
 else
   prepare_darwin_user
+  ensure_target_shell_path
   AGENT_UPDATE_HELPER_PATH="${TARGET_HOME}/.local/bin/chatcode-update-agent-clis"
   if [[ -n "${AGENT_UPDATE_SOURCE}" ]]; then
     install_agent_update_helper "${AGENT_UPDATE_SOURCE}" "${AGENT_UPDATE_HELPER_PATH}"

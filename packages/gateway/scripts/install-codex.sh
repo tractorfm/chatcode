@@ -6,6 +6,14 @@ set -euo pipefail
 
 echo "[chatcode] Installing Codex CLI for the Chatcode gateway host..."
 
+if [ "${EUID:-$(id -u)}" -eq 0 ]; then
+    echo "[chatcode] ERROR: run this installer as the target non-root user so Codex CLI is installed under that user's home" >&2
+    exit 1
+fi
+
+LOCAL_PREFIX="${HOME}/.local"
+LOCAL_BIN="${LOCAL_PREFIX}/bin"
+
 ensure_node() {
     local os
     os="$(uname -s)"
@@ -22,13 +30,12 @@ ensure_node() {
 
     if [ "${os}" = "Linux" ]; then
         # Linux package install path assumes Debian/Ubuntu (our managed VPS image).
-        if [ "${EUID:-$(id -u)}" -eq 0 ]; then
-            curl -fsSL https://deb.nodesource.com/setup_24.x | bash -
-            apt-get install -y nodejs
-        else
-            curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
-            sudo apt-get install -y nodejs
+        if ! command -v sudo >/dev/null 2>&1; then
+            echo "[chatcode] ERROR: sudo is required on Linux to install Node.js" >&2
+            exit 1
         fi
+        curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
+        sudo apt-get install -y nodejs
         return 0
     fi
 
@@ -48,23 +55,15 @@ ensure_node() {
 
 ensure_node
 
-npm_global_install() {
+npm_user_install() {
     local pkg="$1"
-    local os
-    os="$(uname -s)"
-    if [ "${os}" = "Linux" ] && [ "${EUID:-$(id -u)}" -ne 0 ]; then
-        if command -v sudo >/dev/null 2>&1; then
-            sudo -n npm install -g "${pkg}"
-            return 0
-        fi
-        echo "[chatcode] ERROR: sudo is required for global npm install on Linux" >&2
-        exit 1
-    fi
-    npm install -g "${pkg}"
+    install -d -m 755 "${LOCAL_BIN}" "${LOCAL_PREFIX}/lib"
+    export PATH="${LOCAL_BIN}:${PATH}"
+    npm install -g --prefix "${LOCAL_PREFIX}" "${pkg}"
 }
 
-# Install/upgrade Codex CLI globally
-npm_global_install "@openai/codex@latest"
+# Install/upgrade Codex CLI in the target user's local prefix.
+npm_user_install "@openai/codex@latest"
 
 # Verify installation
 if ! command -v codex &>/dev/null; then
