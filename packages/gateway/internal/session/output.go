@@ -15,6 +15,7 @@ const (
 	cursorPollInterval           = 150 * time.Millisecond
 	bufferCapacity               = 64
 	maxPayload                   = 16 * 1024 // 16KB per frame
+	normalRedrawPrefix           = "\x1b[0m"
 	fullRedrawPrefix             = "\x1b[0m\x1b[H\x1b[2J"
 	pathologicalRedrawBytes      = 4 * maxPayload
 	pathologicalRedrawBurstLimit = 3
@@ -146,7 +147,8 @@ func (c *outputCapturer) processTick() time.Duration {
 	} else {
 		content = normalizeCapturedContent(content, -1, -1)
 	}
-	delta, redraw := diff(c.lastContent, content)
+	oldContent := c.lastContent
+	delta, redraw := diff(oldContent, content)
 	c.lastRawContent = rawContent
 	c.lastContent = content
 	altCtrl := ""
@@ -157,8 +159,10 @@ func (c *outputCapturer) processTick() time.Duration {
 	}
 
 	if alternateTransition {
-		delta = fullRedrawPrefix + content
+		delta = renderFullRedraw(oldContent, content, state.alternateOn)
 		redraw = true
+	} else if redraw {
+		delta = renderFullRedraw(oldContent, content, stateErr == nil && state.alternateOn)
 	}
 
 	if len(delta) == 0 {
@@ -229,7 +233,7 @@ func (c *outputCapturer) processCursorOnlyTick(tickAt time.Time) time.Duration {
 		if visCtrl != "" {
 			delta += visCtrl
 		}
-		delta += fullRedrawPrefix + c.lastContent
+		delta += renderFullRedraw(c.lastContent, c.lastContent, state.alternateOn)
 		delta += cursorMove(state.cursorX, state.cursorY)
 	} else {
 		delta = visCtrl
@@ -423,6 +427,39 @@ func normalizeCapturedContent(content string, cursorY int, cursorVisible int) st
 	return strings.Join(lines, "\n")
 }
 
+func renderFullRedraw(oldContent, newContent string, alternateOn bool) string {
+	if alternateOn {
+		return fullRedrawPrefix + newContent
+	}
+	return renderNormalBufferRedraw(oldContent, newContent)
+}
+
+func renderNormalBufferRedraw(oldContent, newContent string) string {
+	var b strings.Builder
+	b.Grow(len(newContent) + len(oldContent) + 32)
+	b.WriteString(normalRedrawPrefix)
+
+	newLines := strings.Split(newContent, "\n")
+	oldLines := strings.Split(oldContent, "\n")
+	maxRows := len(newLines)
+	if len(oldLines) > maxRows {
+		maxRows = len(oldLines)
+	}
+
+	for row := 0; row < maxRows; row++ {
+		b.WriteString(cursorMove(0, row))
+		switch {
+		case row < len(newLines):
+			b.WriteString(newLines[row])
+			b.WriteString("\x1b[K")
+		default:
+			b.WriteString("\x1b[2K")
+		}
+	}
+
+	return b.String()
+}
+
 // diff returns the bytes in b that are not a suffix match of a.
 // For the MVP this is a simple heuristic: return content added since last snapshot.
 // In practice tmux capture-pane returns the full visible buffer, so we return
@@ -441,6 +478,7 @@ func diff(old, new string) (string, bool) {
 	}
 
 	// Any non-append change is treated as in-place update and rendered as full
-	// viewport redraw. This avoids duplicated/misaligned output for dynamic UIs.
-	return fullRedrawPrefix + new, true
+	// viewport redraw by the caller. This avoids duplicated/misaligned output
+	// for dynamic UIs while allowing different redraw strategies by mode.
+	return new, true
 }
