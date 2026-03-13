@@ -49,6 +49,12 @@ DOWNLOAD_TMP_DIR=""
 AGENT_HELPER_TMP_DIR=""
 
 OS_NAME="$(uname -s)"
+if [[ "${OS_NAME}" == "Linux" ]]; then
+  TMPDIR="${TMPDIR:-/var/tmp}"
+else
+  TMPDIR="${TMPDIR:-/tmp}"
+fi
+export TMPDIR
 TARGET_USER=""
 TARGET_GROUP=""
 TARGET_HOME=""
@@ -103,6 +109,23 @@ USAGE
 
 log() {
   echo "[gateway-install] $*" >&2
+}
+
+warn_small_tmpfs_tmp() {
+  [[ "${OS_NAME}" == "Linux" ]] || return 0
+  if ! mount | grep -Eq ' on /tmp type tmpfs '; then
+    return 0
+  fi
+
+  local total_kb avail_kb
+  total_kb="$(df -Pk /tmp | awk 'NR==2 {print $2}')"
+  avail_kb="$(df -Pk /tmp | awk 'NR==2 {print $4}')"
+  if [[ -n "${avail_kb}" && "${avail_kb}" -lt 262144 ]]; then
+    log "warning: /tmp is tmpfs with only $((avail_kb / 1024)) MiB free; using ${TMPDIR} for large Chatcode temp files"
+  fi
+  if [[ -n "${total_kb}" && "${total_kb}" -lt 524288 ]]; then
+    log "warning: /tmp is a small tmpfs ($((total_kb / 1024)) MiB total); managed gateways should prefer ${TMPDIR} for downloads and updates"
+  fi
 }
 
 die() {
@@ -362,6 +385,7 @@ GATEWAY_HEALTH_INTERVAL=${GATEWAY_HEALTH_INTERVAL}
 GATEWAY_MAX_SESSIONS=${GATEWAY_MAX_SESSIONS}
 GATEWAY_VERSION=${install_version}
 GATEWAY_RELEASE_BASE_URL=${GATEWAY_RELEASE_BASE_URL}
+TMPDIR=${TMPDIR}
 ENV
   if [[ -n "${GATEWAY_BOOTSTRAP_TOKEN}" ]]; then
     echo "GATEWAY_BOOTSTRAP_TOKEN=${GATEWAY_BOOTSTRAP_TOKEN}" >> "${tmp_env}"
@@ -1036,6 +1060,7 @@ require_single_line "GATEWAY_ID" "${GATEWAY_ID}"
 require_single_line "GATEWAY_AUTH_TOKEN" "${GATEWAY_AUTH_TOKEN}"
 require_single_line "GATEWAY_CP_URL" "${GATEWAY_CP_URL}"
 require_single_line "GATEWAY_BOOTSTRAP_TOKEN" "${GATEWAY_BOOTSTRAP_TOKEN}"
+warn_small_tmpfs_tmp
 
 case "${OS_NAME}" in
   Linux)

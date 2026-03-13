@@ -245,6 +245,9 @@ test_linux_installer_bootstraps_base_packages() {
   assert_contains "${INSTALL_SCRIPT}" "ensure_linux_base_packages"
   assert_contains "${INSTALL_SCRIPT}" "missing+=(\"tmux\")"
   assert_contains "${INSTALL_SCRIPT}" "apt-get install -y -q"
+  assert_contains "${INSTALL_SCRIPT}" 'TMPDIR="${TMPDIR:-/var/tmp}"'
+  assert_contains "${INSTALL_SCRIPT}" 'TMPDIR=${TMPDIR}'
+  assert_contains "${INSTALL_SCRIPT}" 'warn_small_tmpfs_tmp'
 }
 
 test_installer_uses_user_local_agent_cli_updates() {
