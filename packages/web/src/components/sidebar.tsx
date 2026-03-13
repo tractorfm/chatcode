@@ -50,6 +50,7 @@ interface SidebarProps {
   onToggle: () => void;
   activeVpsId: string | null;
   activeSessionId: string | null;
+  onActiveVpsNameChange?: (name: string | null) => void;
   onSelectVps: (vpsId: string) => void;
   onSelectSession: (vpsId: string, sessionId: string, title: string) => void;
   onNewSession: (vpsId: string, sessionId: string, title: string) => void;
@@ -70,6 +71,7 @@ export function Sidebar({
   onToggle,
   activeVpsId,
   activeSessionId,
+  onActiveVpsNameChange,
   onSelectVps,
   onSelectSession,
   onNewSession,
@@ -116,6 +118,10 @@ export function Sidebar({
   useEffect(() => {
     activeSessionIdRef.current = activeSessionId;
   }, [activeSessionId]);
+
+  useEffect(() => {
+    onActiveVpsNameChange?.(activeVps ? activeVpsName : null);
+  }, [activeVps, activeVpsName, onActiveVpsNameChange]);
 
   useEffect(() => {
     setDismissedError("");

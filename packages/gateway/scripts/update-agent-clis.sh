@@ -145,7 +145,7 @@ if [[ ${#agents[@]} -eq 0 ]]; then
   exit 0
 fi
 
-if [[ "$(uname -s)" == "Darwin" && ! command -v brew >/dev/null 2>&1 ]]; then
+if [[ "$(uname -s)" == "Darwin" ]] && ! command -v brew >/dev/null 2>&1; then
   darwin_prep_hint
   die "Homebrew is required on macOS before Chatcode can install or update agent CLIs"
 fi

@@ -166,6 +166,7 @@ export function AppPage({
 }: AppPageProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [activeVpsId, setActiveVpsId] = useState<string | null>(() => loadPersistedAppState().activeVpsId);
+  const [activeVpsName, setActiveVpsName] = useState<string | null>(null);
   const [sidebarErrorMessage, setSidebarErrorMessage] = useState("");
   const [sessionRefreshSignal, setSessionRefreshSignal] = useState(0);
   const [tabState, dispatchTab] = useReducer(
@@ -280,7 +281,7 @@ export function AppPage({
       if (missingAgent) {
         setEmptyInstallPrompt({
           vpsId: targetVpsId,
-          vpsName: targetVpsId,
+          vpsName: activeVpsName || targetVpsId,
           agentType: missingAgent,
           title,
           workdir,
@@ -293,7 +294,7 @@ export function AppPage({
     } finally {
       setEmptyActionBusy(false);
     }
-  }, [activeVpsId, emptyActionBusy, emptyCreateWorkdir]);
+  }, [activeVpsId, activeVpsName, emptyActionBusy, emptyCreateWorkdir]);
 
   const visibleTabs = useMemo(
     () =>
@@ -362,6 +363,7 @@ export function AppPage({
         onToggle={() => setCollapsed((c) => !c)}
         activeVpsId={activeVpsId}
         activeSessionId={activeTab?.sessionId ?? null}
+        onActiveVpsNameChange={setActiveVpsName}
         onSelectVps={handleSelectVps}
         onSelectSession={handleSelectSession}
         onNewSession={handleNewSession}
