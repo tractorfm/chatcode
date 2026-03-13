@@ -2,7 +2,9 @@ package session
 
 import (
 	"errors"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -449,6 +451,13 @@ func TestSessionTmux(t *testing.T) {
 
 	if !contains(got, "hello_vibecode") {
 		t.Fatalf("expected 'hello_vibecode' in output, got:\n%s", got)
+	}
+
+	if _, err := os.Stat(filepath.Join(s.opts.Workdir, "AGENTS.md")); !os.IsNotExist(err) {
+		t.Fatalf("AGENTS.md should not be created in workdir, err=%v", err)
+	}
+	if _, err := os.Stat(filepath.Join(s.opts.Workdir, "CLAUDE.md")); !os.IsNotExist(err) {
+		t.Fatalf("CLAUDE.md should not be created in workdir, err=%v", err)
 	}
 }
 

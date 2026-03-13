@@ -97,10 +97,6 @@ func newSession(opts Options) *Session {
 
 // start writes agent instruction files and launches the tmux session.
 func (s *Session) start() error {
-	if err := writeTemplates(s.opts); err != nil {
-		return fmt.Errorf("write templates: %w", err)
-	}
-
 	cmd := s.buildTmuxNewSessionCmd()
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("tmux new-session: %w: %s", err, out)

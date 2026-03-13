@@ -5,6 +5,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../../../.." && pwd)"
 INSTALL_SCRIPT="${REPO_ROOT}/packages/gateway/deploy/gateway-install.sh"
 SERVICE_TEMPLATE="${REPO_ROOT}/packages/gateway/deploy/chatcode-gateway.service"
+CLAUDE_INSTALLER="${REPO_ROOT}/packages/gateway/scripts/install-claude-code.sh"
+CODEX_INSTALLER="${REPO_ROOT}/packages/gateway/scripts/install-codex.sh"
+OPENCODE_INSTALLER="${REPO_ROOT}/packages/gateway/scripts/install-opencode.sh"
 
 fail() {
   echo "[gateway-install.test] FAIL: $*" >&2
@@ -255,6 +258,15 @@ test_installer_sets_local_bin_path() {
   assert_contains "${INSTALL_SCRIPT}" '$(xml_escape "$(runtime_path_value)")'
 }
 
+test_agent_installers_seed_global_guidance_without_overwrite() {
+  assert_contains "${CLAUDE_INSTALLER}" 'CLAUDE_GUIDANCE_FILE="${CLAUDE_DIR}/CLAUDE.md"'
+  assert_contains "${CLAUDE_INSTALLER}" 'Claude global guidance already exists'
+  assert_contains "${CODEX_INSTALLER}" 'CODEX_GUIDANCE_FILE="${CODEX_HOME_DIR}/AGENTS.md"'
+  assert_contains "${CODEX_INSTALLER}" 'Codex global guidance already exists'
+  assert_contains "${OPENCODE_INSTALLER}" 'OPENCODE_GUIDANCE_FILE="${OPENCODE_CONFIG_DIR}/AGENTS.md"'
+  assert_contains "${OPENCODE_INSTALLER}" 'OpenCode global guidance already exists'
+}
+
 main() {
   test_darwin_binary_source_no_start
   test_darwin_release_download_latest
@@ -262,6 +274,7 @@ main() {
   test_linux_installer_bootstraps_base_packages
   test_installer_uses_user_local_agent_cli_updates
   test_installer_sets_local_bin_path
+  test_agent_installers_seed_global_guidance_without_overwrite
   test_service_template_preserves_tmux_children
   test_linux_installer_service_unit_preserves_tmux_children
   echo "[gateway-install.test] PASS"

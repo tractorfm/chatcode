@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install Claude Code CLI on the vibe user's VPS.
+# Install Claude Code CLI on the gateway host for the target user.
 # Claude Code requires Node.js 24+ and is installed via npm.
 # Copyright (c) 2026 Chatcode contributors.
 # Project: https://github.com/tractorfm/chatcode
@@ -14,6 +14,8 @@ fi
 
 LOCAL_PREFIX="${HOME}/.local"
 LOCAL_BIN="${LOCAL_PREFIX}/bin"
+CLAUDE_DIR="${HOME}/.claude"
+CLAUDE_GUIDANCE_FILE="${CLAUDE_DIR}/CLAUDE.md"
 
 ensure_node() {
     local os
@@ -63,8 +65,29 @@ npm_user_install() {
     npm install -g --prefix "${LOCAL_PREFIX}" "${pkg}"
 }
 
+seed_default_claude_guidance() {
+    install -d -m 755 "${CLAUDE_DIR}"
+    if [ -e "${CLAUDE_GUIDANCE_FILE}" ]; then
+        echo "[chatcode] Claude global guidance already exists at ${CLAUDE_GUIDANCE_FILE}; leaving it untouched"
+        return 0
+    fi
+
+    cat > "${CLAUDE_GUIDANCE_FILE}" <<'EOF'
+# Chatcode Global CLAUDE.md
+
+You are running inside a Chatcode-managed terminal session on a user-controlled machine.
+
+- Scope: prefer changes inside the current repo/workspace and the user's home directory.
+- Safety: ask before `sudo`, system package installs, service changes, or destructive deletes.
+- Secrets: never print, copy, or persist tokens, keys, or credentials.
+- Session model: the terminal is tmux-backed already; do not start nested tmux sessions.
+- Workflow: inspect before editing, keep patches minimal, run relevant tests, and report concrete changes plus remaining risk.
+EOF
+}
+
 # Install/upgrade Claude Code in the target user's local prefix.
 npm_user_install "@anthropic-ai/claude-code@latest"
+seed_default_claude_guidance
 
 # Verify installation
 if ! command -v claude &>/dev/null; then

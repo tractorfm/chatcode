@@ -13,6 +13,8 @@ fi
 
 LOCAL_PREFIX="${HOME}/.local"
 LOCAL_BIN="${LOCAL_PREFIX}/bin"
+OPENCODE_CONFIG_DIR="${XDG_CONFIG_HOME:-${HOME}/.config}/opencode"
+OPENCODE_GUIDANCE_FILE="${OPENCODE_CONFIG_DIR}/AGENTS.md"
 
 ensure_node() {
     local os
@@ -62,8 +64,29 @@ npm_user_install() {
     npm install -g --prefix "${LOCAL_PREFIX}" "${pkg}"
 }
 
+seed_default_opencode_guidance() {
+    install -d -m 755 "${OPENCODE_CONFIG_DIR}"
+    if [ -e "${OPENCODE_GUIDANCE_FILE}" ]; then
+        echo "[chatcode] OpenCode global guidance already exists at ${OPENCODE_GUIDANCE_FILE}; leaving it untouched"
+        return 0
+    fi
+
+    cat > "${OPENCODE_GUIDANCE_FILE}" <<'EOF'
+# Chatcode Global AGENTS.md
+
+You are running inside a Chatcode-managed terminal session on a user-controlled machine.
+
+- Scope: prefer changes inside the current repo/workspace and the user's home directory.
+- Safety: ask before `sudo`, system package installs, service changes, or destructive deletes.
+- Secrets: never print, copy, or persist tokens, keys, or credentials.
+- Session model: the terminal is tmux-backed already; do not start nested tmux sessions.
+- Workflow: inspect before editing, keep patches minimal, run relevant tests, and report concrete changes plus remaining risk.
+EOF
+}
+
 # Install OpenCode CLI in the target user's local prefix.
 npm_user_install "opencode-ai@latest"
+seed_default_opencode_guidance
 
 # Verify installation
 if ! command -v opencode &>/dev/null; then
