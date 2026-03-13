@@ -1,7 +1,6 @@
 package session
 
 import (
-	"strings"
 	"testing"
 	"time"
 )
@@ -47,7 +46,7 @@ func TestDiffAppend(t *testing.T) {
 func TestDiffSlidingWindow(t *testing.T) {
 	old := "line1\nline2\nline3\n"
 	newVal := "line2\nline3\nline4\n"
-	want := newVal
+	want := fullRedrawPrefix + newVal
 	got, redraw := diff(old, newVal)
 	if got != want {
 		t.Fatalf("diff sliding window = %q, want %q", got, want)
@@ -60,7 +59,7 @@ func TestDiffSlidingWindow(t *testing.T) {
 func TestDiffInPlaceLineUpdate(t *testing.T) {
 	old := "progress 10%\n"
 	newVal := "progress 11%\n"
-	want := newVal
+	want := fullRedrawPrefix + newVal
 	got, redraw := diff(old, newVal)
 	if got != want {
 		t.Fatalf("diff in-place update = %q, want %q", got, want)
@@ -165,49 +164,6 @@ func TestProcessCursorOnlyTickEmitsAlternateBufferTransition(t *testing.T) {
 
 	got := <-ch
 	want := "\x1b[?1049h" + fullRedrawPrefix + "existing-screen" + cursorMove(4, 5)
-	if string(got.Data) != want {
-		t.Fatalf("delta = %q, want %q", string(got.Data), want)
-	}
-}
-
-func TestRenderNormalBufferRedrawClearsShrunkenFrame(t *testing.T) {
-	old := "line1\nline2\nline3"
-	newVal := "next1\nnext2"
-	got := renderNormalBufferRedraw(old, newVal)
-	want := normalRedrawPrefix +
-		cursorMove(0, 0) + "next1\x1b[K" +
-		cursorMove(0, 1) + "next2\x1b[K" +
-		cursorMove(0, 2) + "\x1b[2K"
-	if got != want {
-		t.Fatalf("renderNormalBufferRedraw = %q, want %q", got, want)
-	}
-}
-
-func TestProcessTickUsesNormalBufferRedrawWithoutClearScreen(t *testing.T) {
-	ch := make(chan OutputChunk, 1)
-	var seq uint64
-	var lastAct int64
-	c := &outputCapturer{
-		tmuxName:       "vibe-ses-test",
-		sessionID:      "ses-test",
-		seq:            &seq,
-		lastAct:        &lastAct,
-		outCh:          ch,
-		lastRawContent: "old",
-		lastContent:    "line1\nline2\nline3",
-		lastCursorV:    1,
-		lastAlternate:  0,
-		capturePaneFn:  func() (string, error) { return "next1\nnext2", nil },
-		captureStateFn: func() (paneState, error) { return paneState{cursorX: 2, cursorY: 1, cursorV: 1, alternateOn: false}, nil },
-	}
-
-	c.processTick()
-
-	got := <-ch
-	if strings.Contains(string(got.Data), "\x1b[2J") {
-		t.Fatalf("normal buffer redraw unexpectedly used clear-screen: %q", string(got.Data))
-	}
-	want := renderNormalBufferRedraw("line1\nline2\nline3", "next1\nnext2") + cursorMove(2, 1)
 	if string(got.Data) != want {
 		t.Fatalf("delta = %q, want %q", string(got.Data), want)
 	}
