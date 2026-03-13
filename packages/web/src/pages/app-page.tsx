@@ -2,9 +2,16 @@ import { useCallback, useEffect, useMemo, useReducer, useState } from "react";
 import { Sidebar } from "@/components/sidebar";
 import { TerminalView } from "@/components/terminal-view";
 import { SessionCreatePicker } from "@/components/session-create-picker";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { X, Plus, Terminal } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { createSession, type Session } from "@/lib/api";
+import {
+  createSession,
+  getMissingAgentFromError,
+  installAgent,
+  waitForAgentInstalled,
+  type Session,
+} from "@/lib/api";
 import { defaultSessionTitle, type AgentType } from "@/lib/constants";
 import { buildSessionTabTitle, normalizeSessionWorkdir } from "@chatcode/protocol";
 
@@ -171,6 +178,11 @@ export function AppPage({
   const [draggingVisibleIndex, setDraggingVisibleIndex] = useState<number | null>(null);
   const [showEmptyCreateMenu, setShowEmptyCreateMenu] = useState(false);
   const [emptyCreateWorkdir, setEmptyCreateWorkdir] = useState("new");
+  const [emptyInstallPrompt, setEmptyInstallPrompt] = useState<{
+    agentType: "claude-code" | "codex" | "gemini" | "opencode";
+    title: string;
+    workdir: string;
+  } | null>(null);
 
   const handleSelectVps = useCallback((vpsId: string) => {
     setActiveVpsId(vpsId);
@@ -242,27 +254,38 @@ export function AppPage({
   const handleCreateSessionFromEmpty = useCallback(async (agentType: AgentType) => {
     if (!activeVpsId || emptyActionBusy) return;
     setEmptyActionBusy(true);
+    const title = defaultSessionTitle(agentType, 1);
+    const workdir = normalizeSessionWorkdir(emptyCreateWorkdir);
     try {
-      const title = defaultSessionTitle(agentType, 1);
       const res = await createSession(activeVpsId, {
         title,
         agent_type: agentType,
-        workdir: emptyCreateWorkdir,
+        workdir,
       });
       dispatchTab({
         type: "open",
         tab: {
           vpsId: activeVpsId,
           sessionId: res.session_id,
-          title: buildSessionTabTitle(title, normalizeSessionWorkdir(emptyCreateWorkdir)),
+          title: buildSessionTabTitle(title, workdir),
         },
       });
       setSidebarErrorMessage("");
       setShowEmptyCreateMenu(false);
       setEmptyCreateWorkdir("new");
     } catch (err) {
-      const detail = err instanceof Error ? err.message : "unexpected error";
-      setSidebarErrorMessage(`Failed to create session: ${detail}`);
+      const missingAgent = getMissingAgentFromError(err);
+      if (missingAgent) {
+        setEmptyInstallPrompt({
+          agentType: missingAgent,
+          title,
+          workdir,
+        });
+        setSidebarErrorMessage("");
+      } else {
+        const detail = err instanceof Error ? err.message : "unexpected error";
+        setSidebarErrorMessage(`Failed to create session: ${detail}`);
+      }
     } finally {
       setEmptyActionBusy(false);
     }
@@ -349,6 +372,46 @@ export function AppPage({
         refreshSignal={combinedRefreshSignal}
         selectedVpsIdHint={selectedVpsIdHint}
       />
+      {emptyInstallPrompt && activeVpsId ? (
+        <ConfirmDialog
+          title={`${emptyInstallPrompt.agentType} is not installed`}
+          description={`Install ${emptyInstallPrompt.agentType} on the selected server and continue creating this session?`}
+          details={(
+            <div className="space-y-2 text-xs text-muted-foreground">
+              <p>chatcode will install the missing agent, wait for it to become available, and then retry session creation automatically.</p>
+              <p>This is usually quick, but small hosts can take a minute or two.</p>
+            </div>
+          )}
+          confirmLabel="Install and continue"
+          onConfirm={async () => {
+            setEmptyActionBusy(true);
+            try {
+              await installAgent(activeVpsId, emptyInstallPrompt.agentType);
+              await waitForAgentInstalled(activeVpsId, emptyInstallPrompt.agentType);
+              const res = await createSession(activeVpsId, {
+                title: emptyInstallPrompt.title,
+                agent_type: emptyInstallPrompt.agentType,
+                workdir: emptyInstallPrompt.workdir,
+              });
+              dispatchTab({
+                type: "open",
+                tab: {
+                  vpsId: activeVpsId,
+                  sessionId: res.session_id,
+                  title: buildSessionTabTitle(emptyInstallPrompt.title, emptyInstallPrompt.workdir),
+                },
+              });
+              setSidebarErrorMessage("");
+              setShowEmptyCreateMenu(false);
+              setEmptyCreateWorkdir("new");
+              setEmptyInstallPrompt(null);
+            } finally {
+              setEmptyActionBusy(false);
+            }
+          }}
+          onCancel={() => setEmptyInstallPrompt(null)}
+        />
+      ) : null}
 
       {/* Main content */}
       <main id="app-terminal-shell" className="flex-1 flex flex-col min-w-0 bg-background">

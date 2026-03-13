@@ -29,12 +29,15 @@ import {
   listSessions,
   listWorkspaceFolders,
   createSession,
+  getMissingAgentFromError,
+  installAgent,
   deleteSession,
   deleteVPS,
   powerOffVPS,
   powerOnVPS,
   updateVPS,
   updateSession,
+  waitForAgentInstalled,
   type VPS,
   type Session,
 } from "@/lib/api";
@@ -249,12 +252,12 @@ export function Sidebar({
     async (agentType: AgentType = "claude-code") => {
       if (!activeVpsId || creating) return;
       setCreating(true);
+      const title = defaultSessionTitle(
+        agentType,
+        sessions.filter((session) => session.agent_type === agentType).length + 1,
+      );
+      const workdir = normalizeSessionWorkdir(sessionWorkdir);
       try {
-        const title = defaultSessionTitle(
-          agentType,
-          sessions.filter((session) => session.agent_type === agentType).length + 1,
-        );
-        const workdir = normalizeSessionWorkdir(sessionWorkdir);
         const res = await createSession(activeVpsId, {
           title,
           agent_type: agentType,
@@ -268,12 +271,60 @@ export function Sidebar({
         setGroupPickerKey(null);
         setSessionWorkdir(DEFAULT_SESSION_WORKDIR_INPUT);
       } catch (err) {
-        setOperationError("Failed to create session", err);
+        const missingAgent = getMissingAgentFromError(err);
+        if (missingAgent) {
+          setConfirmAction({
+            title: `${missingAgent} is not installed`,
+            description: `Install ${missingAgent} on "${activeVpsName}" and continue creating this session?`,
+            confirmLabel: "Install and continue",
+            details: (
+              <div className="space-y-2 text-xs text-muted-foreground">
+                <p>chatcode will install the missing agent, wait for it to become available, and then retry session creation automatically.</p>
+                <p>This is usually quick, but small hosts can take a minute or two.</p>
+              </div>
+            ),
+            onConfirm: async () => {
+              if (!activeVpsId) throw new Error("No server selected");
+              setCreating(true);
+              try {
+                await installAgent(activeVpsId, missingAgent);
+                await waitForAgentInstalled(activeVpsId, missingAgent);
+                const res = await createSession(activeVpsId, {
+                  title,
+                  agent_type: agentType,
+                  workdir,
+                });
+                await refreshSessions();
+                await refreshWorkspaceFolders(true);
+                onNewSession(activeVpsId, res.session_id, buildSessionTabTitle(title, workdir));
+                setErrorMessage("");
+                setShowAgentPicker(false);
+                setGroupPickerKey(null);
+                setSessionWorkdir(DEFAULT_SESSION_WORKDIR_INPUT);
+              } finally {
+                setCreating(false);
+              }
+            },
+          });
+          setErrorMessage("");
+        } else {
+          setOperationError("Failed to create session", err);
+        }
       } finally {
         setCreating(false);
       }
     },
-    [activeVpsId, creating, sessions, sessionWorkdir, refreshSessions, refreshWorkspaceFolders, onNewSession, setOperationError],
+    [
+      activeVpsId,
+      activeVpsName,
+      creating,
+      sessions,
+      sessionWorkdir,
+      refreshSessions,
+      refreshWorkspaceFolders,
+      onNewSession,
+      setOperationError,
+    ],
   );
 
   const handleRefreshActiveVps = useCallback(async () => {

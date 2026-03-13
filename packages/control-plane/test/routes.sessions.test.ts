@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   handleAgentList,
+  handleAgentInstall,
   handleSessionCreate,
   handleSessionUpdate,
   handleSessionSnapshot,
@@ -134,6 +135,61 @@ describe("routes/sessions", () => {
       ],
     });
     expect(stubFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("accepts managed agent install requests", async () => {
+    const { env, stubFetch } = makeEnv(
+      new Response(
+        JSON.stringify({
+          type: "ack",
+          schema_version: "1",
+          request_id: "agent-install-codex-test",
+          ok: true,
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+
+    const res = await handleAgentInstall(
+      new Request("https://cp.example.test/vps/vps-1/agents/install", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ agent: "codex" }),
+      }),
+      env,
+      { userId: "usr-1" },
+      "vps-1",
+    );
+
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toMatchObject({
+      ok: true,
+      status: "accepted",
+      agent: "codex",
+      gateway_id: "gw-1",
+    });
+    expect(stubFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects invalid agent install requests", async () => {
+    const { env, stubFetch } = makeEnv(
+      new Response(JSON.stringify({ ok: true }), { status: 200 }),
+    );
+
+    const res = await handleAgentInstall(
+      new Request("https://cp.example.test/vps/vps-1/agents/install", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ agent: "not-a-real-agent" }),
+      }),
+      env,
+      { userId: "usr-1" },
+      "vps-1",
+    );
+
+    expect(res.status).toBe(400);
+    await expect(res.json()).resolves.toMatchObject({ error: "invalid agent" });
+    expect(stubFetch).not.toHaveBeenCalled();
   });
 
   it("returns 404 when snapshot session does not belong to vps", async () => {

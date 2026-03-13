@@ -51,6 +51,7 @@ import {
 import {
   handleSessionList,
   handleAgentList,
+  handleAgentInstall,
   handleSessionCreate,
   handleSessionDelete,
   handleSessionUpdate,
@@ -244,6 +245,10 @@ export default {
       const agentsMatch = path.match(/^\/vps\/([a-zA-Z0-9_-]+)\/agents$/);
       if (agentsMatch && method === "GET") {
         return withCORS(await handleAgentList(request, env, auth, agentsMatch[1]), request, env);
+      }
+      const agentInstallMatch = path.match(/^\/vps\/([a-zA-Z0-9_-]+)\/agents\/install$/);
+      if (agentInstallMatch && method === "POST") {
+        return withCORS(await handleAgentInstall(request, env, auth, agentInstallMatch[1]), request, env);
       }
 
       const sessionMatch = path.match(

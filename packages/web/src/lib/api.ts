@@ -277,10 +277,61 @@ export interface AgentStatusEntry {
   version?: string;
 }
 
+export type ManagedAgentType = "claude-code" | "codex" | "gemini" | "opencode";
+
 export function listAgents(vpsId: string) {
   return request<{ agents: AgentStatusEntry[] }>(
     `/vps/${encodeURIComponent(vpsId)}/agents`,
   );
+}
+
+export function installAgent(vpsId: string, agent: ManagedAgentType) {
+  return request<{ ok: boolean; status: string; request_id: string; agent: ManagedAgentType }>(
+    `/vps/${encodeURIComponent(vpsId)}/agents/install`,
+    {
+      method: "POST",
+      body: JSON.stringify({ agent }),
+    },
+  );
+}
+
+export function isManagedAgentType(value: string): value is ManagedAgentType {
+  return value === "claude-code" || value === "codex" || value === "gemini" || value === "opencode";
+}
+
+export function getMissingAgentFromError(err: unknown): ManagedAgentType | null {
+  if (!(err instanceof Error)) return null;
+  const body = (err as Error & { body?: unknown }).body;
+  if (body && typeof body === "object") {
+    const code = (body as { code?: unknown }).code;
+    const agent = (body as { agent?: unknown }).agent;
+    if (code === "agent_not_installed" && typeof agent === "string" && isManagedAgentType(agent)) {
+      return agent;
+    }
+  }
+
+  const match = err.message.match(/^([a-z-]+) is not installed\. Run agents\.install first\.$/);
+  if (!match) return null;
+  return isManagedAgentType(match[1]) ? match[1] : null;
+}
+
+export async function waitForAgentInstalled(
+  vpsId: string,
+  agent: ManagedAgentType,
+  opts?: { timeoutMs?: number; intervalMs?: number },
+) {
+  const timeoutMs = opts?.timeoutMs ?? 90_000;
+  const intervalMs = opts?.intervalMs ?? 2_000;
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() < deadline) {
+    const { agents } = await listAgents(vpsId);
+    const target = agents.find((entry) => entry.agent === agent);
+    if (target?.installed) return target;
+    await new Promise((resolve) => window.setTimeout(resolve, intervalMs));
+  }
+
+  throw new Error(`${agent} installation timed out. Try again in a moment.`);
 }
 
 // -- DO Connection --

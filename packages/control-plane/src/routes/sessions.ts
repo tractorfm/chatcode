@@ -82,6 +82,76 @@ export async function handleAgentList(
 }
 
 /**
+ * POST /vps/:id/agents/install – install one managed agent CLI on the gateway.
+ */
+export async function handleAgentInstall(
+  request: Request,
+  env: Env,
+  auth: AuthContext,
+  vpsId: string,
+): Promise<Response> {
+  const vps = await getVPS(env.DB, vpsId);
+  if (!vps || vps.user_id !== auth.userId) {
+    return jsonResponse({ error: "not found" }, 404);
+  }
+
+  const gateway = await getGatewayByVPS(env.DB, vpsId);
+  if (!gateway?.connected) {
+    return jsonResponse({ error: "gateway not connected" }, 503);
+  }
+  if (!(await isGatewayLive(env, gateway.id, gateway.last_seen_at))) {
+    await updateGatewayConnected(env.DB, gateway.id, false);
+    return jsonResponse({ error: "gateway not connected" }, 503);
+  }
+
+  const body = (await request.json().catch(() => ({}))) as { agent?: string };
+  const agent = typeof body.agent === "string" ? body.agent.trim() : "";
+  if (!MANAGED_AGENT_TYPES.has(agent)) {
+    return jsonResponse({ error: "invalid agent" }, 400);
+  }
+
+  const doId = env.GATEWAY_HUB.idFromName(gateway.id);
+  const stub = env.GATEWAY_HUB.get(doId);
+  const requestId = `agent-install-${agent}-${Date.now()}`;
+
+  try {
+    const resp = await stub.fetch(
+      new Request("http://do/cmd", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type: "agents.install",
+          schema_version: "1",
+          request_id: requestId,
+          agent,
+        }),
+      }),
+    );
+
+    const text = await resp.text();
+    if (!resp.ok) {
+      return new Response(text, {
+        status: resp.status,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    return jsonResponse({
+      ok: true,
+      status: "accepted",
+      request_id: requestId,
+      agent,
+      gateway_id: gateway.id,
+    });
+  } catch (err) {
+    return jsonResponse(
+      { error: `agents.install failed: ${err instanceof Error ? err.message : "unknown"}` },
+      502,
+    );
+  }
+}
+
+/**
  * POST /vps/:id/sessions – Create session (relays session.create to gateway via DO).
  */
 export async function handleSessionCreate(
