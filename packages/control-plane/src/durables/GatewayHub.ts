@@ -1066,19 +1066,23 @@ export class GatewayHub {
     if (threshold === 0) return;
     if (nowMs - this.lastGatewayTrafficWarnAt < TRAFFIC_WARN_COOLDOWN_MS) return;
 
-    const snapshot = this.buildTrafficStatus(nowMs);
-    if (snapshot.realtime_events.rate_10s < threshold) {
+    const realtimeEvents = combineTrafficSnapshots([
+      this.gatewayTextMessages.snapshot(nowMs),
+      this.gatewayBinaryFrames.snapshot(nowMs),
+    ]);
+    if (realtimeEvents.rate_10s < threshold) {
       return;
     }
 
+    const snapshot = this.buildTrafficStatus(nowMs);
     this.lastGatewayTrafficWarnAt = nowMs;
     console.warn({
       event: "gatewayhub.incoming_traffic_threshold_exceeded",
       gatewayId: this.gatewayId,
       vpsId: this.vpsId,
-      incomingRate10s: snapshot.realtime_events.rate_10s,
-      incomingEvents10s: snapshot.realtime_events.last_10s_count,
-      incomingEvents1m: snapshot.realtime_events.last_minute_count,
+      incomingRate10s: realtimeEvents.rate_10s,
+      incomingEvents10s: realtimeEvents.last_10s_count,
+      incomingEvents1m: realtimeEvents.last_minute_count,
       gatewayFrames10s: snapshot.gateway_frames.last_10s_count,
       browserMessages10s: snapshot.browser_messages.last_10s_count,
       browserAcks10s: snapshot.browser_acks.last_10s_count,

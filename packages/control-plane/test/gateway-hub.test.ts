@@ -533,6 +533,31 @@ describe("GatewayHub", () => {
     vi.useRealTimers();
   });
 
+  it("skips expensive gateway traffic status scans while aggregate rate is below threshold", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-12T10:00:00.000Z"));
+
+    const hub = makeHub("vps-1", [], {
+      GATEWAY_HUB_GATEWAY_EVENT_RATE_WARN_PER_SEC: "999",
+    });
+    const buildTrafficStatusSpy = vi.spyOn(
+      hub as unknown as {
+        buildTrafficStatus: (nowMs: number) => unknown;
+      },
+      "buildTrafficStatus",
+    );
+    const gatewayWs = makeAttachedSocket({ role: "gateway", gatewayId: "gw-1" });
+
+    hub.webSocketMessage(
+      gatewayWs,
+      encodeTerminalFrame("ses-1", 1n, new Uint8Array([1, 2, 3, 4])).buffer,
+    );
+
+    expect(buildTrafficStatusSpy).not.toHaveBeenCalled();
+
+    vi.useRealTimers();
+  });
+
   it("disables runaway warnings when the threshold is set to zero", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-03-12T10:00:00.000Z"));
