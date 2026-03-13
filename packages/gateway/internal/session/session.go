@@ -210,25 +210,28 @@ func (s *Session) Resize(cols, rows int) error {
 // Snapshot returns the current terminal content and terminal geometry/cursor state.
 // cursorX/cursorY are 0-based positions within the current visible pane.
 // cursorVisible is 1 (visible), 0 (hidden), or -1 when unknown.
-func (s *Session) Snapshot() (content string, cols, rows, cursorX, cursorY, cursorVisible int, err error) {
+func (s *Session) Snapshot() (content string, cols, rows, cursorX, cursorY, cursorVisible int, alternateOn bool, err error) {
 	// Capture recent pane history with ANSI escapes to preserve color output.
 	out, err := exec.Command("tmux", snapshotCaptureArgs(s.tmuxName)...).Output()
 	if err != nil {
-		return "", 0, 0, -1, -1, -1, fmt.Errorf("capture-pane: %w", err)
+		return "", 0, 0, -1, -1, -1, false, fmt.Errorf("capture-pane: %w", err)
 	}
 
 	// Get dimensions and cursor position in one tmux call.
 	cols, rows = 80, 24
 	cursorX, cursorY, cursorVisible = -1, -1, -1
+	alternateOn = false
 
 	stateOut, err := exec.Command(
-		"tmux", "display-message", "-t", s.tmuxName, "-p", "#{window_width} #{window_height} #{cursor_x} #{cursor_y} #{cursor_flag}",
+		"tmux", "display-message", "-t", s.tmuxName, "-p", "#{window_width} #{window_height} #{cursor_x} #{cursor_y} #{cursor_flag} #{alternate_on}",
 	).Output()
 	if err == nil {
-		fmt.Sscanf(string(stateOut), "%d %d %d %d %d", &cols, &rows, &cursorX, &cursorY, &cursorVisible)
+		var alternateInt int
+		fmt.Sscanf(string(stateOut), "%d %d %d %d %d %d", &cols, &rows, &cursorX, &cursorY, &cursorVisible, &alternateInt)
+		alternateOn = alternateInt == 1
 	}
 
-	return stripOSC8Hyperlinks(string(out)), cols, rows, cursorX, cursorY, cursorVisible, nil
+	return stripOSC8Hyperlinks(string(out)), cols, rows, cursorX, cursorY, cursorVisible, alternateOn, nil
 }
 
 func (s *Session) ensureHistoryLimit() error {

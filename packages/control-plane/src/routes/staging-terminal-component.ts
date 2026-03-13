@@ -483,6 +483,9 @@ export const STAGING_TERMINAL_COMPONENT_SCRIPT = `
             }
             const snapshotTail = contentLines.slice(-rowsHint).join("\\r\\n");
             term.reset();
+            if (msg.alternate_on === true) {
+              term.write("\x1b[?1049h");
+            }
             term.write(snapshotTail);
             if (Number.isFinite(msg.cursor_x) && Number.isFinite(msg.cursor_y)) {
               const col = Math.max(0, Math.floor(msg.cursor_x)) + 1;

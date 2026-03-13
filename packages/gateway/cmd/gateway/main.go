@@ -245,7 +245,7 @@ func (g *gateway) sendSnapshots(ctx context.Context) {
 		if sess == nil {
 			continue
 		}
-		content, cols, rows, cursorX, cursorY, cursorVisible, err := sess.Snapshot()
+		content, cols, rows, cursorX, cursorY, cursorVisible, alternateOn, err := sess.Snapshot()
 		if err != nil {
 			continue
 		}
@@ -268,6 +268,7 @@ func (g *gateway) sendSnapshots(ctx context.Context) {
 		} else if cursorVisible == 1 {
 			evt["cursor_visible"] = true
 		}
+		evt["alternate_on"] = alternateOn
 		g.sendEvent(ctx, evt)
 	}
 }
@@ -510,7 +511,7 @@ func (g *gateway) handleSessionSnapshot(ctx context.Context, raw json.RawMessage
 	if s == nil {
 		return fmt.Errorf("session %q not found", cmd.SessionID)
 	}
-	content, cols, rows, cursorX, cursorY, cursorVisible, err := s.Snapshot()
+	content, cols, rows, cursorX, cursorY, cursorVisible, alternateOn, err := s.Snapshot()
 	if err != nil {
 		return err
 	}
@@ -523,6 +524,7 @@ func (g *gateway) handleSessionSnapshot(ctx context.Context, raw json.RawMessage
 			"cursor_x", cursorX,
 			"cursor_y", cursorY,
 			"cursor_visible", cursorVisible,
+			"alternate_on", alternateOn,
 		)
 	}
 	content = trimSnapshotTail(content, maxSnapshotBytes)
@@ -545,6 +547,7 @@ func (g *gateway) handleSessionSnapshot(ctx context.Context, raw json.RawMessage
 	} else if cursorVisible == 1 {
 		evt["cursor_visible"] = true
 	}
+	evt["alternate_on"] = alternateOn
 	g.sendEvent(ctx, evt)
 	g.sendAck(ctx, cmd.RequestID, true, "")
 	return nil

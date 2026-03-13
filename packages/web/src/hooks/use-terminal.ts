@@ -384,6 +384,9 @@ export function createTerminalHandle(opts: UseTerminalOptions): TerminalHandle {
             cursorY: typeof msg.cursor_y === "number" ? msg.cursor_y : null,
           });
           term.reset();
+          if (msg.alternate_on === true) {
+            term.write("\x1b[?1049h");
+          }
           term.write(snapshotContent);
 
           if (

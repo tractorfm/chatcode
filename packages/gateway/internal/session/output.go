@@ -33,16 +33,26 @@ type outputCapturer struct {
 	cancel context.CancelFunc
 	buf    []byte
 	timer  *time.Timer
+	capturePaneFn  func() (string, error)
+	captureStateFn func() (paneState, error)
 
 	lastRawContent        string
 	lastContent           string
 	lastCursorX           int
 	lastCursorY           int
 	lastCursorV           int
+	lastAlternate         int
 	lastCursorAt          time.Time
 	redrawBurstCount      int
 	redrawWindowStart     time.Time
 	redrawSuppressedUntil time.Time
+}
+
+type paneState struct {
+	cursorX     int
+	cursorY     int
+	cursorV     int
+	alternateOn bool
 }
 
 func newOutputCapturer(
@@ -50,7 +60,7 @@ func newOutputCapturer(
 	seq *uint64, lastAct *int64,
 	outCh chan OutputChunk,
 ) *outputCapturer {
-	return &outputCapturer{
+	c := &outputCapturer{
 		tmuxName:     tmuxName,
 		sessionID:    sessionID,
 		seq:          seq,
@@ -59,8 +69,12 @@ func newOutputCapturer(
 		lastCursorX:  -1,
 		lastCursorY:  -1,
 		lastCursorV:  -1,
+		lastAlternate: -1,
 		lastCursorAt: time.Time{},
 	}
+	c.capturePaneFn = c.capturePane
+	c.captureStateFn = c.captureState
+	return c
 }
 
 // start begins capturing output from the tmux session using pipe-pane.
@@ -73,16 +87,17 @@ func (c *outputCapturer) start() {
 
 	// Seed initial content so browser's initial snapshot is not duplicated
 	// by the first capture tick after websocket connect/reconnect.
-	if rawContent, err := c.capturePane(); err == nil {
+	if rawContent, err := c.capturePaneFn(); err == nil {
 		c.lastRawContent = rawContent
 		c.lastContent = rawContent
 	}
-	if cursorX, cursorY, cursorV, err := c.captureCursor(); err == nil {
-		c.lastCursorX = cursorX
-		c.lastCursorY = cursorY
-		c.lastCursorV = cursorV
+	if state, err := c.captureStateFn(); err == nil {
+		c.lastCursorX = state.cursorX
+		c.lastCursorY = state.cursorY
+		c.lastCursorV = state.cursorV
+		c.lastAlternate = boolToInt(state.alternateOn)
 		c.lastCursorAt = time.Now()
-		c.lastContent = normalizeCapturedContent(c.lastContent, cursorY, cursorV)
+		c.lastContent = normalizeCapturedContent(c.lastContent, state.cursorY, state.cursorV)
 	}
 	go c.pollLoop(ctx)
 }
@@ -112,7 +127,7 @@ func (c *outputCapturer) pollLoop(ctx context.Context) {
 
 func (c *outputCapturer) processTick() time.Duration {
 	tickAt := time.Now()
-	rawContent, err := c.capturePane()
+	rawContent, err := c.capturePaneFn()
 	if err != nil {
 		return c.captureInterval(tickAt)
 	}
@@ -120,47 +135,65 @@ func (c *outputCapturer) processTick() time.Duration {
 		return c.processCursorOnlyTick(tickAt)
 	}
 
-	cursorX, cursorY, cursorV, cursorErr := c.captureCursor()
-	if cursorErr == nil {
+	state, stateErr := c.captureStateFn()
+	if stateErr == nil {
 		c.lastCursorAt = tickAt
 	}
 
 	content := rawContent
-	if cursorErr == nil {
-		content = normalizeCapturedContent(content, cursorY, cursorV)
+	if stateErr == nil {
+		content = normalizeCapturedContent(content, state.cursorY, state.cursorV)
 	} else {
 		content = normalizeCapturedContent(content, -1, -1)
 	}
 	delta, redraw := diff(c.lastContent, content)
 	c.lastRawContent = rawContent
 	c.lastContent = content
+	altCtrl := ""
+	alternateTransition := false
+	if stateErr == nil {
+		altCtrl = c.alternateBufferControl(state.alternateOn)
+		alternateTransition = altCtrl != ""
+	}
+
+	if alternateTransition {
+		delta = fullRedrawPrefix + content
+		redraw = true
+	}
 
 	if len(delta) == 0 {
-		if cursorErr == nil {
-			if visCtrl := c.cursorVisibilityControl(cursorV); visCtrl != "" {
-				c.lastCursorV = cursorV
+		if stateErr == nil {
+			if visCtrl := c.cursorVisibilityControl(state.cursorV); visCtrl != "" {
+				c.lastCursorV = state.cursorV
 				c.emitDelta(visCtrl)
 			}
+			c.lastAlternate = boolToInt(state.alternateOn)
 		}
 		return c.captureInterval(tickAt)
 	}
 
-	if cursorErr == nil {
-		if visCtrl := c.cursorVisibilityControl(cursorV); visCtrl != "" {
+	if stateErr == nil {
+		if visCtrl := c.cursorVisibilityControl(state.cursorV); visCtrl != "" {
 			if redraw {
 				delta = visCtrl + delta
 			} else {
 				delta += visCtrl
 			}
-			c.lastCursorV = cursorV
+			c.lastCursorV = state.cursorV
 		}
 	}
-	if redraw && cursorErr == nil {
-		c.lastCursorX = cursorX
-		c.lastCursorY = cursorY
-		delta += cursorMove(cursorX, cursorY)
+	if altCtrl != "" {
+		delta = altCtrl + delta
 	}
-	if redraw && c.shouldSuppressPathologicalRedraw(len(delta), tickAt) {
+	if redraw && stateErr == nil {
+		c.lastCursorX = state.cursorX
+		c.lastCursorY = state.cursorY
+		delta += cursorMove(state.cursorX, state.cursorY)
+	}
+	if stateErr == nil {
+		c.lastAlternate = boolToInt(state.alternateOn)
+	}
+	if redraw && !alternateTransition && c.shouldSuppressPathologicalRedraw(len(delta), tickAt) {
 		return c.captureInterval(tickAt)
 	}
 
@@ -174,22 +207,35 @@ func (c *outputCapturer) processCursorOnlyTick(tickAt time.Time) time.Duration {
 	if !c.lastCursorAt.IsZero() && tickAt.Sub(c.lastCursorAt) < cursorPollInterval {
 		return c.captureInterval(tickAt)
 	}
-	cursorX, cursorY, cursorV, cursorErr := c.captureCursor()
-	if cursorErr != nil {
+	state, stateErr := c.captureStateFn()
+	if stateErr != nil {
 		return c.captureInterval(tickAt)
 	}
 	c.lastCursorAt = tickAt
-	moved := cursorX != c.lastCursorX || cursorY != c.lastCursorY
-	visCtrl := c.cursorVisibilityControl(cursorV)
-	if !moved && visCtrl == "" {
+	moved := state.cursorX != c.lastCursorX || state.cursorY != c.lastCursorY
+	visCtrl := c.cursorVisibilityControl(state.cursorV)
+	altCtrl := c.alternateBufferControl(state.alternateOn)
+	alternateTransition := altCtrl != ""
+	if !alternateTransition && !moved && visCtrl == "" {
 		return c.captureInterval(tickAt)
 	}
-	c.lastCursorX = cursorX
-	c.lastCursorY = cursorY
-	c.lastCursorV = cursorV
-	delta := visCtrl
-	if moved {
-		delta += cursorMove(cursorX, cursorY)
+	c.lastCursorX = state.cursorX
+	c.lastCursorY = state.cursorY
+	c.lastCursorV = state.cursorV
+	c.lastAlternate = boolToInt(state.alternateOn)
+	delta := ""
+	if alternateTransition {
+		delta = altCtrl
+		if visCtrl != "" {
+			delta += visCtrl
+		}
+		delta += fullRedrawPrefix + c.lastContent
+		delta += cursorMove(state.cursorX, state.cursorY)
+	} else {
+		delta = visCtrl
+		if moved {
+			delta += cursorMove(state.cursorX, state.cursorY)
+		}
 	}
 	c.emitDelta(delta)
 	return c.captureInterval(tickAt)
@@ -302,17 +348,31 @@ func (c *outputCapturer) capturePane() (string, error) {
 }
 
 func (c *outputCapturer) captureCursor() (int, int, int, error) {
-	out, err := exec.Command(
-		"tmux", "display-message", "-t", c.tmuxName, "-p", "#{cursor_x} #{cursor_y} #{cursor_flag}",
-	).Output()
+	state, err := c.captureState()
 	if err != nil {
 		return 0, 0, 0, err
 	}
-	var cursorX, cursorY, cursorV int
-	if _, err := fmt.Sscanf(strings.TrimSpace(string(out)), "%d %d %d", &cursorX, &cursorY, &cursorV); err != nil {
-		return 0, 0, 0, err
+	return state.cursorX, state.cursorY, state.cursorV, nil
+}
+
+func (c *outputCapturer) captureState() (paneState, error) {
+	out, err := exec.Command(
+		"tmux", "display-message", "-t", c.tmuxName, "-p", "#{cursor_x} #{cursor_y} #{cursor_flag} #{alternate_on}",
+	).Output()
+	if err != nil {
+		return paneState{}, err
 	}
-	return cursorX, cursorY, cursorV, nil
+	return parsePaneStateOutput(string(out))
+}
+
+func parsePaneStateOutput(out string) (paneState, error) {
+	var state paneState
+	var alternateInt int
+	if _, err := fmt.Sscanf(strings.TrimSpace(out), "%d %d %d %d", &state.cursorX, &state.cursorY, &state.cursorV, &alternateInt); err != nil {
+		return paneState{}, err
+	}
+	state.alternateOn = alternateInt == 1
+	return state, nil
 }
 
 func (c *outputCapturer) cursorVisibilityControl(cursorVisible int) string {
@@ -326,6 +386,26 @@ func (c *outputCapturer) cursorVisibilityControl(cursorVisible int) string {
 		return "\x1b[?25l"
 	}
 	return "\x1b[?25h"
+}
+
+func (c *outputCapturer) alternateBufferControl(alternateOn bool) string {
+	if c.lastAlternate < 0 {
+		return ""
+	}
+	if c.lastAlternate == boolToInt(alternateOn) {
+		return ""
+	}
+	if alternateOn {
+		return "\x1b[?1049h"
+	}
+	return "\x1b[?1049l"
+}
+
+func boolToInt(v bool) int {
+	if v {
+		return 1
+	}
+	return 0
 }
 
 func normalizeCapturedContent(content string, cursorY int, cursorVisible int) string {

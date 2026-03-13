@@ -135,6 +135,10 @@
         "cursor_visible": {
           "type": "boolean",
           "description": "True when cursor should be visible; false hides cursor"
+        },
+        "alternate_on": {
+          "type": "boolean",
+          "description": "True when the tmux pane is currently using the alternate screen buffer"
         }
       },
       "required": ["type", "session_id", "content"]

@@ -479,7 +479,7 @@ func TestSessionInputAcceptsLeadingDoubleDashPaste(t *testing.T) {
 
 	time.Sleep(200 * time.Millisecond)
 
-	content, _, _, _, _, _, err := s.Snapshot()
+	content, _, _, _, _, _, _, err := s.Snapshot()
 	if err != nil {
 		t.Fatalf("Snapshot: %v", err)
 	}
@@ -511,7 +511,7 @@ func TestSnapshot(t *testing.T) {
 	s.Input([]byte("echo snap_test\n"))
 	time.Sleep(500 * time.Millisecond)
 
-	content, cols, rows, cursorX, cursorY, cursorVisible, err := s.Snapshot()
+	content, cols, rows, cursorX, cursorY, cursorVisible, _, err := s.Snapshot()
 	if err != nil {
 		t.Fatalf("Snapshot: %v", err)
 	}
@@ -560,7 +560,7 @@ func TestSnapshotIncludesScrollbackAndANSI(t *testing.T) {
 	}
 	time.Sleep(1200 * time.Millisecond)
 
-	content, _, _, _, _, _, err := s.Snapshot()
+	content, _, _, _, _, _, _, err := s.Snapshot()
 	if err != nil {
 		t.Fatalf("Snapshot: %v", err)
 	}

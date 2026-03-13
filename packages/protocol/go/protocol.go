@@ -343,6 +343,7 @@ type SessionSnapshotEvent struct {
 	CursorX       int       `json:"cursor_x,omitempty"`
 	CursorY       int       `json:"cursor_y,omitempty"`
 	CursorVisible *bool     `json:"cursor_visible,omitempty"`
+	AlternateOn   *bool     `json:"alternate_on,omitempty"`
 }
 
 // SSHKey describes an entry in authorized_keys.

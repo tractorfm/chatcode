@@ -91,6 +91,84 @@ func TestCursorVisibilityControl(t *testing.T) {
 	}
 }
 
+func TestParsePaneStateOutput(t *testing.T) {
+	got, err := parsePaneStateOutput("12 8 1 1")
+	if err != nil {
+		t.Fatalf("parsePaneStateOutput returned error: %v", err)
+	}
+	if got.cursorX != 12 || got.cursorY != 8 || got.cursorV != 1 || !got.alternateOn {
+		t.Fatalf("unexpected pane state: %+v", got)
+	}
+}
+
+func TestAlternateBufferControl(t *testing.T) {
+	c := &outputCapturer{lastAlternate: 0}
+	if got := c.alternateBufferControl(false); got != "" {
+		t.Fatalf("alternateBufferControl(false) = %q, want empty", got)
+	}
+	if got := c.alternateBufferControl(true); got != "\x1b[?1049h" {
+		t.Fatalf("alternateBufferControl(true) = %q", got)
+	}
+	c.lastAlternate = 1
+	if got := c.alternateBufferControl(false); got != "\x1b[?1049l" {
+		t.Fatalf("alternateBufferControl(false) = %q", got)
+	}
+}
+
+func TestProcessTickEmitsAlternateBufferEnterBeforeRedraw(t *testing.T) {
+	ch := make(chan OutputChunk, 1)
+	var seq uint64
+	var lastAct int64
+	c := &outputCapturer{
+		tmuxName:        "vibe-ses-test",
+		sessionID:       "ses-test",
+		seq:             &seq,
+		lastAct:         &lastAct,
+		outCh:           ch,
+		lastRawContent:  "old",
+		lastContent:     "old",
+		lastCursorV:     1,
+		lastAlternate:   0,
+		capturePaneFn:   func() (string, error) { return "new-screen", nil },
+		captureStateFn:  func() (paneState, error) { return paneState{cursorX: 1, cursorY: 2, cursorV: 1, alternateOn: true}, nil },
+	}
+
+	c.processTick()
+
+	got := <-ch
+	want := "\x1b[?1049h" + fullRedrawPrefix + "new-screen" + cursorMove(1, 2)
+	if string(got.Data) != want {
+		t.Fatalf("delta = %q, want %q", string(got.Data), want)
+	}
+}
+
+func TestProcessCursorOnlyTickEmitsAlternateBufferTransition(t *testing.T) {
+	ch := make(chan OutputChunk, 1)
+	var seq uint64
+	var lastAct int64
+	c := &outputCapturer{
+		tmuxName:       "vibe-ses-test",
+		sessionID:      "ses-test",
+		seq:            &seq,
+		lastAct:        &lastAct,
+		outCh:          ch,
+		lastContent:    "existing-screen",
+		lastCursorX:    4,
+		lastCursorY:    5,
+		lastCursorV:    1,
+		lastAlternate:  0,
+		captureStateFn: func() (paneState, error) { return paneState{cursorX: 4, cursorY: 5, cursorV: 1, alternateOn: true}, nil },
+	}
+
+	c.processCursorOnlyTick(time.Unix(1, 0))
+
+	got := <-ch
+	want := "\x1b[?1049h" + fullRedrawPrefix + "existing-screen" + cursorMove(4, 5)
+	if string(got.Data) != want {
+		t.Fatalf("delta = %q, want %q", string(got.Data), want)
+	}
+}
+
 func TestNormalizeCapturedContentKeepsCursorLineTrailingSpaces(t *testing.T) {
 	content := "a  \nb   \n"
 	got := normalizeCapturedContent(content, 1, 1)
