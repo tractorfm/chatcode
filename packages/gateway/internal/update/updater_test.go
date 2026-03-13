@@ -158,6 +158,44 @@ func TestUpdateReleaseResolvesRuntimeArtifact(t *testing.T) {
 	}
 }
 
+func TestTempArtifactPathPrefersChatcodeTmpDir(t *testing.T) {
+	dir := t.TempDir()
+	binaryPath := filepath.Join(t.TempDir(), "gateway")
+	u := NewUpdater(binaryPath, discardLogger())
+
+	t.Setenv(chatcodeTmpDirEnv, dir)
+	t.Setenv("TMPDIR", filepath.Join(t.TempDir(), "tmpdir-unused"))
+
+	path, err := u.tempArtifactPath("gateway-new-")
+	if err != nil {
+		t.Fatalf("tempArtifactPath: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Remove(path) })
+
+	if filepath.Dir(path) != dir {
+		t.Fatalf("temp artifact dir = %q, want %q", filepath.Dir(path), dir)
+	}
+}
+
+func TestTempArtifactPathFallsBackWhenTmpdirUnavailable(t *testing.T) {
+	binaryPath := filepath.Join(t.TempDir(), "gateway")
+	u := NewUpdater(binaryPath, discardLogger())
+
+	t.Setenv(chatcodeTmpDirEnv, "/proc/chatcode-nope")
+	t.Setenv("TMPDIR", "/proc/chatcode-nope")
+
+	path, err := u.tempArtifactPath("gateway-new-")
+	if err != nil {
+		t.Fatalf("tempArtifactPath: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Remove(path) })
+
+	dir := filepath.Dir(path)
+	if dir != "/var/tmp" && dir != filepath.Dir(binaryPath) {
+		t.Fatalf("temp artifact dir = %q, want fallback in /var/tmp or binary dir", dir)
+	}
+}
+
 func TestReleaseObjectNameRejectsUnsupportedTarget(t *testing.T) {
 	if _, err := releaseObjectName("linux", "386"); err == nil {
 		t.Fatal("expected unsupported target error")

@@ -14,6 +14,7 @@ import (
 	"bufio"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -32,6 +33,7 @@ const (
 	systemctlBinary = "/usr/bin/systemctl"
 	installBinary   = "/usr/bin/install"
 	defaultReleaseBaseURL = "https://releases.chatcode.dev/gateway"
+	chatcodeTmpDirEnv      = "CHATCODE_TMP_DIR"
 )
 
 // Updater performs gateway self-updates.
@@ -296,16 +298,46 @@ func verifySHA256(path, expected string) error {
 }
 
 func (u *Updater) tempArtifactPath(prefix string) (string, error) {
-	f, err := os.CreateTemp("", prefix+filepath.Base(u.binaryPath)+"-*")
-	if err != nil {
-		return "", fmt.Errorf("create temp artifact: %w", err)
+	namePattern := prefix + filepath.Base(u.binaryPath) + "-*"
+	var errs []error
+	for _, dir := range tempArtifactDirs(u.binaryPath) {
+		f, err := os.CreateTemp(dir, namePattern)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("%s: %w", dir, err))
+			continue
+		}
+		path := f.Name()
+		if err := f.Close(); err != nil {
+			os.Remove(path)
+			errs = append(errs, fmt.Errorf("%s: close temp artifact: %w", dir, err))
+			continue
+		}
+		return path, nil
 	}
-	path := f.Name()
-	if err := f.Close(); err != nil {
-		os.Remove(path)
-		return "", fmt.Errorf("close temp artifact: %w", err)
+	return "", fmt.Errorf("create temp artifact: %w", errors.Join(errs...))
+}
+
+func tempArtifactDirs(binaryPath string) []string {
+	seen := make(map[string]struct{}, 6)
+	add := func(list *[]string, dir string) {
+		dir = strings.TrimSpace(dir)
+		if dir == "" {
+			return
+		}
+		if _, ok := seen[dir]; ok {
+			return
+		}
+		seen[dir] = struct{}{}
+		*list = append(*list, dir)
 	}
-	return path, nil
+
+	dirs := make([]string, 0, 5)
+	add(&dirs, os.Getenv(chatcodeTmpDirEnv))
+	add(&dirs, os.Getenv("TMPDIR"))
+	add(&dirs, os.TempDir())
+	add(&dirs, "/var/tmp")
+	add(&dirs, filepath.Dir(binaryPath))
+	return dirs
 }
 
 func copyFile(src, dst string, mode os.FileMode) error {
