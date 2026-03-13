@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install Google Gemini CLI on the vibe user's VPS.
+# Install Google Gemini CLI on the gateway host for the target user.
 # Copyright (c) 2026 Chatcode contributors.
 # Project: https://github.com/tractorfm/chatcode
 set -euo pipefail
@@ -13,6 +13,8 @@ fi
 
 LOCAL_PREFIX="${HOME}/.local"
 LOCAL_BIN="${LOCAL_PREFIX}/bin"
+GEMINI_DIR="${HOME}/.gemini"
+GEMINI_GUIDANCE_FILE="${GEMINI_DIR}/GEMINI.md"
 
 ensure_node() {
     local os
@@ -62,8 +64,29 @@ npm_user_install() {
     npm install -g --prefix "${LOCAL_PREFIX}" "${pkg}"
 }
 
+seed_default_gemini_guidance() {
+    install -d -m 755 "${GEMINI_DIR}"
+    if [ -e "${GEMINI_GUIDANCE_FILE}" ]; then
+        echo "[chatcode] Gemini global guidance already exists at ${GEMINI_GUIDANCE_FILE}; leaving it untouched"
+        return 0
+    fi
+
+    cat > "${GEMINI_GUIDANCE_FILE}" <<'EOF'
+# Chatcode Global GEMINI.md
+
+You are running inside a Chatcode-managed terminal session on a user-controlled machine.
+
+- Scope: prefer changes inside the current repo/workspace and the user's home directory.
+- Safety: ask before `sudo`, system package installs, service changes, or destructive deletes.
+- Secrets: never print, copy, or persist tokens, keys, or credentials.
+- Session model: the terminal is tmux-backed already; do not start nested tmux sessions.
+- Workflow: inspect before editing, keep patches minimal, run relevant tests, and report concrete changes plus remaining risk.
+EOF
+}
+
 # Install/upgrade Gemini CLI in the target user's local prefix.
 npm_user_install "@google/gemini-cli@latest"
+seed_default_gemini_guidance
 
 # Verify installation
 if ! command -v gemini &>/dev/null; then

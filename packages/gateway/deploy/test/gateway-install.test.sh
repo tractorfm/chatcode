@@ -8,6 +8,7 @@ SERVICE_TEMPLATE="${REPO_ROOT}/packages/gateway/deploy/chatcode-gateway.service"
 CLAUDE_INSTALLER="${REPO_ROOT}/packages/gateway/scripts/install-claude-code.sh"
 CODEX_INSTALLER="${REPO_ROOT}/packages/gateway/scripts/install-codex.sh"
 OPENCODE_INSTALLER="${REPO_ROOT}/packages/gateway/scripts/install-opencode.sh"
+GEMINI_INSTALLER="${REPO_ROOT}/packages/gateway/scripts/install-gemini.sh"
 
 fail() {
   echo "[gateway-install.test] FAIL: $*" >&2
@@ -263,6 +264,8 @@ test_agent_installers_seed_global_guidance_without_overwrite() {
   assert_contains "${CLAUDE_INSTALLER}" 'Claude global guidance already exists'
   assert_contains "${CODEX_INSTALLER}" 'CODEX_GUIDANCE_FILE="${CODEX_HOME_DIR}/AGENTS.md"'
   assert_contains "${CODEX_INSTALLER}" 'Codex global guidance already exists'
+  assert_contains "${GEMINI_INSTALLER}" 'GEMINI_GUIDANCE_FILE="${GEMINI_DIR}/GEMINI.md"'
+  assert_contains "${GEMINI_INSTALLER}" 'Gemini global guidance already exists'
   assert_contains "${OPENCODE_INSTALLER}" 'OPENCODE_GUIDANCE_FILE="${OPENCODE_CONFIG_DIR}/AGENTS.md"'
   assert_contains "${OPENCODE_INSTALLER}" 'OpenCode global guidance already exists'
 }
