@@ -49,12 +49,6 @@ export function ConfirmDialog({
           <h3 className="text-sm font-medium text-foreground">{title}</h3>
           <p className="text-sm text-muted-foreground">{description}</p>
           {details ? <div className="pt-2">{details}</div> : null}
-          {pending ? (
-            <div className="flex items-center gap-2 rounded-md border border-border/60 bg-accent/40 px-3 py-2 text-xs text-muted-foreground">
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              <span>Working. This can take a minute or two.</span>
-            </div>
-          ) : null}
           {errorMessage ? (
             <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
               {errorMessage}
