@@ -139,6 +139,10 @@ log_banner() {
 }
 
 runtime_path_value() {
+  if [[ "${OS_NAME}" == "Darwin" ]]; then
+    printf '%s/.local/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin' "${TARGET_HOME}"
+    return
+  fi
   printf '%s/.local/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin' "${TARGET_HOME}"
 }
 
@@ -698,6 +702,8 @@ preinstall_default_agents() {
 }
 
 write_linux_maintenance_script() {
+  local runtime_path
+  runtime_path="$(runtime_path_value)"
   cat > "${LINUX_MAINTENANCE_SCRIPT}" <<'SCRIPT'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -709,7 +715,7 @@ SERVICE_NAME="chatcode-gateway"
 LOCK_FILE="/var/lock/chatcode-maintenance.lock"
 TARGET_USER="__CHATCODE_TARGET_USER__"
 TARGET_HOME="__CHATCODE_TARGET_HOME__"
-TARGET_PATH="${TARGET_HOME}/.local/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+TARGET_PATH="__CHATCODE_RUNTIME_PATH__"
 
 log() {
   echo "${LOG_PREFIX} $*"
@@ -797,6 +803,7 @@ SCRIPT
   sed -i \
     -e "s|__CHATCODE_TARGET_USER__|${TARGET_USER}|g" \
     -e "s|__CHATCODE_TARGET_HOME__|${TARGET_HOME}|g" \
+    -e "s|__CHATCODE_RUNTIME_PATH__|${runtime_path}|g" \
     "${LINUX_MAINTENANCE_SCRIPT}"
   chmod 0755 "${LINUX_MAINTENANCE_SCRIPT}"
 }

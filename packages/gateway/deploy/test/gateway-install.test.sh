@@ -252,7 +252,7 @@ test_linux_installer_bootstraps_base_packages() {
 
 test_installer_uses_user_local_agent_cli_updates() {
   assert_contains "${INSTALL_SCRIPT}" 'sudo -u "${TARGET_USER}" -H env HOME="${TARGET_HOME}" PATH="${path_value}" "${AGENT_UPDATE_HELPER_PATH}" "$@"'
-  assert_contains "${INSTALL_SCRIPT}" 'TARGET_PATH="${TARGET_HOME}/.local/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"'
+  assert_contains "${INSTALL_SCRIPT}" 'TARGET_PATH="__CHATCODE_RUNTIME_PATH__"'
   assert_contains "${INSTALL_SCRIPT}" 'sudo -u "$TARGET_USER" -H env HOME="$TARGET_HOME" PATH="$TARGET_PATH" \'
 }
 
@@ -260,6 +260,7 @@ test_installer_sets_local_bin_path() {
   assert_contains "${INSTALL_SCRIPT}" 'PATH=$(runtime_path_value)'
   assert_contains "${INSTALL_SCRIPT}" 'export PATH="$HOME/.local/bin:$PATH"'
   assert_contains "${INSTALL_SCRIPT}" '$(xml_escape "$(runtime_path_value)")'
+  assert_contains "${INSTALL_SCRIPT}" '/opt/homebrew/bin'
 }
 
 test_agent_installers_seed_global_guidance_without_overwrite() {
