@@ -8,8 +8,7 @@ import { cn } from "@/lib/utils";
 import {
   createSession,
   getMissingAgentFromError,
-  installAgent,
-  waitForAgentInstalled,
+  installAgentAndCreateSession,
   type Session,
 } from "@/lib/api";
 import { defaultSessionTitle, type AgentType } from "@/lib/constants";
@@ -179,6 +178,8 @@ export function AppPage({
   const [showEmptyCreateMenu, setShowEmptyCreateMenu] = useState(false);
   const [emptyCreateWorkdir, setEmptyCreateWorkdir] = useState("new");
   const [emptyInstallPrompt, setEmptyInstallPrompt] = useState<{
+    vpsId: string;
+    vpsName: string;
     agentType: "claude-code" | "codex" | "gemini" | "opencode";
     title: string;
     workdir: string;
@@ -254,10 +255,11 @@ export function AppPage({
   const handleCreateSessionFromEmpty = useCallback(async (agentType: AgentType) => {
     if (!activeVpsId || emptyActionBusy) return;
     setEmptyActionBusy(true);
+    const targetVpsId = activeVpsId;
     const title = defaultSessionTitle(agentType, 1);
     const workdir = normalizeSessionWorkdir(emptyCreateWorkdir);
     try {
-      const res = await createSession(activeVpsId, {
+      const res = await createSession(targetVpsId, {
         title,
         agent_type: agentType,
         workdir,
@@ -265,7 +267,7 @@ export function AppPage({
       dispatchTab({
         type: "open",
         tab: {
-          vpsId: activeVpsId,
+          vpsId: targetVpsId,
           sessionId: res.session_id,
           title: buildSessionTabTitle(title, workdir),
         },
@@ -277,6 +279,8 @@ export function AppPage({
       const missingAgent = getMissingAgentFromError(err);
       if (missingAgent) {
         setEmptyInstallPrompt({
+          vpsId: targetVpsId,
+          vpsName: targetVpsId,
           agentType: missingAgent,
           title,
           workdir,
@@ -372,10 +376,10 @@ export function AppPage({
         refreshSignal={combinedRefreshSignal}
         selectedVpsIdHint={selectedVpsIdHint}
       />
-      {emptyInstallPrompt && activeVpsId ? (
+      {emptyInstallPrompt ? (
         <ConfirmDialog
           title={`${emptyInstallPrompt.agentType} is not installed`}
-          description={`Install ${emptyInstallPrompt.agentType} on the selected server and continue creating this session?`}
+          description={`Install ${emptyInstallPrompt.agentType} on "${emptyInstallPrompt.vpsName}" and continue creating this session?`}
           details={(
             <div className="space-y-2 text-xs text-muted-foreground">
               <p>chatcode will install the missing agent, wait for it to become available, and then retry session creation automatically.</p>
@@ -386,9 +390,7 @@ export function AppPage({
           onConfirm={async () => {
             setEmptyActionBusy(true);
             try {
-              await installAgent(activeVpsId, emptyInstallPrompt.agentType);
-              await waitForAgentInstalled(activeVpsId, emptyInstallPrompt.agentType);
-              const res = await createSession(activeVpsId, {
+              const res = await installAgentAndCreateSession(emptyInstallPrompt.vpsId, emptyInstallPrompt.agentType, {
                 title: emptyInstallPrompt.title,
                 agent_type: emptyInstallPrompt.agentType,
                 workdir: emptyInstallPrompt.workdir,
@@ -396,7 +398,7 @@ export function AppPage({
               dispatchTab({
                 type: "open",
                 tab: {
-                  vpsId: activeVpsId,
+                  vpsId: emptyInstallPrompt.vpsId,
                   sessionId: res.session_id,
                   title: buildSessionTabTitle(emptyInstallPrompt.title, emptyInstallPrompt.workdir),
                 },
@@ -405,6 +407,10 @@ export function AppPage({
               setShowEmptyCreateMenu(false);
               setEmptyCreateWorkdir("new");
               setEmptyInstallPrompt(null);
+            } catch (err) {
+              const detail = err instanceof Error ? err.message : "unexpected error";
+              setSidebarErrorMessage(`Failed to create session after installing ${emptyInstallPrompt.agentType}: ${detail}`);
+              throw err;
             } finally {
               setEmptyActionBusy(false);
             }

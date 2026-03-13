@@ -30,14 +30,13 @@ import {
   listWorkspaceFolders,
   createSession,
   getMissingAgentFromError,
-  installAgent,
+  installAgentAndCreateSession,
   deleteSession,
   deleteVPS,
   powerOffVPS,
   powerOnVPS,
   updateVPS,
   updateSession,
-  waitForAgentInstalled,
   type VPS,
   type Session,
 } from "@/lib/api";
@@ -252,20 +251,22 @@ export function Sidebar({
     async (agentType: AgentType = "claude-code") => {
       if (!activeVpsId || creating) return;
       setCreating(true);
+      const targetVpsId = activeVpsId;
+      const targetVpsName = activeVpsName;
       const title = defaultSessionTitle(
         agentType,
         sessions.filter((session) => session.agent_type === agentType).length + 1,
       );
       const workdir = normalizeSessionWorkdir(sessionWorkdir);
       try {
-        const res = await createSession(activeVpsId, {
+        const res = await createSession(targetVpsId, {
           title,
           agent_type: agentType,
           workdir,
         });
         await refreshSessions();
         await refreshWorkspaceFolders(true);
-        onNewSession(activeVpsId, res.session_id, buildSessionTabTitle(title, workdir));
+        onNewSession(targetVpsId, res.session_id, buildSessionTabTitle(title, workdir));
         setErrorMessage("");
         setShowAgentPicker(false);
         setGroupPickerKey(null);
@@ -275,7 +276,7 @@ export function Sidebar({
         if (missingAgent) {
           setConfirmAction({
             title: `${missingAgent} is not installed`,
-            description: `Install ${missingAgent} on "${activeVpsName}" and continue creating this session?`,
+            description: `Install ${missingAgent} on "${targetVpsName}" and continue creating this session?`,
             confirmLabel: "Install and continue",
             details: (
               <div className="space-y-2 text-xs text-muted-foreground">
@@ -284,23 +285,23 @@ export function Sidebar({
               </div>
             ),
             onConfirm: async () => {
-              if (!activeVpsId) throw new Error("No server selected");
               setCreating(true);
               try {
-                await installAgent(activeVpsId, missingAgent);
-                await waitForAgentInstalled(activeVpsId, missingAgent);
-                const res = await createSession(activeVpsId, {
+                const res = await installAgentAndCreateSession(targetVpsId, missingAgent, {
                   title,
                   agent_type: agentType,
                   workdir,
                 });
                 await refreshSessions();
                 await refreshWorkspaceFolders(true);
-                onNewSession(activeVpsId, res.session_id, buildSessionTabTitle(title, workdir));
+                onNewSession(targetVpsId, res.session_id, buildSessionTabTitle(title, workdir));
                 setErrorMessage("");
                 setShowAgentPicker(false);
                 setGroupPickerKey(null);
                 setSessionWorkdir(DEFAULT_SESSION_WORKDIR_INPUT);
+              } catch (retryErr) {
+                setOperationError(`Failed to create session after installing ${missingAgent}`, retryErr);
+                throw retryErr;
               } finally {
                 setCreating(false);
               }

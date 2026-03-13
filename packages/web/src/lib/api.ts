@@ -238,6 +238,12 @@ export interface Session {
   last_activity_at?: number;
 }
 
+export interface CreateSessionOptions {
+  title?: string;
+  agent_type?: string;
+  workdir?: string;
+}
+
 export function listSessions(vpsId: string) {
   return request<{ sessions: Session[] }>(
     `/vps/${encodeURIComponent(vpsId)}/sessions`,
@@ -246,7 +252,7 @@ export function listSessions(vpsId: string) {
 
 export function createSession(
   vpsId: string,
-  opts: { title?: string; agent_type?: string; workdir?: string },
+  opts: CreateSessionOptions,
 ) {
   return request<{ session_id: string; status: string }>(
     `/vps/${encodeURIComponent(vpsId)}/sessions`,
@@ -332,6 +338,16 @@ export async function waitForAgentInstalled(
   }
 
   throw new Error(`${agent} installation timed out. Try again in a moment.`);
+}
+
+export async function installAgentAndCreateSession(
+  vpsId: string,
+  agent: ManagedAgentType,
+  opts: CreateSessionOptions,
+) {
+  await installAgent(vpsId, agent);
+  await waitForAgentInstalled(vpsId, agent);
+  return createSession(vpsId, opts);
 }
 
 // -- DO Connection --

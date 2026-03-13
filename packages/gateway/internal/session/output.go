@@ -347,14 +347,6 @@ func (c *outputCapturer) capturePane() (string, error) {
 	return stripOSC8Hyperlinks(strings.TrimSuffix(string(out), "\n")), nil
 }
 
-func (c *outputCapturer) captureCursor() (int, int, int, error) {
-	state, err := c.captureState()
-	if err != nil {
-		return 0, 0, 0, err
-	}
-	return state.cursorX, state.cursorY, state.cursorV, nil
-}
-
 func (c *outputCapturer) captureState() (paneState, error) {
 	out, err := exec.Command(
 		"tmux", "display-message", "-t", c.tmuxName, "-p", "#{cursor_x} #{cursor_y} #{cursor_flag} #{alternate_on}",

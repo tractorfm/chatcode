@@ -112,7 +112,7 @@ export async function handleAgentInstall(
 
   const doId = env.GATEWAY_HUB.idFromName(gateway.id);
   const stub = env.GATEWAY_HUB.get(doId);
-  const requestId = `agent-install-${agent}-${Date.now()}`;
+  const requestId = `agent-install-${agent}-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
 
   try {
     const resp = await stub.fetch(

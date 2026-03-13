@@ -268,7 +268,9 @@ func (g *gateway) sendSnapshots(ctx context.Context) {
 		} else if cursorVisible == 1 {
 			evt["cursor_visible"] = true
 		}
-		evt["alternate_on"] = alternateOn
+		if cursorVisible >= 0 {
+			evt["alternate_on"] = alternateOn
+		}
 		g.sendEvent(ctx, evt)
 	}
 }
@@ -516,16 +518,18 @@ func (g *gateway) handleSessionSnapshot(ctx context.Context, raw json.RawMessage
 		return err
 	}
 	if g.cfg.CPURL == config.CPURLStaging {
-		g.log.Info(
-			"session snapshot",
+		attrs := []any{
 			"session_id", cmd.SessionID,
 			"cols", cols,
 			"rows", rows,
 			"cursor_x", cursorX,
 			"cursor_y", cursorY,
 			"cursor_visible", cursorVisible,
-			"alternate_on", alternateOn,
-		)
+		}
+		if cursorVisible >= 0 {
+			attrs = append(attrs, "alternate_on", alternateOn)
+		}
+		g.log.Info("session snapshot", attrs...)
 	}
 	content = trimSnapshotTail(content, maxSnapshotBytes)
 	evt := map[string]any{
@@ -547,7 +551,9 @@ func (g *gateway) handleSessionSnapshot(ctx context.Context, raw json.RawMessage
 	} else if cursorVisible == 1 {
 		evt["cursor_visible"] = true
 	}
-	evt["alternate_on"] = alternateOn
+	if cursorVisible >= 0 {
+		evt["alternate_on"] = alternateOn
+	}
 	g.sendEvent(ctx, evt)
 	g.sendAck(ctx, cmd.RequestID, true, "")
 	return nil

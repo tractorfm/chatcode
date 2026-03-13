@@ -95,7 +95,7 @@ func newSession(opts Options) *Session {
 	}
 }
 
-// start writes agent instruction files and launches the tmux session.
+// start launches the tmux-backed session and begins output capture.
 func (s *Session) start() error {
 	cmd := s.buildTmuxNewSessionCmd()
 	if out, err := cmd.CombinedOutput(); err != nil {
