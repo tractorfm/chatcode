@@ -120,3 +120,9 @@ Auth bootstrap for smoke:
 - CI calls `POST /auth/dev/login` with dev auth headers.
 - Route is enabled only when `AUTH_MODE=dev` and sets a normal session cookie for browser + WS flows.
 - Smoke command injection uses `POST /staging/cmd` with `session.input` for deterministic terminal I/O checks.
+
+Local convenience:
+
+- The repo-local staging helper file is `.dev-secrets.env`.
+- It currently exposes `CP_STAGING_DEV_USER` and `CP_STAGING_DEV_AUTH_SECRET`.
+- For local smoke runs, export those as `E2E_DEV_USER` / `E2E_DEV_SECRET`.

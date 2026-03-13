@@ -155,7 +155,7 @@ Release:
 - GatewayHub `session.ack` wait/echo path removal: done
 - gateway redraw burst breaker: done
 - gateway adaptive polling during redraw suppression: done
-- hardened gateway stack promoted as default install release: done (`v0.1.0`)
+- hardened gateway stack promoted as default install release: done (current default line includes it in `v0.1.8`)
 - browser terminal fit bug: still open separately
 - per-session/per-gateway message-rate metrics: done in control-plane (`GatewayHub` rolling counters + `/status`)
 - rate-based alerts / Cloudflare usage thresholds: initial defaults + guidance doc landed (`docs/GATEWAY_HUB_TRAFFIC_ALERTING.md`)

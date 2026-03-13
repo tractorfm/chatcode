@@ -1,4 +1,8 @@
-# VibeCode – Implementation Plan
+# chatcode.dev – Implementation Plan: Milestone 1
+
+> Historical reference. Current gateway behavior differs in two important ways:
+> 1. agent guidance is seeded globally during agent install, not written into each session workdir
+> 2. systemd/config names use `chatcode-*`, not `vibecode-*`
 
 ## Tech decisions (confirmed)
 - **Web**: React + Vite + Tailwind CSS + shadcn/ui (Cloudflare Pages)
@@ -12,7 +16,7 @@
 ## Monorepo structure
 
 ```
-vibecode/
+chatcode/
 ├── packages/
 │   ├── protocol/              # Shared protocol definitions
 │   │   ├── schema/            # JSON Schema files (source of truth)
@@ -88,7 +92,7 @@ vibecode/
 Gateway is the core — everything else depends on it. Build and test it against a mock CP first.
 
 ### Step 1: Project scaffold + WebSocket client
-- `go mod init github.com/vibecode/vibecode/packages/gateway`
+- `go mod init github.com/tractorfm/chatcode/packages/gateway`
 - Basic config: CP URL, gateway ID, auth token (from env / config file)
 - WebSocket client with:
   - connect to CP URL
@@ -106,7 +110,7 @@ Gateway is the core — everything else depends on it. Build and test it against
 
 ### Step 2: Session manager (tmux/PTY)
 - `session.create` → start tmux session with given name + workdir
-  - write agent instruction file (CLAUDE.md / AGENTS.md) into workdir before starting
+  - do not overwrite workspace-local guidance files
   - launch agent CLI inside tmux
 - `session.input` → inject keystrokes into tmux pane (`tmux send-keys`)
 - `session.resize` → resize tmux window (`tmux resize-window`)
@@ -153,22 +157,22 @@ Gateway is the core — everything else depends on it. Build and test it against
 
 ### Step 7: Self-update mechanism
 - On `gateway.update` command:
-  - download new binary from release URL (verify checksum/signature)
+  - resolve the correct binary for the host OS/arch from the requested release version
   - save as `gateway.new` alongside current binary
   - rename: current → `gateway.prev`, new → current
-  - signal systemd to restart (`systemctl restart vibecode-gateway`)
+  - signal systemd to restart (`systemctl restart chatcode-gateway`)
   - if new version fails health check → rollback to `gateway.prev`
 - **Test**: simulate update + rollback
 
 ### Step 8: Service integration (systemd + launchd abstraction)
-- Unit file: `vibecode-gateway.service`
+- Unit file: `chatcode-gateway.service`
   - `Type=simple`
   - `Restart=on-failure`
   - `RestartSec=5`
   - `User=vibe`
   - `WorkingDirectory=/home/vibe`
-  - `EnvironmentFile=/etc/vibecode/gateway.env`
-- **macOS (roadmap)**: launchd plist `com.vibecode.gateway.plist` (same config, different format).
+  - `EnvironmentFile=/etc/chatcode/gateway.env`
+- **macOS (roadmap)**: launchd plist `com.chatcode.gateway.plist` (same config, different format).
 - Abstract service install/uninstall behind an interface so both backends share the same gateway code.
 - Install scripts exist for Linux:
   - `packages/gateway/deploy/cloud-init.sh` (provisioning path)

@@ -1,4 +1,4 @@
-# VibeCode – Implementation Plan: Milestone 3
+# chatcode.dev – Implementation Plan: Milestone 3
 
 ## Context
 

@@ -121,13 +121,14 @@ Rationale: keep the first release focused on “create VPS → open terminal →
 - Current web UI groups sessions by top-level workspace folder and shows deeper subpaths as lightweight session context.
 - `session_id` is the canonical handle for cross-client continuity.
 - Limit: **10 concurrent sessions** per VPS on the free plan (control-plane enforced), with a gateway safety cap of **50**.
-- On session start, gateway writes an agent instruction file in the session workdir:
-  - `CLAUDE.md` (Claude Code)
-  - `AGENTS.md` (generic fallback)
-  The content comes from `agent_config` in `session.create` + standard safety and workflow rules.
-- Default agent templates are **embedded in the gateway binary** at compile time.
-- `agent_config` field in `session.create` can override or extend defaults (e.g., user-specific instructions).
-- Later: user-editable templates via UI.
+- Agent installers seed concise global guidance files if they are missing:
+  - `~/.claude/CLAUDE.md`
+  - `${CODEX_HOME:-~/.codex}/AGENTS.md`
+  - `~/.gemini/GEMINI.md`
+  - `${XDG_CONFIG_HOME:-~/.config}/opencode/AGENTS.md`
+- Gateway does **not** overwrite workspace-local guidance files when starting sessions.
+- Default guidance templates are embedded in the gateway binary and used by the installer scripts.
+- Later: user-editable or task-specific guidance layers without overwriting existing files.
 
 ---
 
@@ -192,7 +193,7 @@ Evolution note (expected, not emergency):
 - Bounded buffer + “latest wins” drop policy under load.
 
 ### Commands (cloud → gateway) – JSON
-- `session.create {schema_version, request_id, session_id, name, workdir, agent?, agent_config?, env?}`
+- `session.create {schema_version, request_id, session_id, name, workdir, agent?, env?}`
 - `session.input {schema_version, request_id, session_id, data}`
 - `session.resize {schema_version, request_id, session_id, cols, rows}`
 - `session.end {schema_version, request_id, session_id}`
@@ -211,7 +212,7 @@ Evolution note (expected, not emergency):
 - `file.cancel {schema_version, request_id, transfer_id}`
 - `agents.install {schema_version, request_id, agent}`
 - `agents.list {schema_version, request_id}`
-- `gateway.update {schema_version, request_id, url, sha256, version}`
+- `gateway.update {schema_version, request_id, version, release_base_url?}`
 
 ### Events (gateway → cloud) – JSON
 - `ack {schema_version, request_id, ok, error?}`

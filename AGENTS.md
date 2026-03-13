@@ -73,3 +73,9 @@ npm run test
 cd packages/protocol
 npm run build
 ```
+
+## Local Staging Auth
+
+- Local-only staging helper secrets live in `.dev-secrets.env` at the repo root.
+- Use it for `POST /auth/dev/login`, staging smoke, and local staging helper scripts.
+- Never commit this file.
