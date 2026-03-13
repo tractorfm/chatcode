@@ -106,6 +106,13 @@ interface SessionTrafficSnapshot {
   runaway_signal: TrafficCounterSnapshot;
 }
 
+interface GatewayUpdateFailed {
+  type: "gateway.update_failed";
+  schema_version: string;
+  request_id: string;
+  error: string;
+}
+
 type GatewayEvent =
   | GatewayHello
   | GatewayHealth
@@ -121,7 +128,8 @@ type GatewayEvent =
   | FileContentChunk
   | FileContentEnd
   | AgentInstalled
-  | GatewayUpdated;
+  | GatewayUpdated
+  | GatewayUpdateFailed;
 
 type GatewayCommandResult =
   | Ack
@@ -130,8 +138,15 @@ type GatewayCommandResult =
   | AgentsStatus
   | WorkspaceFolders
   | AgentInstalled
-  | GatewayUpdated;
-type GatewayCommandEvent = SSHKeyList | AgentsStatus | WorkspaceFolders | AgentInstalled | GatewayUpdated;
+  | GatewayUpdated
+  | GatewayUpdateFailed;
+type GatewayCommandEvent =
+  | SSHKeyList
+  | AgentsStatus
+  | WorkspaceFolders
+  | AgentInstalled
+  | GatewayUpdated
+  | GatewayUpdateFailed;
 
 class RollingTrafficCounter {
   private buckets: TrafficBucket[] = Array.from({ length: TRAFFIC_BUCKET_COUNT }, () => ({
@@ -475,6 +490,7 @@ export class GatewayHub {
       case "workspace.folders":
       case "agent.installed":
       case "gateway.updated":
+      case "gateway.update_failed":
         // Forward to pending entry's sourceSocket
         this.onCommandEvent(msg as GatewayCommandEvent);
         break;

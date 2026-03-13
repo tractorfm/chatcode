@@ -306,6 +306,57 @@ describe("GatewayHub", () => {
     ).toBe(false);
   });
 
+  it("forwards gateway update failures to the pending source socket", async () => {
+    const hub = makeHub();
+    const sourceSend = vi.fn();
+    const resolve = vi.fn();
+
+    const sourceSocket = {
+      readyState: WebSocket.OPEN,
+      send: sourceSend,
+      close: vi.fn(),
+    } as unknown as WebSocket;
+
+    (
+      hub as unknown as {
+        pending: Map<string, { resolve: () => void; reject: () => void; startedAt: number; sourceSocket: WebSocket | null }>;
+      }
+    ).pending.set("req-update-1", {
+      resolve,
+      reject: vi.fn(),
+      startedAt: Date.now(),
+      sourceSocket,
+    });
+
+    await (
+      hub as unknown as {
+        onGatewayText: (data: string) => Promise<void>;
+      }
+    ).onGatewayText(
+      JSON.stringify({
+        type: "gateway.update_failed",
+        schema_version: "1",
+        request_id: "req-update-1",
+        error: "restart service: exit status 1",
+      }),
+    );
+
+    expect(sourceSend).toHaveBeenCalledOnce();
+    expect(sourceSend.mock.calls[0][0]).toContain("\"type\":\"gateway.update_failed\"");
+    expect(sourceSend.mock.calls[0][0]).toContain("restart service: exit status 1");
+    expect(resolve).toHaveBeenCalledOnce();
+    expect(resolve).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "gateway.update_failed",
+        request_id: "req-update-1",
+        error: "restart service: exit status 1",
+      }),
+    );
+    expect(
+      (hub as unknown as { pending: Map<string, unknown> }).pending.has("req-update-1"),
+    ).toBe(false);
+  });
+
   it("forwards realtime ack to browser waiter when not in pending command map", () => {
     const hub = makeHub();
     const browserSend = vi.fn();

@@ -814,6 +814,7 @@ func (g *gateway) handleGatewayUpdate(ctx context.Context, raw json.RawMessage) 
 			err = g.updater.UpdateRelease(cmd.ReleaseBaseURL, cmd.Version)
 		}
 		if err != nil {
+			g.log.Error("gateway update failed", "request_id", cmd.RequestID, "err", err)
 			g.sendEvent(ctx, map[string]any{
 				"type":       "gateway.update_failed",
 				"request_id": cmd.RequestID,
