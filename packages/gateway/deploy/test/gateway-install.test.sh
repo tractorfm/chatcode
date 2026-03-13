@@ -279,12 +279,22 @@ test_installer_supports_darwin_amd64_releases() {
 test_agent_installers_seed_global_guidance_without_overwrite() {
   assert_contains "${CLAUDE_INSTALLER}" 'CLAUDE_GUIDANCE_FILE="${CLAUDE_DIR}/CLAUDE.md"'
   assert_contains "${CLAUDE_INSTALLER}" 'Claude global guidance already exists'
+  assert_contains "${CLAUDE_INSTALLER}" 'Homebrew is required on macOS to install Node.js 24 for Claude Code'
   assert_contains "${CODEX_INSTALLER}" 'CODEX_GUIDANCE_FILE="${CODEX_HOME_DIR}/AGENTS.md"'
   assert_contains "${CODEX_INSTALLER}" 'Codex global guidance already exists'
+  assert_contains "${CODEX_INSTALLER}" 'Homebrew is required on macOS to install Node.js 24 for Codex CLI'
   assert_contains "${GEMINI_INSTALLER}" 'GEMINI_GUIDANCE_FILE="${GEMINI_DIR}/GEMINI.md"'
   assert_contains "${GEMINI_INSTALLER}" 'Gemini global guidance already exists'
+  assert_contains "${GEMINI_INSTALLER}" 'Homebrew is required on macOS to install Node.js 24 for Gemini CLI'
   assert_contains "${OPENCODE_INSTALLER}" 'OPENCODE_GUIDANCE_FILE="${OPENCODE_CONFIG_DIR}/AGENTS.md"'
   assert_contains "${OPENCODE_INSTALLER}" 'OpenCode global guidance already exists'
+  assert_contains "${OPENCODE_INSTALLER}" 'Homebrew is required on macOS to install Node.js 24 for OpenCode'
+}
+
+test_installer_prints_darwin_prep_guidance() {
+  assert_contains "${INSTALL_SCRIPT}" 'warning: skipping default agent preinstall on macOS because Homebrew is not installed'
+  assert_contains "${INSTALL_SCRIPT}" 'brew install git node@24'
+  assert_contains "${INSTALL_SCRIPT}" '~/.local/bin/chatcode-update-agent-clis claude-code codex'
 }
 
 main() {
@@ -297,6 +307,7 @@ main() {
   test_darwin_plist_exports_tmux_and_tmpdir
   test_installer_supports_darwin_amd64_releases
   test_agent_installers_seed_global_guidance_without_overwrite
+  test_installer_prints_darwin_prep_guidance
   test_service_template_preserves_tmux_children
   test_linux_installer_service_unit_preserves_tmux_children
   echo "[gateway-install.test] PASS"

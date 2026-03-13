@@ -138,6 +138,16 @@ log_banner() {
   log "project: https://github.com/tractorfm/chatcode"
 }
 
+log_darwin_prep_instructions() {
+  log "macOS agent prerequisites are not ready."
+  log "Prepare this machine, then rerun agent install/update:"
+  log "  /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
+  log "  brew install git node@24"
+  log "  export PATH=\"/opt/homebrew/opt/node@24/bin:/usr/local/opt/node@24/bin:\$PATH\""
+  log "Then run:"
+  log "  ~/.local/bin/chatcode-update-agent-clis claude-code codex"
+}
+
 runtime_path_value() {
   if [[ "${OS_NAME}" == "Darwin" ]]; then
     printf '%s/.local/bin:/opt/homebrew/opt/node@24/bin:/usr/local/opt/node@24/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin' "${TARGET_HOME}"
@@ -700,10 +710,18 @@ preinstall_default_agents() {
     log "warning: no agent update helper found; skipping preinstall"
     return 0
   fi
+  if [[ "${OS_NAME}" == "Darwin" ]] && ! command -v brew >/dev/null 2>&1; then
+    log "warning: skipping default agent preinstall on macOS because Homebrew is not installed"
+    log_darwin_prep_instructions
+    return 0
+  fi
 
   log "preinstalling default agents (claude-code, codex)"
   if ! run_agent_update_helper --best-effort claude-code codex; then
     log "warning: default agent preinstall encountered errors"
+    if [[ "${OS_NAME}" == "Darwin" ]]; then
+      log_darwin_prep_instructions
+    fi
   fi
 }
 

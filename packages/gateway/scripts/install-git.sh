@@ -34,7 +34,12 @@ elif [[ "${os}" == "Darwin" ]]; then
   if command -v brew >/dev/null 2>&1; then
     brew install git
   else
-    echo "[chatcode] ERROR: Homebrew is required on macOS to install git" >&2
+    cat >&2 <<'EOF'
+[chatcode] ERROR: Homebrew is required on macOS to install git.
+[chatcode] Run:
+[chatcode]   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+[chatcode]   brew install git node@24
+EOF
     exit 1
   fi
 else

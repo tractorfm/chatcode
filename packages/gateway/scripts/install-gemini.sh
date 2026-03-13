@@ -43,7 +43,13 @@ ensure_node() {
 
     if [ "${os}" = "Darwin" ]; then
         if ! command -v brew &>/dev/null; then
-            echo "[chatcode] ERROR: Homebrew is required on macOS to install Node.js" >&2
+            cat >&2 <<'EOF'
+[chatcode] ERROR: Homebrew is required on macOS to install Node.js 24 for Gemini CLI.
+[chatcode] Run:
+[chatcode]   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+[chatcode]   brew install git node@24
+[chatcode]   export PATH="/opt/homebrew/opt/node@24/bin:/usr/local/opt/node@24/bin:$PATH"
+EOF
             exit 1
         fi
         brew install node@24

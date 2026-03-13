@@ -34,6 +34,15 @@ die() {
   exit 1
 }
 
+darwin_prep_hint() {
+  cat >&2 <<'EOF'
+[chatcode] macOS preparation required before installing agent CLIs:
+[chatcode]   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+[chatcode]   brew install git node@24
+[chatcode]   export PATH="/opt/homebrew/opt/node@24/bin:/usr/local/opt/node@24/bin:$PATH"
+EOF
+}
+
 supported_agents=(claude-code codex gemini opencode)
 
 bin_for_agent() {
@@ -134,6 +143,11 @@ fi
 if [[ ${#agents[@]} -eq 0 ]]; then
   log "no agents selected"
   exit 0
+fi
+
+if [[ "$(uname -s)" == "Darwin" && ! command -v brew >/dev/null 2>&1 ]]; then
+  darwin_prep_hint
+  die "Homebrew is required on macOS before Chatcode can install or update agent CLIs"
 fi
 
 if ! run_git_installer; then
