@@ -431,6 +431,14 @@ type GatewayUpdated struct {
 	Version       string    `json:"version"`
 }
 
+// GatewayUpdateFailed reports a failed self-update attempt.
+type GatewayUpdateFailed struct {
+	Type          EventType `json:"type"`
+	SchemaVersion string    `json:"schema_version,omitempty"`
+	RequestID     string    `json:"request_id"`
+	Error         string    `json:"error"`
+}
+
 // ---------------------------------------------------------------------------
 // Binary frame encoding (terminal output)
 // ---------------------------------------------------------------------------

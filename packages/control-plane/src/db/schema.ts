@@ -431,11 +431,15 @@ export async function getGatewayByVPS(
   db: D1Database,
   vpsId: string,
 ): Promise<GatewayRow | null> {
-  const result = await db
-    .prepare("SELECT * FROM gateways WHERE vps_id = ?")
+  return db
+    .prepare(
+      `SELECT * FROM gateways
+       WHERE vps_id = ?
+       ORDER BY connected DESC, COALESCE(last_seen_at, -1) DESC, created_at DESC, id DESC
+       LIMIT 1`,
+    )
     .bind(vpsId)
-    .all<GatewayRow>();
-  return pickPreferredGateway(result.results);
+    .first<GatewayRow>();
 }
 
 export async function listGatewaysByVPSIds(

@@ -305,6 +305,12 @@ export interface GatewayUpdated extends BaseEvent {
   version: string;
 }
 
+export interface GatewayUpdateFailed extends BaseEvent {
+  type: "gateway.update_failed";
+  request_id: string;
+  error: string;
+}
+
 export type Event =
   | Ack
   | GatewayHello
@@ -320,7 +326,8 @@ export type Event =
   | FileContentChunk
   | FileContentEnd
   | AgentInstalled
-  | GatewayUpdated;
+  | GatewayUpdated
+  | GatewayUpdateFailed;
 
 // ---------------------------------------------------------------------------
 // Binary frames (terminal output)

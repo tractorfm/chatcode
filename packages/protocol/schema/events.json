@@ -260,6 +260,16 @@
         "version": { "type": "string" }
       },
       "required": ["type", "request_id", "version"]
+    },
+
+    "GatewayUpdateFailed": {
+      "allOf": [{ "$ref": "#/definitions/BaseEvent" }],
+      "properties": {
+        "type": { "const": "gateway.update_failed" },
+        "request_id": { "type": "string" },
+        "error": { "type": "string" }
+      },
+      "required": ["type", "request_id", "error"]
     }
   },
 
@@ -278,6 +288,7 @@
     { "$ref": "#/definitions/AgentInstalled" },
     { "$ref": "#/definitions/AgentsStatus" },
     { "$ref": "#/definitions/WorkspaceFolders" },
-    { "$ref": "#/definitions/GatewayUpdated" }
+    { "$ref": "#/definitions/GatewayUpdated" },
+    { "$ref": "#/definitions/GatewayUpdateFailed" }
   ]
 }

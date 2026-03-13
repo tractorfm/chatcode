@@ -337,8 +337,21 @@ func tempArtifactDirs(binaryPath string) []string {
 	add(&dirs, os.Getenv("TMPDIR"))
 	add(&dirs, os.TempDir())
 	add(&dirs, "/var/tmp")
-	add(&dirs, filepath.Dir(binaryPath))
+	if isSafeTempFallbackDir(filepath.Dir(binaryPath)) {
+		add(&dirs, filepath.Dir(binaryPath))
+	}
 	return dirs
+}
+
+func isSafeTempFallbackDir(dir string) bool {
+	dir = filepath.Clean(strings.TrimSpace(dir))
+	if dir == "" || dir == "." || dir == "/" {
+		return false
+	}
+	if strings.HasPrefix(dir, "/usr/") || dir == "/usr" {
+		return false
+	}
+	return true
 }
 
 func copyFile(src, dst string, mode os.FileMode) error {

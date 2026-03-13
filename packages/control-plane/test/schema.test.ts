@@ -7,10 +7,17 @@ type PreparedResult = {
   run?: unknown;
 };
 
+function normalizeSql(sql: string): string {
+  return sql.replace(/\s+/g, " ").trim();
+}
+
 function makeDB(resultsBySql: Record<string, PreparedResult>): D1Database {
+  const normalizedEntries = new Map(
+    Object.entries(resultsBySql).map(([sql, result]) => [normalizeSql(sql), result] as const),
+  );
   return {
     prepare(sql: string) {
-      const result = resultsBySql[sql];
+      const result = normalizedEntries.get(normalizeSql(sql));
       if (!result) {
         throw new Error(`unexpected SQL: ${sql}`);
       }
@@ -28,30 +35,19 @@ function makeDB(resultsBySql: Record<string, PreparedResult>): D1Database {
 describe("db/schema gateway selection", () => {
   it("prefers the connected gateway row for a VPS", async () => {
     const db = makeDB({
-      "SELECT * FROM gateways WHERE vps_id = ?": {
-        all: {
-          results: [
-            {
-              id: "gw-old",
-              vps_id: "vps-1",
-              auth_token_hash: "hash-old",
-              version: "v0.1.6",
-              host_os: "linux",
-              last_seen_at: 10,
-              connected: 0,
-              created_at: 10,
-            },
-            {
-              id: "gw-live",
-              vps_id: "vps-1",
-              auth_token_hash: "hash-live",
-              version: "v0.1.8",
-              host_os: "linux",
-              last_seen_at: 20,
-              connected: 1,
-              created_at: 20,
-            },
-          ],
+      [`SELECT * FROM gateways
+       WHERE vps_id = ?
+       ORDER BY connected DESC, COALESCE(last_seen_at, -1) DESC, created_at DESC, id DESC
+       LIMIT 1`]: {
+        first: {
+          id: "gw-live",
+          vps_id: "vps-1",
+          auth_token_hash: "hash-live",
+          version: "v0.1.8",
+          host_os: "linux",
+          last_seen_at: 20,
+          connected: 1,
+          created_at: 20,
         },
       },
     });

@@ -192,7 +192,16 @@ func TestTempArtifactPathFallsBackWhenTmpdirUnavailable(t *testing.T) {
 
 	dir := filepath.Dir(path)
 	if dir != "/var/tmp" && dir != filepath.Dir(binaryPath) {
-		t.Fatalf("temp artifact dir = %q, want fallback in /var/tmp or binary dir", dir)
+		t.Fatalf("temp artifact dir = %q, want fallback in /var/tmp or safe binary dir", dir)
+	}
+}
+
+func TestTempArtifactDirsSkipsSystemBinaryDirFallback(t *testing.T) {
+	dirs := tempArtifactDirs("/usr/local/bin/chatcode-gateway")
+	for _, dir := range dirs {
+		if dir == "/usr/local/bin" {
+			t.Fatalf("system binary dir should not be used as temp fallback: %v", dirs)
+		}
 	}
 }
 
