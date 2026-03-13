@@ -431,10 +431,11 @@ export async function getGatewayByVPS(
   db: D1Database,
   vpsId: string,
 ): Promise<GatewayRow | null> {
-  return db
+  const result = await db
     .prepare("SELECT * FROM gateways WHERE vps_id = ?")
     .bind(vpsId)
-    .first<GatewayRow>();
+    .all<GatewayRow>();
+  return pickPreferredGateway(result.results);
 }
 
 export async function listGatewaysByVPSIds(
@@ -455,10 +456,43 @@ export async function listGatewaysByVPSIds(
       .all<GatewayRow>();
 
     for (const row of result.results) {
-      byVPS[row.vps_id] = row;
+      const existing = byVPS[row.vps_id];
+      if (!existing || preferGatewayRow(row, existing)) {
+        byVPS[row.vps_id] = row;
+      }
     }
   }
   return byVPS;
+}
+
+function pickPreferredGateway(rows: GatewayRow[]): GatewayRow | null {
+  let preferred: GatewayRow | null = null;
+  for (const row of rows) {
+    if (!preferred || preferGatewayRow(row, preferred)) {
+      preferred = row;
+    }
+  }
+  return preferred;
+}
+
+function preferGatewayRow(candidate: GatewayRow, current: GatewayRow): boolean {
+  const candidateConnected = candidate.connected ? 1 : 0;
+  const currentConnected = current.connected ? 1 : 0;
+  if (candidateConnected !== currentConnected) {
+    return candidateConnected > currentConnected;
+  }
+
+  const candidateLastSeen = candidate.last_seen_at ?? -1;
+  const currentLastSeen = current.last_seen_at ?? -1;
+  if (candidateLastSeen !== currentLastSeen) {
+    return candidateLastSeen > currentLastSeen;
+  }
+
+  if (candidate.created_at !== current.created_at) {
+    return candidate.created_at > current.created_at;
+  }
+
+  return candidate.id > current.id;
 }
 
 export async function listStaleConnectedGateways(
