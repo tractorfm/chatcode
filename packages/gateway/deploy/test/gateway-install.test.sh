@@ -260,7 +260,20 @@ test_installer_sets_local_bin_path() {
   assert_contains "${INSTALL_SCRIPT}" 'PATH=$(runtime_path_value)'
   assert_contains "${INSTALL_SCRIPT}" 'export PATH="$HOME/.local/bin:$PATH"'
   assert_contains "${INSTALL_SCRIPT}" '$(xml_escape "$(runtime_path_value)")'
+  assert_contains "${INSTALL_SCRIPT}" '/opt/homebrew/opt/node@24/bin'
   assert_contains "${INSTALL_SCRIPT}" '/opt/homebrew/bin'
+}
+
+test_darwin_plist_exports_tmux_and_tmpdir() {
+  assert_contains "${INSTALL_SCRIPT}" '<key>TMUX_TMPDIR</key>'
+  assert_contains "${INSTALL_SCRIPT}" '<key>TMPDIR</key>'
+  assert_contains "${INSTALL_SCRIPT}" 'export TMPDIR="${TMPDIR:-/tmp}"'
+  assert_contains "${INSTALL_SCRIPT}" 'local lock_base="${TMPDIR:-/tmp}"'
+}
+
+test_installer_supports_darwin_amd64_releases() {
+  assert_contains "${INSTALL_SCRIPT}" 'Darwin:x86_64|Darwin:amd64)'
+  assert_contains "${INSTALL_SCRIPT}" 'echo "amd64"'
 }
 
 test_agent_installers_seed_global_guidance_without_overwrite() {
@@ -281,6 +294,8 @@ main() {
   test_linux_installer_bootstraps_base_packages
   test_installer_uses_user_local_agent_cli_updates
   test_installer_sets_local_bin_path
+  test_darwin_plist_exports_tmux_and_tmpdir
+  test_installer_supports_darwin_amd64_releases
   test_agent_installers_seed_global_guidance_without_overwrite
   test_service_template_preserves_tmux_children
   test_linux_installer_service_unit_preserves_tmux_children

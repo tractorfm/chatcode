@@ -729,16 +729,18 @@ ${STAGING_TERMINAL_SECTION}
       const vps = findVPS(vpsId);
       const ip = vps && typeof vps.ipv4 === "string" ? vps.ipv4.trim() : "";
       const label = vps && typeof vps.label === "string" ? vps.label.trim() : "";
-      const host = ip || normalizeManualSSHHost(vps, label);
-      if (!host) return "";
+      const destination = buildSessionAttachDestination(vps, ip, label);
+      if (!destination) return "";
       const tmuxName = "vibe-" + sessionId;
-      return "ssh vibe@" + host + " -t 'env TMUX_TMPDIR=/tmp/chatcode tmux attach -t " + tmuxName + "'";
+      return "ssh " + destination + " -t 'env TMUX_TMPDIR=/tmp/chatcode tmux attach -t " + tmuxName + "'";
     }
 
-    function normalizeManualSSHHost(vps, label) {
+    function buildSessionAttachDestination(vps, ip, label) {
+      if (ip) return "vibe@" + ip;
       if (!vps || vps.provider !== "manual" || !label) return "";
-      if (!/^[A-Za-z0-9._-]+$/.test(label)) return "";
-      return label;
+      if (/^[A-Za-z0-9._-]+@[A-Za-z0-9._-]+$/.test(label)) return label;
+      if (/^[A-Za-z0-9._-]+$/.test(label)) return label;
+      return "";
     }
 
     async function copyToClipboard(text) {

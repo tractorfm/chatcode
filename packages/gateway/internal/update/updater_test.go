@@ -202,6 +202,16 @@ func TestReleaseObjectNameRejectsUnsupportedTarget(t *testing.T) {
 	}
 }
 
+func TestReleaseObjectNameSupportsDarwinAMD64(t *testing.T) {
+	got, err := releaseObjectName("darwin", "amd64")
+	if err != nil {
+		t.Fatalf("releaseObjectName: %v", err)
+	}
+	if got != "chatcode-gateway-darwin-amd64" {
+		t.Fatalf("release object = %q, want darwin amd64 artifact", got)
+	}
+}
+
 func discardLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }

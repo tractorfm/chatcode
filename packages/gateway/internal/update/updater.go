@@ -265,8 +265,9 @@ func releaseObjectName(goos, goarch string) (string, error) {
 			return fmt.Sprintf("chatcode-gateway-linux-%s", goarch), nil
 		}
 	case "darwin":
-		if goarch == "arm64" {
-			return "chatcode-gateway-darwin-arm64", nil
+		switch goarch {
+		case "amd64", "arm64":
+			return fmt.Sprintf("chatcode-gateway-darwin-%s", goarch), nil
 		}
 	}
 	return "", fmt.Errorf("unsupported gateway release target: %s/%s", goos, goarch)

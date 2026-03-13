@@ -31,5 +31,8 @@ describe("routes/staging", () => {
     expect(html).toContain("v0.0.11");
     expect(html).toContain("gateway-update-version");
     expect(html).toContain("release_base_url");
+    expect(html).toContain("buildSessionAttachDestination");
+    expect(html).toContain('return "vibe@" + ip;');
+    expect(html).toContain('/^[A-Za-z0-9._-]+@[A-Za-z0-9._-]+$/');
   });
 });

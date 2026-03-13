@@ -11,7 +11,7 @@ Example:
   ./scripts/build-release.sh v0.1.1
 
 Environment:
-  TARGETS="linux/amd64 linux/arm64 darwin/arm64"  # optional override
+  TARGETS="linux/amd64 linux/arm64 darwin/amd64 darwin/arm64"  # optional override
   GATEWAY_SELFHOST_CP_URL="wss://cp.example.com/gw/connect"  # optional
 USAGE
 }
@@ -30,7 +30,7 @@ if [[ "${VERSION}" != v* ]]; then
   echo "[build-release] WARN: version '${VERSION}' does not start with 'v'" >&2
 fi
 
-TARGETS_STR="${TARGETS:-linux/amd64 linux/arm64 darwin/arm64}"
+TARGETS_STR="${TARGETS:-linux/amd64 linux/arm64 darwin/amd64 darwin/arm64}"
 read -r -a TARGETS <<<"${TARGETS_STR}"
 BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 SELFHOST_CP_URL="${GATEWAY_SELFHOST_CP_URL:-}"

@@ -140,7 +140,7 @@ log_banner() {
 
 runtime_path_value() {
   if [[ "${OS_NAME}" == "Darwin" ]]; then
-    printf '%s/.local/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin' "${TARGET_HOME}"
+    printf '%s/.local/bin:/opt/homebrew/opt/node@24/bin:/usr/local/opt/node@24/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin' "${TARGET_HOME}"
     return
   fi
   printf '%s/.local/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin' "${TARGET_HOME}"
@@ -225,7 +225,7 @@ detect_arch() {
       echo "arm64"
       ;;
     Darwin:x86_64|Darwin:amd64)
-      die "darwin/amd64 release artifacts are not published; use --binary-source or arm64 host"
+      echo "amd64"
       ;;
     *)
       die "unsupported platform: ${OS_NAME} $(uname -m)"
@@ -486,6 +486,8 @@ PLIST
     <string>$(xml_escape "${TARGET_HOME}/.ssh/authorized_keys")</string>
     <key>GATEWAY_TEMP_DIR</key>
     <string>$(xml_escape "${CHATCODE_TMP_DIR}")</string>
+    <key>TMUX_TMPDIR</key>
+    <string>$(xml_escape "${CHATCODE_TMP_DIR}")</string>
     <key>GATEWAY_BINARY_PATH</key>
     <string>$(xml_escape "${BINARY_PATH}")</string>
     <key>GATEWAY_LOG_LEVEL</key>
@@ -494,6 +496,8 @@ PLIST
     <string>$(xml_escape "${GATEWAY_HEALTH_INTERVAL}")</string>
     <key>GATEWAY_MAX_SESSIONS</key>
     <string>$(xml_escape "${GATEWAY_MAX_SESSIONS}")</string>
+    <key>TMPDIR</key>
+    <string>$(xml_escape "${TMPDIR}")</string>
     <key>PATH</key>
     <string>$(xml_escape "$(runtime_path_value)")</string>
   </dict>
@@ -536,6 +540,8 @@ write_darwin_maintenance_plist() {
   <string>$(xml_escape "${DARWIN_LOG_DIR}/chatcode-maintenance.err.log")</string>
   <key>EnvironmentVariables</key>
   <dict>
+    <key>TMPDIR</key>
+    <string>$(xml_escape "${TMPDIR}")</string>
     <key>PATH</key>
     <string>$(xml_escape "$(runtime_path_value)")</string>
   </dict>
@@ -844,7 +850,6 @@ set -euo pipefail
 LOG_PREFIX="[chatcode-maintenance]"
 ENV_FILE="${HOME}/.config/chatcode/gateway.env"
 AGENT_HELPER="${HOME}/.local/bin/chatcode-update-agent-clis"
-LOCK_DIR="/tmp/chatcode-maintenance.lock"
 GATEWAY_LABEL="dev.chatcode.gateway"
 
 log() {
@@ -880,6 +885,7 @@ update_gateway() {
   # Trusted local file written by installer with mode 600.
   # shellcheck disable=SC1090
   source "$ENV_FILE"
+  export TMPDIR="${TMPDIR:-/tmp}"
   arch="$(detect_release_arch)" || return
   base_url="${GATEWAY_RELEASE_BASE_URL:-https://releases.chatcode.dev/gateway}"
   current_version="${GATEWAY_VERSION:-}"
@@ -910,10 +916,13 @@ update_gateway() {
 }
 
 main() {
-  if ! mkdir "$LOCK_DIR" >/dev/null 2>&1; then
+  local lock_base="${TMPDIR:-/tmp}"
+  local lock_dir="${lock_base%/}/chatcode-maintenance.lock"
+
+  if ! mkdir "$lock_dir" >/dev/null 2>&1; then
     exit 0
   fi
-  trap 'rmdir "$LOCK_DIR" >/dev/null 2>&1 || true' EXIT
+  trap 'rmdir "$lock_dir" >/dev/null 2>&1 || true' EXIT
 
   if [ -x "$AGENT_HELPER" ]; then
     "$AGENT_HELPER" --installed-only --best-effort || true

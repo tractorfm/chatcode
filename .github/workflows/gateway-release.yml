@@ -59,6 +59,8 @@ jobs:
           - goos: linux
             goarch: arm64
           - goos: darwin
+            goarch: amd64
+          - goos: darwin
             goarch: arm64
 
     steps:
@@ -147,7 +149,7 @@ jobs:
           cat > "${DIST_DIR}/manifest.json" <<JSON
           {
             "version": "${VERSION}",
-            "targets": ["linux/amd64", "linux/arm64", "darwin/arm64"]
+            "targets": ["linux/amd64", "linux/arm64", "darwin/amd64", "darwin/arm64"]
           }
           JSON
 
